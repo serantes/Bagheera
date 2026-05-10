@@ -12,8 +12,8 @@ Bagheera is a suite of tools designed to improve the KDE Baloo experience. Devel
 
 ### Features
 
-*   **Natural Language Queries**: Search for files using intuitive expressions like *`MODIFIED TODAY`*, *`MODIFIED LAST 2 WEEKS`*, or *`MODIFIED 3 MONTHS AGO`*.
-*   **Recursive Search**: Efficiently navigate directory structures with recursive search capabilities.
+*   **Natural Language Queries**: Search for modified files using intuitive expressions like *`MODIFIED TODAY`*, *`MODIFIED LAST 2 WEEKS`*, or *`MODIFIED 3 MONTHS AGO`*.
+*   **Recursive Search**: Efficiently search directory structures and execute a second query in all files found.
 *   **Advanced Filtering**: Use **`--exclude`** and **`--recursive-exclude`** with support for logical operators (*`AND`*, *`OR`*, *`NOT`*) and comparison operators (including *`!=`* and property-to-property comparisons like *`width > height`*).
 *   **Metadata Integration**: Direct access to file *tags* and *metadata* via **Baloo's LMDB index**.
 *   **CLI & Library**: Use it as a standalone command-line tool or integrate the *`BagheeraSearcher`* class into your own Python projects.
@@ -64,7 +64,7 @@ The installation process automatically compiles the required C++ wrapper (`libba
 
 ```bash
 git clone https://github.net/serantes/Bagheera.git
-sudo pip install Bagheera
+pip install "$PWD/Bagheera"
 rm -rf Bagheera # Optional if you want to remove sources.
 ```
 
@@ -78,8 +78,9 @@ git clone https://github.net/serantes/Bagheera.git
 cd "Bagheera"
 python -m venv venv
 source venv/bin/activate
-pip install .
+pip install "$PWD/Bagheera"
 deactivate
+rm -rf Bagheera # Optional if you want to remove sources.
 ```
 
 **Bagheera Search** will be available typing "<install_dir>/Bagheera/venv/bin/bagheerasearch" in your console, but you can create an alias or a link in your path to call it.
@@ -324,6 +325,7 @@ Next properties are undocumented but available in source code, may work or not, 
   · VideoCodec
 
 Baloo documentation ends here, but Bagheera Search Tool adds some extra features on top of it.
+
 
 Search engine recognizes some natural language sentences in English, as long as they are capitalized, and transforms them into queries that can be interpreted by the search engine.
 
