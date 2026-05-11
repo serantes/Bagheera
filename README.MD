@@ -64,7 +64,7 @@ The installation process automatically compiles the required C++ wrapper (`libba
 
 ```bash
 git clone https://github.net/serantes/Bagheera.git
-pip install "$PWD/Bagheera"
+sudo pip install "$PWD/Bagheera"
 rm -rf Bagheera # Optional if you want to remove sources.
 ```
 
@@ -97,8 +97,9 @@ g++ -shared -fPIC -std=c++17 -o libbaloo_wrapper.so src/bagheerasearch/tools/bal
 To run the unit tests, ensure you have all dependencies and `pytest` installed. It is recommended to install the package in editable mode so that dependencies are resolved automatically:
 
 ```bash
+source venv/bin/activate
 pip install -e . pytest
-pytest
+python -m pytest
 ```
 
 ### Usage
@@ -112,14 +113,14 @@ bagheerasearch Pink Floyd
 #### Natural Language Dates
 ```bash
 # Fetch all files modified yesterday.
-bagheerasearch "MODIFIED YESTERDAY"
+bagheerasearch MODIFIED YESTERDAY
 ```
 
 #### Advanced Filtering
 Exclude specific types or tags using complex logic:
 ```bash
 # Fech files containing 'report' while excluding results where the file path includes 'pdf' or the file is marked with the 'Draft' tag.
-bagheerasearch "report" --exclude "pdf OR tags:Draft"
+bagheerasearch report --exclude "pdf OR tags:Draft"
 ```
 
 #### Recursive Search
@@ -127,8 +128,8 @@ bagheerasearch "report" --exclude "pdf OR tags:Draft"
 Recursive search over folders including a second query for folder results.
 
 ```bash
-# Fetch all presentations in '~/Documents' where the obtainefolder name contains 'KDE' and the filename contains 'Baloo'.
-bagheerasearch --directory ~/Documents  "KDE" --recursive "Baloo" --type Presentation
+# Fetch all directories in '~/Documents' where the folder name contains 'KDE' and fech all presentation files in that folders where the filename contains 'Baloo' or 'Bagheera'.
+bagheerasearch --directory ~/Documents KDE --recursive "Baloo OR Bagheera" --type Presentation
 ```
 
 ### Query Syntax
@@ -136,7 +137,7 @@ bagheerasearch --directory ~/Documents  "KDE" --recursive "Baloo" --type Present
 #### Comparison Operators
 *   `:` : Contains (text comparison)
 *   `=` : Equal
-*   `==` : Case-sensitive equal (not available with Baloo but can be used by Bagheera for exclusion filters)
+*   `==` : Equal (case-sensitive equal in Bagheera exclusion filters)
 *   `!=` : Not equal (not available with Baloo but can be used by Bagheera for exclusion filters)
 *   `>`, `>=`, `<`, `<=` : Numeric and date comparisons
 
@@ -344,13 +345,13 @@ The syntax for both options supports parentheses and logical operators (AND, OR,
 In addition to standard query comparison operators, the not equal (!=) operator is available for comparing properties against specific values. Furthermore, you can compare two properties directly; for example, 'width > height' is a valid expression.
 
 Remarks:
-  · Text comparisons are case sensitive with '==' operator but case insensitive with '=' and ':' operator. For example, 'filename:report' would match 'report.docx', 'Report.docx', and 'REPORT.docx', while 'filename=report.docx' would only match 'report.docx'.
-  · Tags comparisons are performed against both individual full tag string (using the '/' character as a level separator) and each individual level. All individual level values are normalized to lowercase and stripped of accents or diacritics. For example, a file tagged as 'Opera,Person/María Callas,Singer' would match any of the following elements: ['Opera', 'Person/María Callas', 'Singer', 'callas', 'maria', 'opera', 'person', 'singer']."
+  · Text comparisons are case sensitive with '==' operator but case insensitive with '=' and ':' operators. For example, 'filename:report' would match 'report.docx', 'Report.docx', and 'REPORT.docx', while 'filename==report.docx' would only match 'report.docx'.
+  · Tags comparisons are performed against both individual full tag string (using the '/' character as a level separator) and each individual level. All individual level values are normalized stripped of accents or diacritics. For example, a file tagged as 'Opera,Person/María Callas,Singer' would match any of the following elements: ['Callas', 'Maria', 'Person', 'Opera', 'Person/María Callas', 'Singer']."
   · Only text and numeric data are supported, dates are not supported as of now.
   · Baloo limit of at least three characters for property values is not applied in --exclude and --recursive-exclude options, so you can use shorter values in those options.
 
 For example, if you have a tag named 'Science' and another one 'Science Fiction' you can't obtain only results tagged with 'Science' becouse Baloo search engine will match both 'Science' and 'Science Fiction' tags when you use 'tags:Science' in your query. To exclude results tagged with 'Science Fiction' you can use the following query:
-    bagheerasearch --exclude tags:Fiction tags:Science
+    bagheerasearch tags:Science --exclude tags:Fiction
 ```
 
 ---
