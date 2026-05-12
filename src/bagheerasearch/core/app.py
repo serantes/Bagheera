@@ -195,18 +195,18 @@ Supported natural language sentences and patterns for queries are:
 <NUMBER> can be any number or a number text from ONE to TWENTY.
 
 
-The --exclude and --recursive-exclude options allow you to filter files out of the results.
+The --having and --subquery-having options allow you to filter files out of the results.
 The syntax for both options supports parentheses and logical operators (AND, OR, and NOT) to combine multiple patterns.
 In addition to standard query comparison operators, the not equal (!=) operator is available for comparing properties against specific values. Furthermore, you can compare two properties directly; for example, 'width > height' is a valid expression.
 
 Remarks:
-  · Text comparisons are case sensitive with '==' operator but case insensitive with '=' and ':' operator. For example, 'filename:report' would match 'report.docx', 'Report.docx', and 'REPORT.docx', while 'filename=report.docx' would only match 'report.docx'.
-  · Tag comparisons are performed against both the full tag string (using '/' as a level separator) and each individual level. Individual level values are normalized to lowercase and stripped of accents or diacritics. For example, a file tagged as 'Opera, Person/María Callas, Singer' would match any of the following: ['Opera', 'Person/María Callas', 'Singer', 'callas', 'maria', 'opera', 'person', 'singer'].
+  · Text comparisons are case sensitive with '==' operator but case insensitive with '=' and ':' operators. For example, 'filename:report' would match 'report.docx', 'Report.docx', and 'REPORT.docx', while 'filename==report.docx' would only match 'report.docx'.
+  · Tags comparisons are performed against both individual full tag string (using the '/' character as a level separator) and each individual level. All individual level values are normalized stripped of accents or diacritics. For example, a file tagged as 'Opera,Person/María Callas,Singer' would match any of the following elements: ['Callas', 'Maria', 'Person', 'Opera', 'Person/María Callas', 'Singer']."
   · Only text and numeric data are supported, dates are not supported as of now.
-  · The Baloo limit of at least three characters for property values is not applied in --exclude and --recursive-exclude options, allowing for shorter values.
+  · Baloo limit of at least three characters for property values is not applied in --having and --subquery-having options, so you can use shorter values in those options.
 
-For example, if you have tags named 'Science' and 'Science Fiction', you cannot isolate results tagged only with 'Science' because the Baloo search engine matches both 'Science' and 'Science Fiction' when using 'tags:Science'. To exclude 'Science Fiction', use the following query:
-    {PROG_ID} tags:Science --exclude tags:Fiction"""
+For example, if you have a tag named 'Science' and another one 'Science Fiction' you can't obtain only results tagged with 'Science' becouse Baloo search engine will match both 'Science' and 'Science Fiction' tags when you use 'tags:Science' in your query. To exclude results tagged with 'Science Fiction' you can use the following query:
+    {PROG_ID} tags:Science --having "NOT tags=Fiction" """
     print(help_query)
 
 
@@ -224,14 +224,14 @@ def main():
     )
     parser.add_argument("query", nargs="?", help="list of words to query for")
     parser.add_argument("-d", "--directory", help="limit search to specified directory tree")
-    parser.add_argument("-e", "--exclude", help="Search exclude pattern")
+    parser.add_argument("-e", "--having", help="having expression applied over query results")
     parser.add_argument("-i", "--id", action="store_true", help="show document IDs")
     parser.add_argument("-k", "--konsole", action="store_true", help="show files using file:/ and quotes")
     parser.add_argument("-l", "--limit", type=int, help="the maximum number of results")
     parser.add_argument("-o", "--offset", type=int, help="offset from which to start the search")
-    parser.add_argument("-r", "--recursive", nargs="?", const="", default=None, help="enable recurse with or without a query")
-    parser.add_argument("-n", "--recursive-indent", help="recursive indent character")
-    parser.add_argument("-x", "--recursive-exclude", help="recursion exclude query")
+    parser.add_argument("-q", "--subquery", nargs="?", const="", default=None, help="enable a subquery over folder results with or without a query")
+    parser.add_argument("-n", "--subquery-indent", help="subquery results indent character")
+    parser.add_argument("-x", "--subquery-having", help="having expression applied over subquery results")
     parser.add_argument("-s", "--sort", help="sorting criteria <auto|none>")
     parser.add_argument("-t", "--type", help="type of Baloo data to be searched")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose mode")
@@ -265,7 +265,7 @@ def main():
         print_version()
         return
 
-    if not query_text and not args.recursive and not args.type and not args.directory:
+    if not query_text and not args.subquery and not args.type and not args.directory:
         parser.print_help()
         return
 
@@ -279,7 +279,7 @@ def main():
 
     # Build options dictionary
     main_options = {}
-    if args.recursive is not None:
+    if args.subquery is not None:
         main_options["type"] = "folder"
     else:
         if args.limit is not None:
@@ -301,16 +301,16 @@ def main():
         main_options["sort"] = args.sort
 
     other_options = {
-        "exclude": args.exclude,
+        "having": args.having,
         "id": args.id,
         "konsole": args.konsole,
-        "limit": args.limit if args.limit and args.recursive is not None else 99999999999,
-        "offset": args.offset if args.offset and args.recursive is not None else 0,
-        "recursive": args.recursive,
-        "recursive_indent": args.recursive_indent or "",
-        "recursive_exclude": args.recursive_exclude,
+        "limit": args.limit if args.limit and args.subquery is not None else 99999999999,
+        "offset": args.offset if args.offset and args.subquery is not None else 0,
+        "subquery": args.subquery,
+        "subquery_indent": args.subquery_indent or "",
+        "subquery_having": args.subquery_having,
         "sort": args.sort,
-        "type": args.type if args.recursive is not None else None,
+        "type": args.type if args.subquery is not None else None,
         "verbose": args.verbose,
     }
 

@@ -225,16 +225,16 @@ class BagheeraSearcher:
             print(f"JSON decode error from Baloo wrapper: {e}")
             return []
 
-    def search_recursive(
+    def search_subquery(
         self,
         query_text: str,
         options: Dict[str, Any],
         search_opts: Dict[str, Any],
         files_count: int,
-        exclude_evaluator: Any,
-        exclude_sources: Dict[str, bool]
+        having_evaluator: Any,
+        having_sources: Dict[str, bool]
     ) -> Iterator[Dict[str, Any]]:
-        """Executes a recursive search yielded item by item."""
+        """Executes a subquery search yielded item by item."""
         options["query"] = query_text
         files = self._execute_query(options)
 
@@ -248,17 +248,17 @@ class BagheeraSearcher:
 
             self.ids_processed.add(file_id)
 
-            if exclude_evaluator:
+            if having_evaluator:
                 file_info = {'path': item["path"],
                              'filename': Path(item["path"]).name}
-                if exclude_sources.get('properties'):
+                if having_sources.get('properties'):
                     file_info = file_info | get_info(file_id)
-                if exclude_sources.get('tags'):
+                if having_sources.get('tags'):
                     file_info = file_info | get_tags(file_id)
             else:
                 file_info = None
 
-            if not file_info or not exclude_evaluator(file_info):
+            if not file_info or having_evaluator(file_info):
                 if files_count >= search_opts.get("offset", 0):
                     search_opts["limit"] -= 1
                     yield item
@@ -273,30 +273,30 @@ class BagheeraSearcher:
         """
         Main search generator. Yields file dictionaries.
         """
-        if search_opts['exclude']:
+        if search_opts['having']:
             ee = EvaluateExpression()
-            exclude_evaluator = ee.compile(search_opts['exclude'])
-            exclude_sources = {}
-            if expression_contains_property(search_opts['exclude']):
-                exclude_sources['properties'] = True
-            if expression_contains_tags(search_opts['exclude']):
-                exclude_sources['tags'] = True
+            having_evaluator = ee.compile(search_opts['having'])
+            having_sources = {}
+            if expression_contains_property(search_opts['having']):
+                having_sources['properties'] = True
+            if expression_contains_tags(search_opts['having']):
+                having_sources['tags'] = True
         else:
-            exclude_evaluator = None
-            exclude_sources = {}
+            having_evaluator = None
+            having_sources = {}
 
-        if search_opts['recursive_exclude']:
+        if search_opts['subquery_having']:
             ee = EvaluateExpression()
-            recurse_exclude_evaluator = ee.compile(
-                search_opts['recursive_exclude'])
-            recurse_exclude_sources = {}
-            if expression_contains_property(search_opts['recursive_exclude']):
-                recurse_exclude_sources['properties'] = True
-            if expression_contains_tags(search_opts['recursive_exclude']):
-                recurse_exclude_sources['tags'] = True
+            subquery_having_evaluator = ee.compile(
+                search_opts['subquery_having'])
+            subquery_having_sources = {}
+            if expression_contains_property(search_opts['subquery_having']):
+                subquery_having_sources['properties'] = True
+            if expression_contains_tags(search_opts['subquery_having']):
+                subquery_having_sources['tags'] = True
         else:
-            recurse_exclude_evaluator = None
-            recurse_exclude_sources = {}
+            subquery_having_evaluator = None
+            subquery_having_sources = {}
 
         main_options["query"] = parse_date(query_text)
         files = self._execute_query(main_options)
@@ -304,14 +304,14 @@ class BagheeraSearcher:
         if not files:
             return
 
-        is_recursive = search_opts.get("recursive") is not None
-        if is_recursive:
+        is_subquery = search_opts.get("subquery") is not None
+        if is_subquery:
             if search_opts.get("type"):
                 main_options["type"] = search_opts["type"]
             elif "type" in main_options:
                 main_options.pop("type")
 
-            rec_query = search_opts.get("recursive")
+            rec_query = search_opts.get("subquery")
             query_text = parse_date(rec_query) if rec_query else ""
 
         files_count = 0
@@ -325,22 +325,22 @@ class BagheeraSearcher:
 
             self.ids_processed.add(file_id)
 
-            if exclude_evaluator:
+            if having_evaluator:
                 file_info = {'path': item["path"],
                              'filename': Path(item["path"]).name}
-                if exclude_sources.get('properties'):
+                if having_sources.get('properties'):
                     file_info = file_info | get_info(file_id)
-                if exclude_sources.get('tags'):
+                if having_sources.get('tags'):
                     file_info = file_info | get_tags(file_id)
             else:
                 file_info = None
 
-            if not file_info or not exclude_evaluator(file_info):
-                if is_recursive:
+            if not file_info or having_evaluator(file_info):
+                if is_subquery:
                     main_options["directory"] = item["path"]
-                    yield from self.search_recursive(
+                    yield from self.search_subquery(
                         query_text, main_options, search_opts, files_count,
-                        recurse_exclude_evaluator, recurse_exclude_sources
+                        subquery_having_evaluator, subquery_having_sources
                     )
                 else:
                     yield item

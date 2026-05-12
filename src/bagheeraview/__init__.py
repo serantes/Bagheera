@@ -1,12 +1,12 @@
 """
-Bagheera Search Tool: a search tool for Baloo.
+Bagheera Viewer: a image viewer with KDE/Baloo.
 """
 
-__appname__ = "BagheeraSearch"
+__appname__ = "BagheeraView"
 __version__ = "1.1.0"
 __author__ = "Ignacio Serantes"
 __email__ = "kde@aynoa.net"
-__license__ = "GPLv3"
+__license__ = "LGPL"
 __status__ = "Production"
 # "Prototype, Development, Alpha, Beta, Production, Stable, Deprecated"
 

@@ -3,7 +3,7 @@
 Bagheera is a suite of tools designed to improve the KDE Baloo experience. Developed and planned tools are:
 
 * **Search tool**
-* **Image viewer** (not available yet)
+* **Image viewer**
 * **Runner** (not available yet)
 
 ## Search Tool
@@ -33,7 +33,7 @@ Bagheera requires KDE Frameworks 6 (specifically Baloo and KFileMetaData) and Qt
 
 #### Prerequisites
 
-Before installing, ensure your system has the following KF6 development libraries and tools:
+Before installing, ensure your system has Python 3.13 and the following KF6 development libraries and tools:
 
 #### Arch Linux
 
@@ -50,7 +50,7 @@ sudo dnf install kf6-baloo-devel kf6-kcoreaddons-devel pkgconf-pkg-config gcc
 #### openSuSE
 
 ```bash
-zypper install baloo6-6 kcoreaddons6-dev pkgconf gcc
+zypper install kf6-baloo-devel kf6-kcoreaddons-devel python313-pyside6 pkgconf gcc
 ```
 
 #### Ubuntu / Debian (Testing/Unstable)
@@ -64,7 +64,7 @@ The installation process automatically compiles the required C++ wrapper (`libba
 
 ```bash
 git clone https://github.net/serantes/Bagheera.git
-sudo pip install "$PWD/Bagheera"
+sudo pip install "$PWD/Bagheera[faces,exiv]"
 rm -rf Bagheera # Optional if you want to remove sources.
 ```
 
@@ -76,9 +76,9 @@ If you don't want to install **Bagheera** system wide use *Python venv* to insta
 cd "<install_dir>"
 git clone https://github.net/serantes/Bagheera.git
 cd "Bagheera"
-python -m venv venv
+python -m venv venv --system-site-packages
 source venv/bin/activate
-pip install "$PWD/Bagheera"
+pip install "$PWD/Bagheera[faces,exiv]"
 deactivate
 rm -rf Bagheera # Optional if you want to remove sources.
 ```
@@ -190,6 +190,7 @@ options:
 ```
 
 ### Query help (obtained from bagheerasearch --help-query)
+
 ```txt
 Bagheera Search Tool uses the Baloo search engine, which is part of the KDE ecosystem, to perform file searches so next help is obtained from Baloo documentation on 2025-01-01, with some additional information, and it may not be up to date with the latest features or changes in Baloo. For the most current information, please refer to the official Baloo documentation or resources.
 

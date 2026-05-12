@@ -3,36 +3,49 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "bagheerasearch"
-version = "1.1.0"
+name = "bagheera-suite"
+version = "1.0.0"
 authors = [{ name="Ignacio Serantes" }]
-description = "Bagheera Search Tool"
+description = "Bagheera Suite: Search Tool and Image Viewer for KDE/Baloo"
 readme = "README.md"
 requires-python = ">=3.8"
-license = {file = "LICENSE.md"}
+license = {text = "GPL-3.0-or-later"}
 classifiers = [
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Programming Language :: Python :: 3",
     "Operating System :: POSIX :: Linux",
     "Framework :: KDE",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Topic :: Multimedia :: Graphics :: Viewers",
 ]
 dependencies = [
     "lmdb",
     "pyparsing",
+    "PySide6",
+    "psutil",
+    "watchdog",
+    "imagehash",
 ]
 
 [project.optional-dependencies]
 test = ["pytest"]
+faces = [
+    "face-recognition",
+    "face_recognition_models",
+    "mediapipe"
+]
+exiv = ["exiv2"]
 
 [project.scripts]
 bagheerasearch = "bagheerasearch.core:main"
+bagheeraview = "bagheeraview.core:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+zip-safe = false
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["bagheerasearch*"]
+include = ["bagheerasearch*", "bagheeraview*"]
 
 [tool.setuptools.package-data]
 "*" = ["libbaloo_wrapper.so"]
