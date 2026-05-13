@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Dict, Any, Iterator, Optional, Union
 
-from ...tools.baloo_tools import (get_info, get_tags)
+from ...tools.baloo_tools import (get_info, get_mime_type, get_tags)
 from ..query_parser_lib import parse_date
 
 from pyparsing import (
@@ -259,11 +259,14 @@ class BagheeraSearcher:
 
             if having_evaluator:
                 file_info = {'path': item["path"],
-                             'filename': Path(item["path"]).name}
+                             'filename': Path(item["path"]).name,
+                             'type': "Unknown"}
                 if having_sources.get('properties'):
                     file_info = file_info | get_info(file_id)
                 if having_sources.get('tags'):
                     file_info = file_info | get_tags(file_id)
+                if having_sources.get('type'):
+                    file_info['type'] = get_mime_type(file_id)
             else:
                 file_info = None
 
@@ -282,18 +285,20 @@ class BagheeraSearcher:
         """
         Main search generator. Yields file dictionaries.
         """
+        having_sources = {}
         if search_opts['having']:
             ee = EvaluateExpression()
             having_evaluator = ee.compile(search_opts['having'])
-            having_sources = {}
             if expression_contains_property(search_opts['having']):
                 having_sources['properties'] = True
             if expression_contains_tags(search_opts['having']):
                 having_sources['tags'] = True
+            if expression_contains_type(search_opts['having']):
+                having_sources['type'] = True
         else:
             having_evaluator = None
-            having_sources = {}
 
+        subquery_having_sources = {}
         if search_opts['subquery_having']:
             ee = EvaluateExpression()
             subquery_having_evaluator = ee.compile(
@@ -303,9 +308,10 @@ class BagheeraSearcher:
                 subquery_having_sources['properties'] = True
             if expression_contains_tags(search_opts['subquery_having']):
                 subquery_having_sources['tags'] = True
+            if expression_contains_type(search_opts['subquery_having']):
+                subquery_having_sources['type'] = True
         else:
             subquery_having_evaluator = None
-            subquery_having_sources = {}
 
         main_options["query"] = parse_date(query_text)
         files = self._execute_query(main_options)
@@ -336,11 +342,14 @@ class BagheeraSearcher:
 
             if having_evaluator:
                 file_info = {'path': item["path"],
-                             'filename': Path(item["path"]).name}
+                             'filename': Path(item["path"]).name,
+                             'type': "Unknown"}
                 if having_sources.get('properties'):
                     file_info = file_info | get_info(file_id)
                 if having_sources.get('tags'):
                     file_info = file_info | get_tags(file_id)
+                if having_sources.get('type'):
+                    file_info['type'] = get_mime_type(file_id)
             else:
                 file_info = None
 

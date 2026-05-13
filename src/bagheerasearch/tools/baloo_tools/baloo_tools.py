@@ -13,6 +13,30 @@ import sys
 import unicodedata
 from typing import List, Tuple
 
+
+INTERNAL_PROPERTY_MAP = {
+    'content': '',
+    'filename': 'F',
+    'mimetype': 'M',
+    'rating': 'R',
+    'tag': 'TAG-',
+    'tags': 'TA',
+    'usercomment': 'C'
+}
+
+MIME_TYPE_MAP = {
+    b'T0': 'Empty',
+    b'T1': 'Archive',
+    b'T2': 'Audio',
+    b'T3': 'Video',
+    b'T4': 'Image',
+    b'T5': 'Document',
+    b'T6': 'Spreadsheet',
+    b'T7': 'Presentation',
+    b'T8': 'Text',
+    b'T9': 'Folder',
+}
+
 PROPERTIES_ID_MAP = {
     '0': 'Empty',
     '1': 'BitRate',
@@ -100,15 +124,29 @@ PROPERTIES_ID_MAP = {
     '83': 'AssistiveAlternateDescription'
 }
 
-INTERNAL_PROPERTY_MAP = {
-    'content': '',
-    'filename': 'F',
-    'mimetype': 'M',
-    'rating': 'R',
-    'tag': 'TAG-',
-    'tags': 'TA',
-    'usercomment': 'C'
-}
+
+def get_mime_type_baloo_name(bstr: str) -> str:
+    """
+    Parses a raw string to extract and translate its type tag.
+
+    The function looks for a pattern starting with 'T' followed by
+    a digit (e.g., T4) delimited by \x00 and returns the corresponding
+    value from MIME_TYPE_MAP.
+
+    Args:
+        bstr (str): The binary string containing the raw metadata from Baloo.
+
+    Returns:
+        str: The translated type name or 'Unknown' if not found.
+    """
+    fields = bstr.split(b'\x00')
+
+    # Look for the field that starts with 'T' (e.g., b'T4')
+    for field in fields:
+        if field.startswith(b'T'):
+            return MIME_TYPE_MAP.get(field, "Unknown")
+
+    return "Unknown"
 
 
 def get_kfile_metadata_types(mime_type: str) -> List[str]:
@@ -267,15 +305,15 @@ class BalooTools:
             os.path.expanduser("~"), ".local/share/baloo/index"
         )
 
-    def get_docterms(self, file_id: int) -> json:
+    def get_docterms(self, file_id: int) -> str:
         """
-        Retrieves file metadata from the Baloo index.
+        Retrieves raw  metadata from the Baloo index.
 
         Args:
             file_id: The integer ID of the file.
 
         Returns:
-            A json with all file metadata fields.
+            A binary string with all data readed from LMDB.
         """
         try:
             # Using context manager ensures the environment is closed properly
@@ -301,13 +339,13 @@ class BalooTools:
                             if key != file_id_bytes:
                                 break
 
-                            return value.decode()
+                            return value
 
         except lmdb.Error as e:
             print(f"Warning: Failed to access Baloo LMDB index: "
                   f"{e}", file=sys.stderr)
 
-        return ''
+        return b''
 
     def get_info(self, file_id: int) -> json:
         """
@@ -355,6 +393,34 @@ class BalooTools:
                   f"{e}", file=sys.stderr)
 
         return {}
+
+    def get_mime_type(self, file_id: int) -> str:
+        """
+        Retrieves the MIME type of a file from the Baloo index.
+
+        Args:
+            file_id: The integer ID of the file.
+
+        Returns:
+            The MIME type as a string, or 'Unknown' if not found.
+        """
+        try:
+            return get_mime_type_baloo_name(self.get_docterms(file_id))
+        except Exception:
+            return "Unknown"
+
+    def get_rating(self, file_id: int) -> int:
+        """
+        Retrieves the file rating from the Baloo index.
+
+        Args:
+            file_id: The integer ID of the file.
+
+        Returns:
+            An integer value. Returns 0 if not found.
+        """
+        # TODO: This method is currently implemented in a naive way,
+        return 0
 
     def get_resolution(self, file_id: int, sep: str = 'x') -> Tuple[int, int]:
         """
@@ -462,6 +528,19 @@ class BalooTools:
                   f"{e}", file=sys.stderr)
 
         return {}
+
+    def get_user_comment(self, file_id: int) -> str:
+        """
+        Retrieves the file user comment from the Baloo index.
+
+        Args:
+            file_id: The integer ID of the file.
+
+        Returns:
+            An string value. Returns '' if not found.
+        """
+        # TODO: This method is currently implemented in a naive way,
+        return ''
 
 
 if __name__ == '__main__':
