@@ -98,7 +98,7 @@ To run the unit tests, ensure you have all dependencies and `pytest` installed. 
 
 ```bash
 source venv/bin/activate
-pip install -e . pytest
+pip install -e .['tests'] pytest
 python -m pytest
 ```
 
@@ -137,15 +137,22 @@ bagheerasearch --directory ~/Documents KDE --recursive "Baloo OR Bagheera" --typ
 #### Comparison Operators
 *   `:` : Contains (text comparison)
 *   `=` : Equal
-*   `==` : Equal (case-sensitive equal in Bagheera exclusion filters)
-*   `!=` : Not equal (not available with Baloo but can be used by Bagheera for exclusion filters)
+*   `==` : Case-sensitive equal (available only in Bagheera having expressions)
+*   `!=` : Not equal (available only in Bagheera having expressions)
+*   `!:` : Not contains (available only in Bagheera having expressions)
 *   `>`, `>=`, `<`, `<=` : Numeric and date comparisons
+
+#### Logical Operators
+*   `AND` : Available on Baloo queries and Bagheera having expressions
+*   `OR` : Available on Baloo queries and Bagheera having expressions
+*   `NOT` : Available on Bagheera having expressions
 
 #### Supported Types
 Use the `--type` flag or `type:` property:
-`Archive`, `Folder`, `Audio`, `Video`, `Image`, `Document`, `Spreadsheet`, `Presentation`, `Text`.
+`Archive`, `Audio`, `Document`, `Folder`, `Image`,`Presentation`,  `Spreadsheet`, `Text`, `Video`.
 
 #### Common Properties
+These are some common properties available to use in queries (full list in help).
 *   `filename`, `mimetype`, `modified`, `rating`, `tags`
 *   **Audio**: `Artist`, `Album`, `Duration`, `Genre`
 *   **Document**: `Author`, `PageCount`, `Title`
@@ -189,171 +196,10 @@ options:
   --version             show version information
 ```
 
-### Query help (obtained from bagheerasearch --help-query)
-
-```txt
-Bagheera Search Tool uses the Baloo search engine, which is part of the KDE ecosystem, to perform file searches so next help is obtained from Baloo documentation on 2025-01-01, with some additional information, and it may not be up to date with the latest features or changes in Baloo. For the most current information, please refer to the official Baloo documentation or resources.
-
-Baloo offers a rich syntax for searching through your files. Certain attributes of a file can be searched through.
-
-For example 'type' can be used to filter for files based on their general type:
-
-  type:Audio OR type:Document
-
-The following comparison operators are supported, but note that 'not equal' (!=) operator is not available in Baloo search engine.
-  · :   - contains (only for text comparison)
-  · =   - equal
-  · >   - greater than
-  · >=  - greater than or equal to
-  · <   - less than
-  · <=  - less than or equal to
-
-Currently the following types, to use in --type property, are supported:
-  · Archive
-  · Folder
-  · Audio
-  · Video
-  · Image
-  · Document
-    · Spreadsheet
-    · Presentation
-  · Text
-
-These expressions can be combined using logical operators 'AND' or 'OR' and additional parenthesis, but note that 'NOT' logical operator is not available.
-
-
-The full list of properties which can be searched is listed below. They are grouped by file types.
-
-All Files
-  · filename
-  · mimetype
-  · modified (formated as yyyy-MM-dd[ hh[:mm[:ss]]])
-  · rating
-  · tags
-  · userComment
-
-Audio
-  · Album
-  · AlbumArtist
-  · Artist
-  · BitRate
-  · Channels
-  · Comment
-  · Composer
-  · Duration (this value must be in seconds, for example use 'duration > 300' to find files longer than 5 minutes)
-  · Genre
-  · Lyricist
-  · ReleaseYear
-  · SampleRate
-  · TrackNumber
-
-Documents
-  · Author
-  · Copyright
-  · CreationDate (formated as yyyy-MM-dd[ hh[:mm[:ss]]])
-  · Generator
-  · Keywords
-  · Language
-  · LineCount
-  · PageCount
-  · Publisher
-  · Subject
-  · Title
-  · WordCount
-
-Media
-  · AspectRatio
-  · FrameRate
-  · Height
-  · Width
-
-Images
-  · ImageDateTime
-  · ImageMake
-  · ImageModel
-  · ImageOrientation
-  · PhotoApertureValue
-  · PhotoDateTimeOriginal
-  · PhotoExposureBiasValue
-  · PhotoExposureTime
-  · PhotoFlash
-  · PhotoFNumber
-  · PhotoFocalLength
-  · PhotoFocalLengthIn35mmFilm
-  · PhotoGpsAltitude
-  · PhotoGpsLatitude
-  · PhotoGpsLongitude
-  · PhotoISOSpeedRatings
-  · PhotoMeteringMode
-  · PhotoPixelXDimension
-  · PhotoPixelYDimension
-  · PhotoSaturation
-  · PhotoSharpness
-  · PhotoWhiteBalance
-
-Next properties are undocumented but available in source code, may work or not, but worth trying:
-  · AssistiveAlternateDescription
-  · Arranger
-  · AudioCodec
-  · ColorSpace
-  · Compilation
-  · Conductor
-  · Description
-  · DiscNumber
-  · Ensemble
-  · Label
-  · License
-  · Location
-  · Lyrics
-  · Manufacturer
-  · Model
-  · Opus
-  · OriginUrl
-  · OriginEmailSubject
-  · OriginEmailSender
-  · OriginEmailMessageId
-  · Performer
-  · PixelFormat
-  · ReplayGainAlbumPeak
-  · ReplayGainAlbumGain
-  · ReplayGainTrackPeak
-  · ReplayGainTrackGain
-  · TranslationUnitsTotal
-  · TranslationUnitsWithTranslation
-  · TranslationUnitsWithDraftTranslation
-  · TranslationLastAuthor
-  · TranslationLastUpDate
-  · TranslationTemplateDate
-  · VideoCodec
-
-Baloo documentation ends here, but Bagheera Search Tool adds some extra features on top of it.
-
-
-Search engine recognizes some natural language sentences in English, as long as they are capitalized, and transforms them into queries that can be interpreted by the search engine.
-
-Supported natural language sentences and patterns for queries are:
-  · MODIFIED TODAY
-  · MODIFIED YESTERDAY
-  · MODIFIED THIS [ DAY | WEEK | MONTH | YEAR ]
-  · MODIFIED LAST <NUMBER> [ DAYS | WEEKS | MONTHS | YEARS ]
-  · MODIFIED <NUMBER> [ DAYS | WEEKS | MONTHS | YEARS ] AGO
-
-<NUMBER> can be any number or a number text from ONE to TWENTY.
-
-
-The --exclude and --recursive-exclude options allow you to filter files out of the results.
-The syntax for both options supports parentheses and logical operators (AND, OR, and NOT) to combine multiple patterns.
-In addition to standard query comparison operators, the not equal (!=) operator is available for comparing properties against specific values. Furthermore, you can compare two properties directly; for example, 'width > height' is a valid expression.
-
-Remarks:
-  · Text comparisons are case sensitive with '==' operator but case insensitive with '=' and ':' operators. For example, 'filename:report' would match 'report.docx', 'Report.docx', and 'REPORT.docx', while 'filename==report.docx' would only match 'report.docx'.
-  · Tags comparisons are performed against both individual full tag string (using the '/' character as a level separator) and each individual level. All individual level values are normalized stripped of accents or diacritics. For example, a file tagged as 'Opera,Person/María Callas,Singer' would match any of the following elements: ['Callas', 'Maria', 'Person', 'Opera', 'Person/María Callas', 'Singer']."
-  · Only text and numeric data are supported, dates are not supported as of now.
-  · Baloo limit of at least three characters for property values is not applied in --exclude and --recursive-exclude options, so you can use shorter values in those options.
-
-For example, if you have a tag named 'Science' and another one 'Science Fiction' you can't obtain only results tagged with 'Science' becouse Baloo search engine will match both 'Science' and 'Science Fiction' tags when you use 'tags:Science' in your query. To exclude results tagged with 'Science Fiction' you can use the following query:
-    bagheerasearch tags:Science --exclude tags:Fiction
-```
+Full query help are available typing:
+```bash
+ bagheerasearch --help-query
+ ```
 
 ---
 *Bagheera uses Baloo documentation as a reference, but extends it with custom logic for a more robust CLI experience.*
