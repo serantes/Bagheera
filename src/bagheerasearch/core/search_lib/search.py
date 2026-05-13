@@ -22,12 +22,19 @@ ParserElement.enable_packrat()
 
 
 def expression_contains_property(text):
-    pattern = r"\b(?!tags\b)\w+[ \t]*(?:>=|<=|!=|=|>|<|:)"
+    # 'tags' and 'type' properties are excluded from this check as they are
+    #  handled separately
+    pattern = r"\b(?!tags\b|type\b)\w+[ \t]*(?:>=|<=|!=|!:|=|>|<|:)"
     return bool(re.search(pattern, text, re.IGNORECASE))
 
 
 def expression_contains_tags(text):
-    pattern = r"\btags\b[ \t]*(?:>=|<=|!=|=|>|<|:)"
+    pattern = r"\btags\b[ \t]*(?:>=|<=|!=|!:|=|>|<|:)"
+    return bool(re.search(pattern, text, re.IGNORECASE))
+
+
+def expression_contains_type(text):
+    pattern = r"\btype\b[ \t]*(?:>=|<=|!=|!:|=|>|<|:)"
     return bool(re.search(pattern, text, re.IGNORECASE))
 
 
@@ -65,6 +72,8 @@ class EvaluateExpression:
             return curr_l == curr_r
         if op == "!=":
             return curr_l != curr_r
+        if op == "!:":
+            return curr_r not in curr_l
         if op == ":":
             return curr_r in curr_l
 
@@ -103,7 +112,7 @@ class EvaluateExpression:
     def _build_grammar(self):
         # CRITICAL: '==' must come BEFORE '=' in the list
         # We use a list to ensure explicit priority in the parser
-        operators = one_of(["==", ">=", "<=", "!=", "=", ">", "<", ":"])
+        operators = one_of(["==", ">=", "<=", "!=", "!:", "=", ">", "<", ":"])
 
         identifier = Word(alphanums + "_./\\")
         quoted_string = QuotedString("'") | QuotedString('"')

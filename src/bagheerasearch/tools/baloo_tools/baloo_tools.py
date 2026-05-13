@@ -11,7 +11,7 @@ import os
 import re
 import sys
 import unicodedata
-from typing import Tuple
+from typing import List, Tuple
 
 PROPERTIES_ID_MAP = {
     '0': 'Empty',
@@ -100,6 +100,151 @@ PROPERTIES_ID_MAP = {
     '83': 'AssistiveAlternateDescription'
 }
 
+INTERNAL_PROPERTY_MAP = {
+    'content': '',
+    'filename': 'F',
+    'mimetype': 'M',
+    'rating': 'R',
+    'tag': 'TAG-',
+    'tags': 'TA',
+    'usercomment': 'C'
+}
+
+
+def get_kfile_metadata_types(mime_type: str) -> List[str]:
+    """
+    Translates a MIME type into KFileMetaData categories.
+
+    This function mirrors the C++ KFileMetaData::typesForMimeType logic,
+    returning a list of general categories (Audio, Video, Image, etc.)
+    based on the provided MIME type string.
+
+    Args:
+        mime_type (str): The full MIME type string.
+
+    Returns:
+        List[str]: A list of detected KFileMetaData types.
+    """
+    types = []
+
+    # Basic types - startsWith checks
+    if mime_type.startswith("audio/"):
+        types.append("Audio")
+    if mime_type.startswith("video/"):
+        types.append("Video")
+    if mime_type.startswith("image/"):
+        types.append("Image")
+    if mime_type.startswith("text/"):
+        types.append("Text")
+
+    # Generic document check
+    if "document" in mime_type:
+        types.append("Document")
+
+    # PowerPoint specific rules
+    if "powerpoint" in mime_type:
+        types.append("Presentation")
+        if "Document" not in types:
+            types.append("Document")
+
+    # Excel specific rules
+    if "excel" in mime_type:
+        types.append("Spreadsheet")
+        if "Document" not in types:
+            types.append("Document")
+
+    # Compressed tar archives: "application/x-<compression>-compressed-tar"
+    if mime_type.startswith("application/x-") and \
+       mime_type.endswith("-compressed-tar"):
+        types.append("Archive")
+
+    # Static Multi-Hash mapping
+    # Note: In Python, we use a dictionary of lists to simulate QMultiHash
+    type_mapper = {
+        "text/plain": ["Document"],
+        "application/msword": ["Document"],
+        "application/x-scribus": ["Document"],
+        "application/vnd.openxmlformats-officedocument."
+        "presentationml.presentation": ["Presentation"],
+        "application/vnd.openxmlformats-officedocument."
+        "presentationml.slideshow": ["Presentation"],
+        "application/vnd.openxmlformats-officedocument."
+        "presentationml.template": ["Presentation"],
+        "application/vnd.openxmlformats-officedocument."
+        "spreadsheetml.sheet": ["Spreadsheet"],
+        "application/vnd.oasis.opendocument.presentation": ["Presentation"],
+        "application/vnd.oasis.opendocument.spreadsheet": ["Spreadsheet"],
+        "application/pdf": ["Document"],
+        "application/postscript": ["Document"],
+        "application/x-dvi": ["Document"],
+        "application/rtf": ["Document"],
+        "application/epub+zip": ["Document"],
+        "application/vnd.amazon.mobi8-ebook": ["Document"],
+        "application/x-mobipocket-ebook": ["Document"],
+        "application/vnd.comicbook-rar": ["Document"],
+        "application/vnd.comicbook+zip": ["Document"],
+        "application/x-cb7": ["Document"],
+        "application/x-cbt": ["Document"],
+        # Archive formats
+        "application/gzip": ["Archive"],
+        "application/x-tar": ["Archive"],
+        "application/x-tarz": ["Archive"],
+        "application/x-arc": ["Archive"],
+        "application/x-archive": ["Archive"],
+        "application/x-bzip": ["Archive"],
+        "application/x-cpio": ["Archive"],
+        "application/x-lha": ["Archive"],
+        "application/x-lhz": ["Archive"],
+        "application/x-lrzip": ["Archive"],
+        "application/x-lz4": ["Archive"],
+        "application/x-lzip": ["Archive"],
+        "application/x-lzma": ["Archive"],
+        "application/x-lzop": ["Archive"],
+        "application/x-7z-compressed": ["Archive"],
+        "application/x-ace": ["Archive"],
+        "application/x-astrotite-afa": ["Archive"],
+        "application/x-alz": ["Archive"],
+        "application/vnd.android.package-archive": ["Archive"],
+        "application/x-arj": ["Archive"],
+        "application/vnd.ms-cab-compressed": ["Archive"],
+        "application/x-cfs-compressed": ["Archive"],
+        "application/x-dar": ["Archive"],
+        "application/x-lzh": ["Archive"],
+        "application/x-lzx": ["Archive"],
+        "application/vnd.rar": ["Archive"],
+        "application/x-stuffit": ["Archive"],
+        "application/x-stuffitx": ["Archive"],
+        "application/x-tzo": ["Archive"],
+        "application/x-ustar": ["Archive"],
+        "application/x-xar": ["Archive"],
+        "application/x-xz": ["Archive"],
+        "application/x-zoo": ["Archive"],
+        "application/zip": ["Archive"],
+        "application/zlib": ["Archive"],
+        "application/zstd": ["Archive"],
+        # WPS Office
+        "application/wps-office.doc": ["Document"],
+        "application/wps-office.xls": ["Document", "Spreadsheet"],
+        "application/wps-office.pot": ["Document", "Presentation"],
+        "application/wps-office.wps": ["Document"],
+        "application/wps-office.docx": ["Document"],
+        "application/wps-office.xlsx": ["Document", "Spreadsheet"],
+        "application/wps-office.pptx": ["Document", "Presentation"],
+        # Others
+        "text/markdown": ["Document"],
+        "image/vnd.djvu+multipage": ["Document"],
+        "application/x-lyx": ["Document"],
+    }
+
+    # Append mapped values if exact match is found
+    if mime_type in type_mapper:
+        for mapped_type in type_mapper[mime_type]:
+            # Avoid duplicates if already added by prefix/contains checks
+            if mapped_type not in types:
+                types.append(mapped_type)
+
+    return types
+
 
 def normalize_text(text):
     """
@@ -121,6 +266,48 @@ class BalooTools:
         self.baloo_db_path = os.path.join(
             os.path.expanduser("~"), ".local/share/baloo/index"
         )
+
+    def get_docterms(self, file_id: int) -> json:
+        """
+        Retrieves file metadata from the Baloo index.
+
+        Args:
+            file_id: The integer ID of the file.
+
+        Returns:
+            A json with all file metadata fields.
+        """
+        try:
+            # Using context manager ensures the environment is closed properly
+            with lmdb.Environment(
+                self.baloo_db_path,
+                subdir=False,
+                readonly=True,
+                lock=False,
+                max_dbs=20
+            ) as env:
+                document_data_db = env.open_db(b'docterms')
+
+                with env.begin() as txn:
+                    cursor = txn.cursor(document_data_db)
+
+                    # Convert ID to 8-byte little-endian format
+                    file_id_bytes = int.to_bytes(
+                        file_id, length=8, byteorder='little', signed=False
+                    )
+
+                    if cursor.set_range(file_id_bytes):
+                        for key, value in cursor:
+                            if key != file_id_bytes:
+                                break
+
+                            return value.decode()
+
+        except lmdb.Error as e:
+            print(f"Warning: Failed to access Baloo LMDB index: "
+                  f"{e}", file=sys.stderr)
+
+        return ''
 
     def get_info(self, file_id: int) -> json:
         """
@@ -283,7 +470,7 @@ if __name__ == '__main__':
         try:
             target_id = int(sys.argv[1], 16)
             bt = BalooTools()
-            print(bt.get_info(target_id))
+            print(bt.get_docterms(target_id))
         except ValueError:
             print("Error: Please provide a valid hexadecimal file ID.",
                   file=sys.stderr)
