@@ -9,8 +9,6 @@ import json
 import os
 import sys
 from pathlib import Path
-# from baloo_tools import get_resolution
-# from date_query_parser import parse_date
 from .search_lib import BagheeraSearcher
 
 # --- CONFIGURATION ---
@@ -77,7 +75,9 @@ Currently the following types, to use in --type property, are supported:
 These expressions can be combined using logical operators 'AND' or 'OR' and additional parenthesis, but note that 'NOT' logical operator is not available.
 
 
-The full list of properties which can be searched is listed below. They are grouped by file types.
+- SEARCHABLE PROPERTIES -
+
+The full list of searchable properties is listed below, grouped by file type.
 
 All Files
   · filename
@@ -146,7 +146,7 @@ Images
   · PhotoSharpness
   · PhotoWhiteBalance
 
-Next properties are undocumented but available in source code, may work or not, but worth trying:
+The following properties are undocumented but available in the source code. They may or may not work, but are worth trying:
   · AssistiveAlternateDescription
   · Arranger
   · AudioCodec
@@ -183,9 +183,12 @@ Next properties are undocumented but available in source code, may work or not, 
 
 Baloo documentation ends here, but {PROG_NAME} adds some extra features on top of it.
 
-Search engine recognizes some natural language sentences in English, as long as they are capitalized, and transforms them into queries that can be interpreted by the search engine.
 
-Supported natural language sentences and patterns for queries are:
+- BAGHEERA-SPECIFIC FEATURES -
+
+The search engine recognizes certain English natural language phrases, provided they are capitalized, and transforms them into queries that can be interpreted by the engine.
+
+Supported natural language patterns are:
   · MODIFIED TODAY
   · MODIFIED YESTERDAY
   · MODIFIED THIS [ DAY | WEEK | MONTH | YEAR ]
@@ -194,19 +197,33 @@ Supported natural language sentences and patterns for queries are:
 
 <NUMBER> can be any number or a number text from ONE to TWENTY.
 
+- 'Subquery' option -
 
-The --having and --subquery-having options allow you to filter files out of the results.
+The '--subquery' option allows you to perform a secondary search within the results of a main query. This is particularly useful for refining searches within specific folders or categories. When using '--subquery', the main query first filters results based on the initial criteria; the subquery is then applied to all files located within those results to further narrow down the search.
+You can provide a query string with the '--subquery' option to filter the results of the main query, or you can use the option without additional text to simply list all items within those results.
+This behavior is useful for performing deep searches. For example, you can search for all folders with 'Project' in their name and then use a subquery to find documents within those folders that were modified in the last week.
+
+Example:
+This is a complex query to locate all files of the 'Presentation' type situated within any directory that contains 'KDE' in its name, specifically under the '~/Documents' path. The search is further refined to include only those files that contain either 'Baloo' or 'Bagheera' in their metadata or filename and are not tagged as 'Obsolete' or 'Revised'.
+    {PROG_ID} --directory '~/Documents' KDE --subquery 'Baloo OR Bagheera' --type Presentation --having 'NOT (tags=Obsolete OR tags=Revised)'
+
+
+- 'Having' and 'subquery-having' options -
+
+The '--having' and '--subquery-having' options allow you to filter files out of the results.
 The syntax for both options supports parentheses and logical operators (AND, OR, and NOT) to combine multiple patterns.
-In addition to standard query comparison operators, the not equal (!=) operator is available for comparing properties against specific values. Furthermore, you can compare two properties directly; for example, 'width > height' is a valid expression.
+In addition to standard query comparison operators, 'case-sensitive equal' (==), 'not equal' (!=) and 'not include' (!:) operators are available for comparing properties against specific values. Furthermore, you can compare two properties directly; for example, 'width > height' is a valid expression.
 
 Remarks:
-  · Text comparisons are case sensitive with '==' operator but case insensitive with '=' and ':' operators. For example, 'filename:report' would match 'report.docx', 'Report.docx', and 'REPORT.docx', while 'filename==report.docx' would only match 'report.docx'.
-  · Tags comparisons are performed against both individual full tag string (using the '/' character as a level separator) and each individual level. All individual level values are normalized stripped of accents or diacritics. For example, a file tagged as 'Opera,Person/María Callas,Singer' would match any of the following elements: ['Callas', 'Maria', 'Person', 'Opera', 'Person/María Callas', 'Singer']."
-  · Only text and numeric data are supported, dates are not supported as of now.
-  · Baloo limit of at least three characters for property values is not applied in --having and --subquery-having options, so you can use shorter values in those options.
+. All text comparisons are case-insensitive except when 'case-sensitive equal' (==) is used. For example, 'filename:report' matches 'report.docx', 'Report.docx', and 'REPORT.docx', while 'filename==report.docx' only matches 'report.docx'.
+. Tag comparisons are performed against both the individual full tag string (using the '/' character as a level separator) and each individual level. All individual level values are normalized and stripped of accents or diacritics. For example, a file tagged as 'Opera,Person/Maria Callas,Singer' would match any of the following elements: ['Callas', 'Maria', 'Person', 'Opera', 'Person/Maria Callas', 'Singer']. Please pay attention to this behavior when using 'not contain' (!:) and 'not include' (!=) operators with tags, as they will match against all these values.
+. Only text and numeric data are supported; dates are not supported as of now for these specific options.
+. The property 'type' is not available for filtering in '--having' and '--subquery-having' options, but you can use it in the main query or with the '--type' option to filter results by type.
+. The Baloo limit of at least three characters for string property values is not applied in '--having' and '--subquery-having' options, allowing you to use shorter values.
 
-For example, if you have a tag named 'Science' and another one 'Science Fiction' you can't obtain only results tagged with 'Science' becouse Baloo search engine will match both 'Science' and 'Science Fiction' tags when you use 'tags:Science' in your query. To exclude results tagged with 'Science Fiction' you can use the following query:
-    {PROG_ID} tags:Science --having "NOT tags=Fiction" """
+Example:
+If you have a tag named 'Science' and another one 'Science Fiction', you cannot obtain only results tagged with 'Science' because the Baloo search engine will match both when using 'tags:Science'. To exclude 'Science Fiction', you can use the following query:
+    {PROG_ID} tags=Science --having "NOT tags=Fiction" """
     print(help_query)
 
 
