@@ -21,12 +21,6 @@ def get_mime_type(id: int) -> str:
     return tools.get_mime_type(id)
 
 
-def get_rating(id: int) -> int:
-    """Simplified interface for the library."""
-    tools = BalooTools()
-    return tools.get_rating(id)
-
-
 def get_resolution(id: int) -> Tuple[int, int]:
     """Simplified interface for the library."""
     tools = BalooTools()
@@ -39,7 +33,7 @@ def get_tags(id: int) -> json:
     return tools.get_tags(id)
 
 
-def get_user_comment(id: int) -> str:
+def get_xattr_terms(id: int) -> json:
     """Simplified interface for the library."""
     tools = BalooTools()
-    return tools.get_user_comment(id)
+    return tools.get_xattr_terms(id)

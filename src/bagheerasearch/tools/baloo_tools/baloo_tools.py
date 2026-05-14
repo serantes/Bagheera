@@ -15,13 +15,13 @@ from typing import List, Tuple
 
 
 INTERNAL_PROPERTY_MAP = {
-    'content': '',
-    'filename': 'F',
-    'mimetype': 'M',
-    'rating': 'R',
-    'tag': 'TAG-',
-    'tags': 'TA',
-    'usercomment': 'C'
+    'content': b'',
+    'filename': b'F',
+    'mimetype': b'M',
+    'rating': b'R',
+    'tag': b'TAG-',
+    'tags': b'TA',
+    'usercomment': b'C'
 }
 
 MIME_TYPE_MAP = {
@@ -542,6 +542,107 @@ class BalooTools:
         # TODO: This method is currently implemented in a naive way,
         return ''
 
+    def get_xattr_terms(self, file_id: int) -> json:
+        """
+        Retrieves a json with all available file xattr terms from the Baloo
+        index.
+
+        Args:
+            file_id: The integer ID of the file.
+
+        Returns:
+            A json with all available file xattr terms from the Baloo index.
+        """
+        try:
+            # Using context manager ensures the environment is closed properly
+            with lmdb.Environment(
+                self.baloo_db_path,
+                subdir=False,
+                readonly=True,
+                lock=False,
+                max_dbs=20
+            ) as env:
+                document_data_db = env.open_db(b'docxatrrterms')
+
+                with env.begin() as txn:
+                    cursor = txn.cursor(document_data_db)
+
+                    # Convert ID to 8-byte little-endian format
+                    file_id_bytes = int.to_bytes(
+                        file_id, length=8, byteorder='little', signed=False
+                    )
+
+                    if cursor.set_range(file_id_bytes):
+                        for key, value in cursor:
+                            if key != file_id_bytes:
+                                break
+
+                            tags = []
+                            rating = None
+                            user_comment = []
+
+                            fields = value.split(b'\x00')
+                            for field in fields:
+                                # Skip empty fields (like the trailing one)
+                                if not field:
+                                    continue
+
+                                if field.startswith(
+                                        INTERNAL_PROPERTY_MAP['tag']):
+                                    tag_value = field.removeprefix(
+                                        INTERNAL_PROPERTY_MAP['tag'])
+                                    tags.append(tag_value.decode(
+                                        "utf-8", errors="ignore"))
+
+                                elif field.startswith(INTERNAL_PROPERTY_MAP[
+                                        'usercomment']):
+                                    c_value = field[1:].decode(
+                                        "utf-8", errors="ignore")
+                                    user_comment.append(c_value)
+
+                                elif field.startswith(
+                                        INTERNAL_PROPERTY_MAP['rating']):
+                                    rating = field[1:].decode(
+                                        "utf-8", errors="ignore")
+
+                            result_set = set(tags)
+
+                            """ Must add individual parts of the tags to the
+                            result set to be able to match them with queries
+                            like 'tags:callas' or 'tags:maria' for tags "María
+                            Callas" or "Person/María Callas". To maintain Baloo
+                            tag behaviour with spaces, it's not possible to
+                            search for tags="María Callas" and must search for
+                            tags=María tags:Callas; items with spaces are not
+                            added to avoid syntax confusion."""
+                            for item in tags:
+                                parts = re.split(r'[ /\n\t]+', item)
+
+                                for part in parts:
+                                    if part:
+                                        result_set.add(part)
+                                        normalize_part = normalize_text(part)
+                                        if normalize_part:
+                                            result_set.add(normalize_part)
+
+                        tags = sorted(list(result_set))
+
+                        result = {}
+                        if tags:
+                            result['tags'] = tags
+                        if rating:
+                            result['rating'] = rating
+                        if user_comment:
+                            result['userComment'] = user_comment
+
+                        return result
+
+        except lmdb.Error as e:
+            print(f"Warning: Failed to access Baloo LMDB index: "
+                  f"{e}", file=sys.stderr)
+
+        return {}
+
 
 if __name__ == '__main__':
     # CLI execution support for testing
@@ -549,7 +650,10 @@ if __name__ == '__main__':
         try:
             target_id = int(sys.argv[1], 16)
             bt = BalooTools()
-            print(bt.get_docterms(target_id))
+            print('--- XATRR TERMS ---')
+            print(bt.get_xattr_terms(target_id))
+            print('--- TAGS ---')
+            print(bt.get_tags(target_id))
         except ValueError:
             print("Error: Please provide a valid hexadecimal file ID.",
                   file=sys.stderr)

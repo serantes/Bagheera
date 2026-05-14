@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Dict, Any, Iterator, Optional, Union
 
-from ...tools.baloo_tools import (get_info, get_mime_type, get_tags)
+from ...tools.baloo_tools import (get_info, get_mime_type, get_xattr_terms)
 from ..query_parser_lib import parse_date
 
 from pyparsing import (
@@ -21,21 +21,47 @@ from pyparsing import (
 ParserElement.enable_packrat()
 
 
-def expression_contains_property(text):
-    # 'tags' and 'type' properties are excluded from this check as they are
-    #  handled separately
-    pattern = r"\b(?!tags\b|type\b)\w+[ \t]*(?:>=|<=|!=|!:|=|>|<|:)"
-    return bool(re.search(pattern, text, re.IGNORECASE))
+def analyze_query_properties(text: str) -> dict:
+    """
+    Analyzes a query string and classifies properties, correctly handling
+    quoted values while identifying the property name preceding them.
 
+    Categories:
+    - xattr: tags, rating, usercomment
+    - type: type
+    - property: any other property followed by an operator
+    """
 
-def expression_contains_tags(text):
-    pattern = r"\btags\b[ \t]*(?:>=|<=|!=|!:|=|>|<|:)"
-    return bool(re.search(pattern, text, re.IGNORECASE))
+    # Pattern explanation:
+    # 1. ("[^"]*"|'[^']*') : Match quoted strings (to be skipped)
+    # 2. |                 : OR
+    # 3. \b(\w+)[ \t]*(?:==|!=|!:|>=|<=|=|>|<|:) : Match a property name + operator
+    pattern = r"\"[^\"]*\"|'[^']*'|\b(\w+)[ \t]*(?:==|!=|!:|>=|<=|=|>|<|:)"
 
+    results = {
+        "xattr": 0,
+        "type": 0,
+        "property": 0
+    }
 
-def expression_contains_type(text):
-    pattern = r"\btype\b[ \t]*(?:>=|<=|!=|!:|=|>|<|:)"
-    return bool(re.search(pattern, text, re.IGNORECASE))
+    xattr_keywords = {"tags", "rating", "usercomment"}
+
+    # finditer allows us to process matches one by one
+    for match in re.finditer(pattern, text, re.IGNORECASE):
+        # group(1) will only be present if the third part of the regex (the property) matched
+        prop_name = match.group(1)
+
+        if prop_name:
+            prop_lower = prop_name.lower()
+
+            if prop_lower in xattr_keywords:
+                results["xattr"] += 1
+            elif prop_lower == "type":
+                results["type"] += 1
+            else:
+                results["property"] += 1
+
+    return results
 
 
 class EvaluateExpression:
@@ -261,11 +287,11 @@ class BagheeraSearcher:
                 file_info = {'path': item["path"],
                              'filename': Path(item["path"]).name,
                              'type': "Unknown"}
-                if having_sources.get('properties'):
+                if having_sources.get('property') > 0:
                     file_info = file_info | get_info(file_id)
-                if having_sources.get('tags'):
-                    file_info = file_info | get_tags(file_id)
-                if having_sources.get('type'):
+                if having_sources.get('xattr') > 0:
+                    file_info = file_info | get_xattr_terms(file_id)
+                if having_sources.get('type') > 0:
                     file_info['type'] = get_mime_type(file_id)
             else:
                 file_info = None
@@ -285,32 +311,23 @@ class BagheeraSearcher:
         """
         Main search generator. Yields file dictionaries.
         """
-        having_sources = {}
         if search_opts['having']:
             ee = EvaluateExpression()
             having_evaluator = ee.compile(search_opts['having'])
-            if expression_contains_property(search_opts['having']):
-                having_sources['properties'] = True
-            if expression_contains_tags(search_opts['having']):
-                having_sources['tags'] = True
-            if expression_contains_type(search_opts['having']):
-                having_sources['type'] = True
+            having_sources = analyze_query_properties(search_opts['having'])
         else:
+            having_sources = {}
             having_evaluator = None
 
-        subquery_having_sources = {}
         if search_opts['subquery_having']:
             ee = EvaluateExpression()
             subquery_having_evaluator = ee.compile(
                 search_opts['subquery_having'])
             subquery_having_sources = {}
-            if expression_contains_property(search_opts['subquery_having']):
-                subquery_having_sources['properties'] = True
-            if expression_contains_tags(search_opts['subquery_having']):
-                subquery_having_sources['tags'] = True
-            if expression_contains_type(search_opts['subquery_having']):
-                subquery_having_sources['type'] = True
+            subquery_having_sources = analyze_query_properties(
+                search_opts['subquery_having'])
         else:
+            subquery_having_sources = {}
             subquery_having_evaluator = None
 
         main_options["query"] = parse_date(query_text)
@@ -344,11 +361,11 @@ class BagheeraSearcher:
                 file_info = {'path': item["path"],
                              'filename': Path(item["path"]).name,
                              'type': "Unknown"}
-                if having_sources.get('properties'):
+                if having_sources.get('property') > 0:
                     file_info = file_info | get_info(file_id)
-                if having_sources.get('tags'):
-                    file_info = file_info | get_tags(file_id)
-                if having_sources.get('type'):
+                if having_sources.get('xattr') > 0:
+                    file_info = file_info | get_xattr_terms(file_id)
+                if having_sources.get('type') > 0:
                     file_info['type'] = get_mime_type(file_id)
             else:
                 file_info = None
