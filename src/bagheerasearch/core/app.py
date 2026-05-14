@@ -218,7 +218,6 @@ Remarks:
 . All text comparisons are case-insensitive except when 'case-sensitive equal' (==) is used. For example, 'filename:report' matches 'report.docx', 'Report.docx', and 'REPORT.docx', while 'filename==report.docx' only matches 'report.docx'.
 . Tag comparisons are performed against both the individual full tag string (using the '/' character as a level separator) and each individual level. All individual level values are normalized and stripped of accents or diacritics. For example, a file tagged as 'Opera,Person/Maria Callas,Singer' would match any of the following elements: ['Callas', 'Maria', 'Person', 'Opera', 'Person/Maria Callas', 'Singer']. Please pay attention to this behavior when using 'not contain' (!:) and 'not include' (!=) operators with tags, as they will match against all these values.
 . Only text and numeric data are supported; dates are not supported as of now for these specific options.
-. The property 'type' is not available for filtering in '--having' and '--subquery-having' options, but you can use it in the main query or with the '--type' option to filter results by type.
 . The Baloo limit of at least three characters for string property values is not applied in '--having' and '--subquery-having' options, allowing you to use shorter values.
 
 Example:
