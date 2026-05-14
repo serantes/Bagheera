@@ -587,7 +587,8 @@ class BalooTools:
                                 if not field:
                                     continue
 
-                                if field.startswith(INTERNAL_PROPERTY_MAP['tag']):
+                                if field.startswith(
+                                        INTERNAL_PROPERTY_MAP['tag']):
                                     tag = field.removeprefix(
                                         INTERNAL_PROPERTY_MAP['tag'])
                                     tags.append(
@@ -598,7 +599,8 @@ class BalooTools:
                                     comment = field.removeprefix(
                                         INTERNAL_PROPERTY_MAP['usercomment'])
                                     user_comment.append(
-                                        comment.decode("utf-8", errors="ignore"))
+                                        comment.decode(
+                                            "utf-8", errors="ignore"))
 
                                 elif field.startswith(
                                         INTERNAL_PROPERTY_MAP['rating']):
