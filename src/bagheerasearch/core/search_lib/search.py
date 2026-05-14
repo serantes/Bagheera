@@ -35,7 +35,8 @@ def analyze_query_properties(text: str) -> dict:
     # Pattern explanation:
     # 1. ("[^"]*"|'[^']*') : Match quoted strings (to be skipped)
     # 2. |                 : OR
-    # 3. \b(\w+)[ \t]*(?:==|!=|!:|>=|<=|=|>|<|:) : Match a property name + operator
+    # 3. \b(\w+)[ \t]*(?:==|!=|!:|>=|<=|=|>|<|:) : Match a property name +
+    # operator
     pattern = r"\"[^\"]*\"|'[^']*'|\b(\w+)[ \t]*(?:==|!=|!:|>=|<=|=|>|<|:)"
 
     results = {
@@ -48,7 +49,8 @@ def analyze_query_properties(text: str) -> dict:
 
     # finditer allows us to process matches one by one
     for match in re.finditer(pattern, text, re.IGNORECASE):
-        # group(1) will only be present if the third part of the regex (the property) matched
+        # group(1) will only be present if the third part of the regex (the
+        # property) matched
         prop_name = match.group(1)
 
         if prop_name:

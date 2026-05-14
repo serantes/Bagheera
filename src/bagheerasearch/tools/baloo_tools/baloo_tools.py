@@ -572,14 +572,14 @@ class BalooTools:
                         file_id, length=8, byteorder='little', signed=False
                     )
 
+                    tags = []
+                    rating = 0
+                    user_comment = []
+
                     if cursor.set_range(file_id_bytes):
                         for key, value in cursor:
                             if key != file_id_bytes:
                                 break
-
-                            tags = []
-                            rating = None
-                            user_comment = []
 
                             fields = value.split(b'\x00')
                             for field in fields:
@@ -587,23 +587,26 @@ class BalooTools:
                                 if not field:
                                     continue
 
-                                if field.startswith(
-                                        INTERNAL_PROPERTY_MAP['tag']):
-                                    tag_value = field.removeprefix(
+                                if field.startswith(INTERNAL_PROPERTY_MAP['tag']):
+                                    tag = field.removeprefix(
                                         INTERNAL_PROPERTY_MAP['tag'])
-                                    tags.append(tag_value.decode(
-                                        "utf-8", errors="ignore"))
+                                    tags.append(
+                                        tag.decode("utf-8", errors="ignore"))
 
-                                elif field.startswith(INTERNAL_PROPERTY_MAP[
-                                        'usercomment']):
-                                    c_value = field[1:].decode(
-                                        "utf-8", errors="ignore")
-                                    user_comment.append(c_value)
+                                elif field.startswith(
+                                        INTERNAL_PROPERTY_MAP['usercomment']):
+                                    comment = field.removeprefix(
+                                        INTERNAL_PROPERTY_MAP['usercomment'])
+                                    user_comment.append(
+                                        comment.decode("utf-8", errors="ignore"))
 
                                 elif field.startswith(
                                         INTERNAL_PROPERTY_MAP['rating']):
-                                    rating = field[1:].decode(
-                                        "utf-8", errors="ignore")
+                                    rating = field.removeprefix(
+                                        INTERNAL_PROPERTY_MAP['rating'])
+                                    rating = int(
+                                        rating.decode(
+                                            "utf-8", errors="ignore"))
 
                             result_set = set(tags)
 
@@ -630,7 +633,7 @@ class BalooTools:
                         result = {}
                         if tags:
                             result['tags'] = tags
-                        if rating:
+                        if rating >= 0:
                             result['rating'] = rating
                         if user_comment:
                             result['userComment'] = user_comment
