@@ -110,25 +110,37 @@ class EvaluateExpression:
         if op in (">", "<", ">=", "<="):
             try:
                 curr_l, curr_r = float(l_val), float(r_val)
-                if op == ">": return curr_l > curr_r
-                if op == "<": return curr_l < curr_r
-                if op == ">=": return curr_l >= curr_r
-                if op == "<=": return curr_l <= curr_r
+                if op == ">":
+                    return curr_l > curr_r
+                if op == "<":
+                    return curr_l < curr_r
+                if op == ">=":
+                    return curr_l >= curr_r
+                if op == "<=":
+                    return curr_l <= curr_r
             except (ValueError, TypeError):
                 pass
 
         curr_l = str(l_val).lower()
         curr_r = str(r_val).lower()
 
-        if op == "=": return curr_l == curr_r
-        if op == "!=": return curr_l != curr_r
-        if op == "!:": return curr_r not in curr_l
-        if op == ":": return curr_r in curr_l
+        if op == "=":
+            return curr_l == curr_r
+        if op == "!=":
+            return curr_l != curr_r
+        if op == "!:":
+            return curr_r not in curr_l
+        if op == ":":
+            return curr_r in curr_l
 
-        if op == ">": return curr_l > curr_r
-        if op == "<": return curr_l < curr_r
-        if op == ">=": return curr_l >= curr_r
-        if op == "<=": return curr_l <= curr_r
+        if op == ">":
+            return curr_l > curr_r
+        if op == "<":
+            return curr_l < curr_r
+        if op == ">=":
+            return curr_l >= curr_r
+        if op == "<=":
+            return curr_l <= curr_r
 
         return False
 
@@ -144,7 +156,8 @@ class EvaluateExpression:
             r_val = right_val
 
         if isinstance(l_val, list):
-            if not l_val and (right_val is None or str(right_val).strip() == ""):
+            if not l_val and (
+               right_val is None or str(right_val).strip() == ""):
                 return self._compare_single(None, op, "")
             return any(self._compare_single(item, op, r_val) for item in l_val)
 
@@ -201,14 +214,18 @@ class EvaluateExpression:
         logical_expr = infix_notation(
             atom,
             [
-                ("NOT", 1, opAssoc.RIGHT, lambda t: (lambda d: not t[0][1](d))),
-                ("AND", 2, opAssoc.LEFT, lambda d_l: (lambda d: all(f(d) for f in d_l[0] if callable(f)))),
-                ("OR", 2, opAssoc.LEFT, lambda d_l: (lambda d: any(f(d) for f in d_l[0] if callable(f)))),
+                ("NOT", 1, opAssoc.RIGHT, lambda t: (
+                    lambda d: not t[0][1](d))),
+                ("AND", 2, opAssoc.LEFT, lambda d_l: (
+                    lambda d: all(f(d) for f in d_l[0] if callable(f)))),
+                ("OR", 2, opAssoc.LEFT, lambda d_l: (
+                    lambda d: any(f(d) for f in d_l[0] if callable(f)))),
             ]
         )
 
         # Define the sequence: a sequence is one or more logical expressions
-        full_expr_seq <<= OneOrMore(logical_expr).set_parse_action(handle_implicit_and)
+        full_expr_seq <<= OneOrMore(logical_expr).set_parse_action(
+            handle_implicit_and)
 
         return full_expr_seq
 
