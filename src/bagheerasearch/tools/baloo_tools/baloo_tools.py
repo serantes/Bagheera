@@ -630,7 +630,7 @@ class BalooTools:
                                         if normalize_part:
                                             result_set.add(normalize_part)
 
-                        tags = sorted(list(result_set))
+                            tags = sorted(list(result_set))
 
                         result = {}
                         if tags:
