@@ -14,8 +14,9 @@ from ...tools.baloo_tools import (get_info, get_mime_type, get_xattr_terms)
 from ..query_parser_lib import parse_date
 
 from pyparsing import (
-    alphanums, one_of, infix_notation,
-    Group, opAssoc, ParserElement, QuotedString, Word
+    alphanums, one_of, infix_notation, Group, OneOrMore, opAssoc,
+    ParserElement, QuotedString, Word, Optional as pyOptional, Forward,
+    Suppress
 )
 
 ParserElement.enable_packrat()
@@ -67,65 +68,75 @@ def analyze_query_properties(text: str) -> dict:
 
 
 class EvaluateExpression:
+    """
+    A class to parse and evaluate complex search expressions.
+
+    Features:
+    - Logical operators (AND, OR, NOT).
+    - Comparison operators (==, =, !=, !:, :, >, <, >=, <=).
+    - True recursive implicit AND logic (handles 'a (b c)' and '(a b)').
+    - Empty value handling (property: matches non-existence).
+    """
+
     def __init__(self):
+        """Initializes the evaluator and builds the grammar."""
         self.grammar = self._build_grammar()
 
+    def _is_empty(self, value):
+        """Checks if a value is None, an empty string, or an empty list."""
+        if value is None:
+            return True
+        if isinstance(value, (str, list)) and len(value) == 0:
+            return True
+        return False
+
     def _compare_single(self, l_val, op, r_val):
-        # 1. CASE SENSITIVE (Strict)
+        """Performs comparison between two values based on the operator."""
+        r_is_empty_query = r_val is None or (
+            isinstance(r_val, str) and not r_val.strip()
+        )
+
+        if r_is_empty_query:
+            l_is_empty = self._is_empty(l_val)
+            if op in ("=", ":", "=="):
+                return l_is_empty
+            if op in ("!=", "!:"):
+                return not l_is_empty
+            return False
+
         if op == "==":
             return str(l_val) == str(r_val)
 
-        # 2. NUMERIC LOGIC
         if op in (">", "<", ">=", "<="):
             try:
-                # We use float for numeric magnitude
                 curr_l, curr_r = float(l_val), float(r_val)
-                if op == ">":
-                    return curr_l > curr_r
-                if op == "<":
-                    return curr_l < curr_r
-                if op == ">=":
-                    return curr_l >= curr_r
-                if op == "<=":
-                    return curr_l <= curr_r
+                if op == ">": return curr_l > curr_r
+                if op == "<": return curr_l < curr_r
+                if op == ">=": return curr_l >= curr_r
+                if op == "<=": return curr_l <= curr_r
             except (ValueError, TypeError):
-                # Fallback to case-insensitive string if not numeric
                 pass
 
-        # 3. CASE INSENSITIVE (Default for =, !=, :)
         curr_l = str(l_val).lower()
         curr_r = str(r_val).lower()
 
-        if op == "=":
-            return curr_l == curr_r
-        if op == "!=":
-            return curr_l != curr_r
-        if op == "!:":
-            return curr_r not in curr_l
-        if op == ":":
-            return curr_r in curr_l
+        if op == "=": return curr_l == curr_r
+        if op == "!=": return curr_l != curr_r
+        if op == "!:": return curr_r not in curr_l
+        if op == ":": return curr_r in curr_l
 
-        # String fallback for magnitude if numeric failed
-        if op == ">":
-            return curr_l > curr_r
-        if op == "<":
-            return curr_l < curr_r
-        if op == ">=":
-            return curr_l >= curr_r
-        if op == "<=":
-            return curr_l <= curr_r
+        if op == ">": return curr_l > curr_r
+        if op == "<": return curr_l < curr_r
+        if op == ">=": return curr_l >= curr_r
+        if op == "<=": return curr_l <= curr_r
 
         return False
 
     def _compare(self, data, left_key, op, right_val):
-        # Normalizing keys for lookup, but KEEPING the values intact
+        """Resolves data keys and handles list-type values."""
         normalized_data = {k.lower(): v for k, v in data.items()}
+        l_val = normalized_data.get(left_key.lower(), None)
 
-        # Get left value from data or use as literal
-        l_val = normalized_data.get(left_key.lower(), left_key)
-
-        # Resolve right value: if it's a key in data, use its value.
-        # Important: use lower() only for the KEY lookup, not the value itself.
         r_key_lookup = str(right_val).lower()
         if r_key_lookup in normalized_data:
             r_val = normalized_data[r_key_lookup]
@@ -133,46 +144,84 @@ class EvaluateExpression:
             r_val = right_val
 
         if isinstance(l_val, list):
+            if not l_val and (right_val is None or str(right_val).strip() == ""):
+                return self._compare_single(None, op, "")
             return any(self._compare_single(item, op, r_val) for item in l_val)
 
         return self._compare_single(l_val, op, r_val)
 
-    def _build_grammar(self):
-        # CRITICAL: '==' must come BEFORE '=' in the list
-        # We use a list to ensure explicit priority in the parser
-        operators = one_of(["==", ">=", "<=", "!=", "!:", "=", ">", "<", ":"])
+    def _create_evaluator_func(self, tokens):
+        """Creates a lambda function for a parsed condition block."""
+        t = tokens[0]
+        if len(t) == 1:
+            return lambda data: self._compare(data, 'path', ':', t[0])
 
-        identifier = Word(alphanums + "_./\\")
+        l_key = t[0]
+        op = t[1]
+        r_val = t[2] if len(t) > 2 else ""
+        return lambda data: self._compare(data, l_key, op, r_val)
+
+    def _build_grammar(self):
+        """
+        Constructs a grammar where parentheses always contain
+        an Implicit AND sequence of expressions.
+        """
+        operators = one_of(["==", ">=", "<=", "!=", "!:", "=", ">", "<", ":"])
+        identifier = Word(alphanums + "_./\\-")
         quoted_string = QuotedString("'") | QuotedString('"')
         operand = quoted_string | identifier
 
-        condition = Group((operand + operators + operand) | operand)
-        condition.set_parse_action(lambda t: self._create_evaluator_func(t[0]))
+        condition = Group(
+            (operand + operators + pyOptional(operand)) |
+            operand
+        )
+        condition.set_parse_action(self._create_evaluator_func)
 
-        return infix_notation(
-            condition,
+        # Forward declaration for the full recursive sequence
+        full_expr_seq = Forward()
+
+        # Handle implicit AND (sequence of expressions)
+        def handle_implicit_and(t):
+            items = t.as_list()
+            if len(items) == 1:
+                return items[0]
+            return lambda data: all(f(data) for f in items if callable(f))
+
+        # Manually define parentheses to wrap the full sequence
+        lpar = Suppress("(")
+        rpar = Suppress(")")
+
+        # Parenthesized expression contains a sequence
+        parens = lpar + full_expr_seq + rpar
+
+        # Infix notation handles NOT, AND, OR
+        # We include 'parens' as a primary atom alongside 'condition'
+        atom = parens | condition
+
+        logical_expr = infix_notation(
+            atom,
             [
-                ("NOT", 1, opAssoc.RIGHT, lambda t: (
-                    lambda data: not t[0][1](data))),
-                ("AND", 2, opAssoc.LEFT, lambda t: (
-                    lambda data: all(f(data) for f in t[0] if callable(f)))),
-                ("OR", 2, opAssoc.LEFT, lambda t: (
-                    lambda data: any(f(data) for f in t[0] if callable(f)))),
-            ],
+                ("NOT", 1, opAssoc.RIGHT, lambda t: (lambda d: not t[0][1](d))),
+                ("AND", 2, opAssoc.LEFT, lambda d_l: (lambda d: all(f(d) for f in d_l[0] if callable(f)))),
+                ("OR", 2, opAssoc.LEFT, lambda d_l: (lambda d: any(f(d) for f in d_l[0] if callable(f)))),
+            ]
         )
 
-    def _create_evaluator_func(self, tokens):
-        if len(tokens) == 1:
-            return lambda data: self._compare(data, 'path', ':', tokens[0])
-        else:
-            return lambda data: self._compare(
-                data, tokens[0], tokens[1], tokens[2])
+        # Define the sequence: a sequence is one or more logical expressions
+        full_expr_seq <<= OneOrMore(logical_expr).set_parse_action(handle_implicit_and)
+
+        return full_expr_seq
 
     def compile(self, expression):
+        """Compiles a query string into a callable function."""
+        if not expression or not expression.strip():
+            return lambda data: True
+
         try:
-            return self.grammar.parse_string(expression, parse_all=True)[0]
+            parsed = self.grammar.parse_string(expression, parse_all=True)
+            return parsed[0]
         except Exception as e:
-            print(f"Compilation Error: {e}")
+            print(f"Syntax error on expression: {e}")
             return lambda data: False
 
 
