@@ -1226,7 +1226,7 @@ class SettingsDialog(QDialog):
 
     def update_mediapipe_status(self):
         """Checks for MediaPipe model file and updates UI accordingly."""
-        # --- Rostros ---
+        # --- Faces ---
         if self.face_engine_combo and "mediapipe" in AVAILABLE_FACE_ENGINES:
             model_exists = os.path.exists(MEDIAPIPE_FACE_MODEL_PATH)
             mediapipe_index = self.face_engine_combo.findText("mediapipe")
