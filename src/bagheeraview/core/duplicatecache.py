@@ -256,7 +256,6 @@ class DuplicateCache(QObject):
             with self._lmdb_env.begin(write=True) as txn:
                 lmdb_key = self._get_lmdb_key(dev_id, inode_key_bytes)
 
-                # Verificar si el archivo ya tenía un hash distinto (actualización)
                 # Check if the file already had a different hash (update)
                 old_val = txn.get(lmdb_key, db=self._hash_db)
                 if old_val:
@@ -269,7 +268,6 @@ class DuplicateCache(QObject):
                 txn.put(lmdb_key, value_str.encode('utf-8'), db=self._hash_db)
                 txn.put(hash_bytes, file_id_bytes, db=self._hash_to_files_db)
 
-                # Actualización incremental del BK-Tree persistente
                 # Incremental update of the persistent BK-Tree
                 self._persistent_bktree_add(txn, hash_bytes)  # noqa: E501
 
@@ -298,7 +296,7 @@ class DuplicateCache(QObject):
                 break
 
     def persistent_bktree_query(self, hash_str, max_dist):
-        """Busca en el árbol de disco hashes similares al proporcionado."""
+        """Searches the disk tree for similar hashes."""
         hash_bytes = self._hash_str_to_bytes(hash_str)
         results = []
         with QMutexLocker(self._db_lock):
@@ -471,7 +469,7 @@ class DuplicateCache(QObject):
                 if dev_id == 0 or not inode_key_bytes:
                     return False
 
-                # Limpiar el índice inverso antes de borrar la entrada principal
+                # Clear the reverse index before removing the main entry
                 val_bytes = txn.get(lmdb_key, db=self._hash_db)
                 if val_bytes:
                     try:
@@ -676,23 +674,21 @@ class DuplicateCache(QObject):
                         p1 = os.path.abspath(os.path.normpath(parts[0]))  # noqa: E501
                         p2 = os.path.abspath(os.path.normpath(parts[1]))
 
-                        # Prueba definitiva de identidad para symlinks/hardlinks
+                        # Definitive identity test for symlinks/hardlinks
                         try:
                             if os.path.samefile(p1, p2) or \
                                os.path.realpath(p1) == os.path.realpath(p2):
                                 keys_to_delete.append(key)
-                                # Move from pending to exception silently if now links
                                 links_to_ignore.append((p1, p2))  # noqa: E501
                                 continue
                         except OSError:
-                            # Si el archivo no existe, limpiar de pendientes
+                            # If file doesn't exist, remove from pending
                             keys_to_delete.append(key)
                             pass
 
                         sim = int(parts[2]) if len(parts) > 2 and parts[2] else None
                         ts = int(parts[3]) if len(parts) > 3 else 0  # noqa: E501
                         if os.path.exists(p1) and os.path.exists(p2):
-                            # Verificar si ya es una excepción conocida (por inodo)
                             # Check if it's already a known exception (by inode)
                             dev1, ino1 = self._get_inode_info(p1)
 
@@ -916,7 +912,7 @@ class DuplicateCache(QObject):
                         if len(parts) >= 2:
                             p1, p2 = parts[0], parts[1]  # noqa: E501
                             if p1 == old_path or p2 == old_path:
-                                # Actualizamos solo la ruta que ha cambiado
+                                # Update only the path that changed
                                 parts[0] = new_path if p1 == old_path else p1
                                 parts[1] = new_path if p2 == old_path else p2
                                 txn.put(key,
@@ -949,9 +945,7 @@ class DuplicateDetector(QThread):
         self.wait()  # Add this line
 
     def run(self):
-        # Asegurar que todas las rutas sean absolutas y normalizadas al inicio para
-        # total consistency
-        # total consistency
+        # Ensure all paths are absolute and normalized at the start
         self.paths_to_scan = [os.path.abspath(os.path.normpath(p))
                               for p in self.paths_to_scan]
 
@@ -1016,16 +1010,17 @@ class DuplicateDetector(QThread):
 
                 # Update UI during initial cache check (Phase 1 part A)
                 processed_initial += 1
-                cached_h, _, cached_path = \
-                    self.duplicate_cache.get_hash_info_for_path(path, mtime, dev, inode)
+                cached_h, _, cached_path = (
+                    self.duplicate_cache.get_hash_info_for_path(
+                        path, mtime, dev, inode)
+                )
 
                 if cached_h:  # noqa: E501
 
                     if cached_path == path:
                         path_to_hash[path] = (cached_h, dev, inode)
                     else:
-                        # El archivo se movió o renombró: actualizar caché y marcar
-                        # como sucio
+                        # File moved or renamed: update cache and mark as dirty
                         self.duplicate_cache.add_hash_for_path(
                             path, cached_h, mtime, dev, inode)
                         dirty_paths.add(path)
@@ -1035,8 +1030,7 @@ class DuplicateDetector(QThread):
                     paths_to_hash_parallel.append((path, mtime, dev, inode))
 
                 if time_module.perf_counter() - last_ui_update_time > 0.05:
-                    # Scale this part to 0-50% of the total bar
-                    # Scale this part to 0-50% of the total bar
+                    # Scale this part to 0-50% of the total progress bar
                     progress = int((processed_initial / total_unique) * total_files)
                     self.progress_update.emit(
                         progress, total_files * 2,
@@ -1052,7 +1046,6 @@ class DuplicateDetector(QThread):
             new_hashes = {}
             sem = QSemaphore(0)
 
-            # Phase 1 part B: Parallel hashing for new/changed files
             # Phase 1 part B: Parallel hashing for new/changed files
             processed_hashing = total_files - len(paths_to_hash_parallel)
 
@@ -1083,7 +1076,6 @@ class DuplicateDetector(QThread):
                     path_to_hash[p] = (h, dev, inode)
                     self.duplicate_cache.add_hash_for_path(p, h, mtime, dev, inode)
 
-        # Cargar duplicados pendientes existentes (a menos que sea force_full)
         # Load existing pending duplicates (unless force_full)
         if not self.force_full:
             pending = self.duplicate_cache.get_all_pending_duplicates()
@@ -1098,13 +1090,9 @@ class DuplicateDetector(QThread):
                     if np1 in dirty_paths or np2 in dirty_paths:
                         continue
 
-                    # Omitir identidades físicas (enlaces)
-                    # Skip physical identities (links)
                     # Skip physical identities (links)
                     try:
                         if np1 == np2 or os.path.samefile(np1, np2):
-                            # Mover de pendiente a excepción silenciosamente si ahora
-                            # son links
                             self.duplicate_cache.mark_as_exception(
                                 np1, np2, True, similarity=100)
                             self.duplicate_cache.mark_as_pending(np1, np2, False)
@@ -1113,22 +1101,21 @@ class DuplicateDetector(QThread):
                         continue
 
                     # Check if already marked as exception
-                    # Check if already marked as exception
                     dev1, ino1 = self.duplicate_cache._get_inode_info(np1)
                     dev2, ino2 = self.duplicate_cache._get_inode_info(np2)
                     if ino1 and ino2:
                         id1, id2 = f"{dev1}-{ino1.hex()}", f"{dev2}-{ino2.hex()}"
                         if frozenset((id1, id2)) in exceptions_set:
-                            # Si ya es una excepción, asegurar que no esté en pendientes
+                            # If already an exception, ensure it's not in pending
                             self.duplicate_cache.mark_as_pending(np1, np2, False)
                             continue
 
                     if p.similarity is None or p.similarity >= self.threshold:  # noqa: E501
 
-                        # Usar las rutas normalizadas en el resultado
+                        # Use normalized paths in the result
                         res = p._replace(path1=np1, path2=np2)
                         found_duplicates.append(res)
-                        # Guardar inodos para evitar recalcular en Phase 2
+                        # Save inodes to avoid recalculating in Phase 2
                         if ino1 and ino2:
                             unique_inode_pairs.add(frozenset((id1, id2)))
 
@@ -1138,7 +1125,7 @@ class DuplicateDetector(QThread):
 
         # --- KEY OPTIMIZATION: EARLY EXIT ---
         # If there are no new or modified files and no full analysis was forced,
-        # devolvemos los resultados que ya estaban en la base de datos de pendientes.
+        # return results already present in the pending database.
         if not dirty_paths and not self.force_full:
             self.progress_update.emit(
                 total_files * 2, total_files * 2,
@@ -1147,7 +1134,6 @@ class DuplicateDetector(QThread):
             self.detection_finished.emit()
             return
 
-        # 3. Phase 2: Incremental Comparison using Persistent BK-Tree
         # 3. Phase 2: Incremental Comparison using Persistent BK-Tree
         paths_to_query = list(dirty_paths) if not self.force_full \
             else unique_paths_to_scan
@@ -1191,11 +1177,9 @@ class DuplicateDetector(QThread):
                         continue
 
                     # 1. Check if it's exactly the same path (already normalized)
-                    # 1. Check if it's exactly the same path (already normalized)
                     if p1 == p2:
                         continue
 
-                    # 2. Check memory caches for physical identity (Inodes)
                     # 2. Check memory caches for physical identity (Inodes)
                     id1, id2 = f"{dev1}-{ino1.hex()}", f"{dev2}-{ino2.hex()}"
                     inode_pair = frozenset((id1, id2))
@@ -1203,7 +1187,6 @@ class DuplicateDetector(QThread):
                     if inode_pair in unique_inode_pairs or inode_pair in exceptions_set:
                         continue
 
-                    # 3. Absolute physical identity (pointers to the same object)
                     # 3. Absolute physical identity (pointers to the same object)
                     try:
                         if (dev1, ino1) == (dev2, ino2) or os.path.samefile(p1, p2):
@@ -1217,12 +1200,9 @@ class DuplicateDetector(QThread):
                         pass
 
                     # 4. Avoid duplicating pairs already processed in this session
-                    # (A-B is the same as B-A)
-                    # (A-B is the same as B-A)
                     if inode_pair in unique_inode_pairs:
                         continue
 
-                    # 5. Calculate actual similarity
                     # 5. Calculate actual similarity
                     sim = int((1.0 - (distance / MAX_DHASH_DISTANCE)) * 100)
                     if sim < self.threshold:

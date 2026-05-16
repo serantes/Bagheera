@@ -1763,6 +1763,14 @@ class MainWindow(QMainWindow):
             UITexts.MENU_CLEAR_CACHE.format(count, size_mb, disk_cache_size_mb))
         clear_cache_action.triggered.connect(self.clear_thumbnail_cache)
 
+        clean_metadata_action = cache_menu.addAction(
+            QIcon.fromTheme("edit-clear"), UITexts.MENU_CLEAN_METADATA_CACHE)
+        clean_metadata_action.triggered.connect(self.clean_stale_metadata_cache)
+
+        clean_directory_action = cache_menu.addAction(
+            QIcon.fromTheme("edit-clear"), UITexts.MENU_CLEAN_DIRECTORY_CACHE)
+        clean_directory_action.triggered.connect(self.clean_stale_directory_cache)
+
         menu.addSeparator()
 
         duplicates_menu = menu.addMenu(
@@ -2040,6 +2048,20 @@ class MainWindow(QMainWindow):
         self.cache_cleaner.finished_clean.connect(self.on_cache_cleaned)
         self.cache_cleaner.finished.connect(self._on_cache_cleaner_finished)
         self.cache_cleaner.start()
+
+    def clean_stale_metadata_cache(self):
+        """Starts a background thread to clean stale metadata entries."""
+        self.status_lbl.setText("Cleaning stale metadata...")
+        removed_count = self.cache.clean_stale_metadata()
+        self.status_lbl.setText(f"Cleaned {removed_count} stale metadata entries.")
+        self.rebuild_view()
+
+    def clean_stale_directory_cache(self):
+        """Starts a background thread to clean stale directory entries."""
+        self.status_lbl.setText("Cleaning stale directory cache...")
+        removed_count = self.cache.clean_stale_directories()
+        self.status_lbl.setText(f"Cleaned {removed_count} stale directory cache entries.")
+        self.rebuild_view()
 
     def on_cache_cleaned(self, count):
         """Slot for when the cache cleaning is finished."""
@@ -3566,6 +3588,12 @@ class MainWindow(QMainWindow):
 
                 self._update_internal_data(path, tags=item.data(TAGS_ROLE))
 
+                # Update LMDB metadata cache
+                try:
+                    st = os.stat(path)
+                    self.cache.set_metadata(st.st_dev, st.st_ino, st.st_mtime, tags, 0, path)
+                except OSError: pass
+
                 # Update proxy filter cache immediately
                 self.proxy_model.add_to_cache(path, tags)
 
@@ -3594,6 +3622,13 @@ class MainWindow(QMainWindow):
 
                 # Update the model data, which will trigger a view update.
                 item.setData(new_rating, RATING_ROLE)
+
+                # Update LMDB metadata cache
+                try:
+                    st = os.stat(path)
+                    tags = item.data(TAGS_ROLE) or []
+                    self.cache.set_metadata(st.st_dev, st.st_ino, st.st_mtime, tags, new_rating, path)
+                except OSError: pass
 
                 self._update_internal_data(path, rating=new_rating)
 
@@ -4023,6 +4058,12 @@ class MainWindow(QMainWindow):
                 # Update proxy filter cache to prevent stale filtering
                 self.proxy_model.add_to_cache(path, tags)
 
+                # Update LMDB metadata cache
+                try:
+                    st = os.stat(path)
+                    self.cache.set_metadata(st.st_dev, st.st_ino, st.st_mtime, tags, rating, path)
+                except OSError: pass
+
         if self.main_dock.isVisible():
             self.on_tags_tab_changed(self.tags_tabs.currentIndex())
 
@@ -4250,7 +4291,7 @@ class MainWindow(QMainWindow):
             self.btn_load_all.hide()
             self.btn_load_more.hide()
             self.btn_cancel_duplicates.hide()
-            QApplication.processEvents() # Force UI to render the new status
+            QApplication.processEvents()  # Force UI to render the new status
 
             # Detect if the term is an existing path or a search query
             is_file = os.path.exists(os.path.expanduser(t))
@@ -5068,6 +5109,12 @@ class MainWindow(QMainWindow):
 
         # Update the cache entry
         self.cache.rename_entry(old_path, new_path)
+
+        # Invalidate parent directory cache to force re-scan
+        self.cache.invalidate_directory_cache(os.path.dirname(old_path))
+        new_dir = os.path.dirname(new_path)
+        if new_dir != os.path.dirname(old_path):
+            self.cache.invalidate_directory_cache(new_dir)
 
         # Update other open viewers
         for v in self.viewers:

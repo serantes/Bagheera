@@ -45,7 +45,7 @@ from .constants import (
     APP_DATA_DIR, MIN_FREE_RAM_PERCENT, DISK_CACHE_MAX_BYTES,
     HAVE_BAGHEERASEARCH_LIB, IMAGE_EXTENSIONS,
     SCANNER_SETTINGS_DEFAULTS, SEARCH_CMD, THUMBNAIL_SIZES,
-    UITexts
+    UITexts, METADATA_DB_NAME, DIRECTORY_DB_NAME
 )
 
 from .imageviewer import ImageViewer
@@ -154,6 +154,16 @@ class ScannerWorker(QRunnable):
             curr_inode = stat_res.st_ino
             curr_dev = stat_res.st_dev
 
+            tags, rating = [], 0
+
+            # Attempt to get metadata from cache first to avoid xattr reads
+            cached_tags, cached_rating, _ = self.cache.get_metadata(
+                curr_dev, curr_inode, curr_mtime
+            )
+            metadata_cached = cached_tags is not None
+            if metadata_cached:
+                tags, rating = cached_tags, cached_rating
+
             smallest_thumb_for_signal = None
             min_size = min(sizes_to_check) if sizes_to_check else 0
 
@@ -197,11 +207,13 @@ class ScannerWorker(QRunnable):
                     # valid thumb exists, use it for signal
                     smallest_thumb_for_signal = res.image
 
-            tags = []
-            rating = 0
-            if self.load_metadata_flag:
+            if not metadata_cached and self.load_metadata_flag:
                 res_meta = load_common_metadata(fd)
                 tags, rating = res_meta.tags, res_meta.rating
+                # Update metadata cache for fast future rescans
+                self.cache.set_metadata(curr_dev, curr_inode, curr_mtime,
+                                        tags, rating, self.path)
+
             self.result = (self.path, smallest_thumb_for_signal,
                            curr_mtime, tags, rating, curr_inode, curr_dev)
         except (FileNotFoundError, PermissionError) as e:
@@ -534,6 +546,8 @@ class ThumbnailCache(QObject):
         self._db_lock = QMutex()  # Lock specifically for _db_handles access
         self._db_handles = {}  # Cache for LMDB database handles (dbi)
         self._cancel_loading = False
+        self._metadata_db = None
+        self._directory_db = None
         self._broken_cache = {}  # (dev, inode, size) -> (mtime, error_msg)
         self._cache_bytes_size = 0
         self._cache_writer = None
@@ -565,6 +579,8 @@ class ThumbnailCache(QObject):
                 create=True
             )
             logger.info(f"LMDB cache opened: {CACHE_PATH}")
+            self._metadata_db = self._lmdb_env.open_db(METADATA_DB_NAME, create=True)
+            self._directory_db = self._lmdb_env.open_db(DIRECTORY_DB_NAME, create=True)
 
             # Start the async writer thread
             self._cache_writer = CacheWriter(self)
@@ -599,6 +615,8 @@ class ThumbnailCache(QObject):
         self._loading_set.clear()
         self._futures.clear()
 
+        self._metadata_db = None
+        self._directory_db = None
         self._db_handles.clear()
         if hasattr(self, '_lmdb_env') and self._lmdb_env:
             self._lmdb_env.close()
@@ -655,6 +673,66 @@ class ThumbnailCache(QObject):
             return None
         finally:
             self._db_lock.unlock()
+
+    def get_metadata(self, dev_id, inode, mtime):
+        """Retrieves cached metadata (tags, rating) using dev/inode."""
+        if not self._lmdb_env or not self._metadata_db:
+            return None, 0, None
+
+        inode_key = struct.pack('Q', inode) if isinstance(inode, int) else inode
+        lmdb_key = f"{dev_id}-{inode_key.hex()}".encode('utf-8')
+
+        try:
+            with self._lmdb_env.begin(db=self._metadata_db, write=False) as txn:
+                val = txn.get(lmdb_key)
+                if val and len(val) >= 13:
+                    stored_mtime = struct.unpack('d', val[:8])[0]
+                    if abs(stored_mtime - mtime) < 0.001:
+                        rating = int(val[8])
+                        path_len = struct.unpack('I', val[9:13])[0]
+                        path = val[13:13+path_len].decode('utf-8')
+                        tags_str = val[13+path_len:].decode('utf-8')
+                        tags = [t for t in tags_str.split('\0') if t]
+                        return tags, rating, path
+        except Exception:
+            pass
+        return None, 0, None
+
+    def set_metadata(self, dev_id, inode, mtime, tags, rating, path):
+        """Queues a metadata update for the cache."""
+        if not self._cache_writer:
+            return
+        inode_key = struct.pack('Q', inode) if isinstance(inode, int) else inode
+        # Use Marker -1 for metadata
+        self._cache_writer.enqueue(
+            (dev_id, inode_key, None, mtime, -1, None, (tags, rating, path)),
+            block=False)
+
+    def get_directory_cache(self, path):
+        """Retrieves the cached file list for a directory."""
+        if not self._lmdb_env or not self._directory_db:
+            return 0, []
+        try:
+            with self._lmdb_env.begin(db=self._directory_db, write=False) as txn:
+                val = txn.get(path.encode('utf-8'))
+                if val and len(val) > 8:
+                    mtime = struct.unpack('d', val[:8])[0]
+                    files = val[8:].decode('utf-8').split('\0')
+                    return mtime, [f for f in files if f]
+        except Exception:
+            pass
+        return 0, []
+
+    def set_directory_cache(self, path, mtime, file_list):
+        """Stores the file listing for a directory."""
+        if not self._lmdb_env or not self._directory_db:
+            return
+        val = struct.pack('d', mtime) + '\0'.join(file_list).encode('utf-8')
+        try:
+            with self._lmdb_env.begin(db=self._directory_db, write=True) as txn:
+                txn.put(path.encode('utf-8'), val)
+        except Exception:
+            pass
 
     @contextmanager
     def _write_lock(self):
@@ -750,6 +828,72 @@ class ThumbnailCache(QObject):
             if img:
                 self._cache_bytes_size -= img.sizeInBytes()
         self._path_to_inode.pop(oldest_path, None)
+
+    def clean_stale_metadata(self, stop_check=None):
+        """
+        Removes metadata entries from the database for files that no longer exist.
+        """
+        if not self._lmdb_env or not self._metadata_db:
+            return 0
+
+        removed_count = 0
+        keys_to_delete = []
+
+        with self._lmdb_env.begin(db=self._metadata_db, write=False) as txn:
+            cursor = txn.cursor()
+            for key, value in cursor:
+                if stop_check and stop_check():
+                    return removed_count
+                if len(value) < 13:
+                    keys_to_delete.append(key)
+                    continue
+                try:
+                    # Value format: mtime(8) + rating(1) + path_len(4) + path + tags
+                    path_len = struct.unpack('I', value[9:13])[0]
+                    path = value[13:13+path_len].decode('utf-8')
+
+                    if not os.path.exists(path):
+                        keys_to_delete.append(key)
+                except Exception:
+                    keys_to_delete.append(key)  # Corrupted entry
+
+        if keys_to_delete:
+            with self._lmdb_env.begin(db=self._metadata_db, write=True) as txn:
+                for key in keys_to_delete:
+                    txn.delete(key)
+                    removed_count += 1
+            logger.info(f"Cleaned up {removed_count} stale metadata entries.")
+        return removed_count
+
+    def clean_stale_directories(self, stop_check=None):
+        """
+        Removes directory cache entries for directories that no longer exist.
+        """
+        if not self._lmdb_env or not self._directory_db:
+            return 0
+
+        removed_count = 0
+        keys_to_delete = []
+
+        with self._lmdb_env.begin(db=self._directory_db, write=False) as txn:
+            cursor = txn.cursor()
+            for key, value in cursor:
+                if stop_check and stop_check():
+                    return removed_count
+                if len(value) < 8:
+                    keys_to_delete.append(key)
+                    continue
+                path = key.decode('utf-8')
+                if not os.path.isdir(path):
+                    keys_to_delete.append(key)
+
+        if keys_to_delete:
+            with self._lmdb_env.begin(db=self._directory_db, write=True) as txn:
+                for key in keys_to_delete:
+                    txn.delete(key)
+                    removed_count += 1
+            logger.info(f"Cleaned up {removed_count} stale directory cache entries.")
+        return removed_count
 
     def _get_tier_for_size(self, requested_size):
         """Determines the ideal thumbnail tier based on the requested size."""
@@ -1112,18 +1256,36 @@ class ThumbnailCache(QObject):
             return
 
         data_to_write = []
+        meta_to_write = []
+        dirs_to_write = []
 
         # 1. Prepare data (image encoding) outside the transaction lock
         # This is CPU intensive, better done without holding the DB lock if possible,
         # though LMDB write lock mostly blocks other writers.
         for item in batch:
+            if len(item) >= 7 and item[4] == -1:  # Metadata Marker
+                dev_id, inode_key, _, mtime, _, _, (tags, rating, path) = item
+                lmdb_key = f"{dev_id}-{inode_key}".encode('utf-8')
+                tags_str = "\0".join(tags)
+                path_bytes = path.encode('utf-8')
+                val = struct.pack('d', mtime) + bytes([int(rating)]) + \
+                    struct.pack('I', len(path_bytes)) + path_bytes + tags_str.encode('utf-8')
+                meta_to_write.append((lmdb_key, val))
+                continue
+            if len(item) >= 5 and item[4] == -2:  # Directory Marker
+                _, path_key, _, mtime, _, _, file_list = item
+                paths_str = "\0".join(file_list)
+                val = struct.pack('d', mtime) + paths_str.encode('utf-8')
+                dirs_to_write.append((path_key, val))
+                continue
+
             # Small sleep to yield GIL/CPU to UI thread during heavy batch encoding
             QThread.msleep(1)
 
-            if len(item) == 6:
-                device_id, inode_key, img, mtime, size, path = item
+            if len(item) >= 6:
+                device_id, inode_key, img, mtime, size, path = item[:6]
             else:
-                device_id, inode_key, img, mtime, size = item
+                device_id, inode_key, img, mtime, size = item[:5]
                 path = None
 
             if not img or img.isNull():
@@ -1156,6 +1318,7 @@ class ThumbnailCache(QObject):
         # 2. Commit to DB in one transaction
         try:
             with env.begin(write=True) as txn:
+                # Write images
                 for device_id, size, inode_key, value_bytes in data_to_write:
                     # Ensure DB exists (creates if needed) using the current transaction
                     db = self._get_device_db(device_id, size, write=True, txn=txn)
@@ -1179,6 +1342,19 @@ class ThumbnailCache(QObject):
                                     txn.put(inode_key, value_bytes, db=db)
                             else:
                                 raise
+
+                # Write metadata
+                if meta_to_write:
+                    meta_db = env.open_db(METADATA_DB_NAME, txn=txn, create=True)
+                    for k, v in meta_to_write:
+                        txn.put(k, v, db=meta_db)
+
+                # Write directory listings
+                if dirs_to_write:
+                    dir_db = env.open_db(DIRECTORY_DB_NAME, txn=txn, create=True)
+                    for k, v in dirs_to_write:
+                        txn.put(k, v, db=dir_db)
+
         except Exception as e:
             logger.error(f"Error committing batch to LMDB: {e}")
             # If transaction failed, handles created within it are now invalid.
@@ -1308,6 +1484,15 @@ class ThumbnailCache(QObject):
                 self._cache_writer.enqueue(
                     (new_dev, new_inode_key, img, mtime, size, new_path),
                     block=False)
+
+            # Also update metadata cache path to prevent clean_stale_metadata from
+            # deleting it. Reuse current tags and rating.
+            if entries_to_rewrite:
+                m_mtime = entries_to_rewrite[0][2]
+                m_tags, m_rating, _ = self.get_metadata(old_dev, old_inode, m_mtime)
+                if m_tags is not None:
+                    self.set_metadata(new_dev, new_inode_key, m_mtime,
+                                      m_tags, m_rating, new_path)
 
         return True
 
@@ -1650,6 +1835,22 @@ class ImageScanner(QThread):
         if not self._is_running or current_depth > APP_CONFIG.get(
                 "scan_max_level", SCANNER_SETTINGS_DEFAULTS["scan_max_level"]):
             return
+
+        # Try to retrieve results from cache
+        dir_stat = None
+        try:
+            dir_stat = os.stat(str(dir_path))
+            cached_mtime, cached_files = self.cache.get_directory_cache(str(dir_path))
+            if cached_files and abs(cached_mtime - dir_stat.st_mtime) < 0.001:
+                for p in cached_files:
+                    if p and p not in self._seen_files:
+                        self.all_files.append(p)
+                        self._seen_files.add(p)
+                return
+        except OSError:
+            pass
+
+        files_in_dir = []
         try:
             for item in dir_path.iterdir():
                 if not self._is_running:
@@ -1659,9 +1860,16 @@ class ImageScanner(QThread):
                     if p not in self._seen_files:
                         self.all_files.append(p)
                         self._seen_files.add(p)
+                        files_in_dir.append(p)
                         self._update_viewers()
                 elif item.is_dir():
                     self._scan_directory(item, current_depth + 1)
+
+            # Cache findings for this directory
+            if files_in_dir and dir_stat:
+                self.cache.set_directory_cache(
+                    str(dir_path), dir_stat.st_mtime, sorted(files_in_dir))
+
         except (PermissionError, OSError):
             pass
 

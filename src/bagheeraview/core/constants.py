@@ -77,6 +77,8 @@ DUPLICATE_EXCEPTIONS_DB_NAME = b"exceptions"
 DUPLICATE_PENDING_DB_NAME = b"pending"
 DUPLICATE_BKTREE_DB_NAME = b"bktree"
 DUPLICATE_HASH_TO_FILES_DB_NAME = b"hash_to_files"
+METADATA_DB_NAME = b"metadata"
+DIRECTORY_DB_NAME = b"directories"
 
 
 def save_app_config():
@@ -507,6 +509,8 @@ _UI_TEXTS = {
         "MENU_CACHE": "Cache",
         "MENU_CLEAR_CACHE": "Clear cache ({} items, {:.1f} MB, {:.1f} MB on disk)",
         "MENU_CLEAN_CACHE": "Clean up invalid cache entries",
+        "MENU_CLEAN_METADATA_CACHE": "Clean up stale metadata cache",
+        "MENU_CLEAN_DIRECTORY_CACHE": "Clean up stale directory cache",
         "MENU_SHOW_TAGS": "Show Tags",
         "MENU_SHOW_INFO": "Show Information",
         "MENU_SHOW_FAVORITES": "Show Favorites",
@@ -1066,6 +1070,8 @@ _UI_TEXTS = {
         "MENU_CACHE": "Caché",
         "MENU_CLEAR_CACHE": "Limpiar caché ({} ítems, {:.1f} MB, {:.1f} MB en disco)",
         "MENU_CLEAN_CACHE": "Limpiar entradas de caché inválidas",
+        "MENU_CLEAN_METADATA_CACHE": "Limpiar caché de metadatos obsoletos",
+        "MENU_CLEAN_DIRECTORY_CACHE": "Limpiar caché de directorios obsoletos",
         "MENU_SHOW_TAGS": "Mostrar Etiquetas",
         "MENU_SHOW_INFO": "Mostrar Información",
         "MENU_SHOW_FAVORITES": "Mostrar Favoritos",
@@ -1638,6 +1644,8 @@ _UI_TEXTS = {
         "MENU_CACHE": "Caché",
         "MENU_CLEAR_CACHE": "Limpar caché ({} elementos, {:.1f} MB, {:.1f} MB en "
         "disco)",
+        "MENU_CLEAN_METADATA_CACHE": "Limpar caché de metadatos obsoletos",
+        "MENU_CLEAN_DIRECTORY_CACHE": "Limpar caché de directorios obsoletos",
         "MENU_CLEAN_CACHE": "Limpar entradas de caché inválidas",
         "MENU_SHOW_TAGS": "Amosar Etiquetas",
         "MENU_SHOW_INFO": "Amosar Información",
