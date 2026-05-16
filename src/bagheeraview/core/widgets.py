@@ -89,8 +89,8 @@ class TagTreeView(QTreeView):
             # Don't show menu for the root items "USED TAGS", "ALL TAGS"
             if item and item.parent():
                 menu = QMenu(self)
-                search_action = menu.addAction(QIcon.fromTheme("system-search"),
-                                               UITexts.SEARCH_BY_TAG)
+                search_action = menu.addAction(
+                    QIcon.fromTheme("system-search"), UITexts.SEARCH_BY_TAG)
                 add_and_action = menu.addAction(UITexts.SEARCH_ADD_AND)
                 add_or_action = menu.addAction(UITexts.SEARCH_ADD_OR)
 
@@ -242,7 +242,8 @@ class TagEditWidget(QWidget):
                     for t in tags:
                         tag_counts[t] = tag_counts.get(t, 0) + 1
                 # Combine tags from files and all available tags from Baloo
-                master = sorted(list(set(self.available_tags) | set(tag_counts.keys())))
+                master = sorted(
+                    list(set(self.available_tags) | set(tag_counts.keys())))
                 total = len(self.file_paths) if self.file_paths else 1
 
                 for t_path in master:
@@ -1040,9 +1041,18 @@ class FavoritesWidget(QWidget):
         if not query:
             return
 
+        # Ask for a comment before adding the favorite
+        new_comment, ok = QInputDialog.getText(
+            self, UITexts.EDIT_COMMENT_TITLE,
+            UITexts.EDIT_COMMENT_TEXT.format(query),
+            QLineEdit.Normal, "")
+
+        if not ok:
+            return
+
         row = self.table.rowCount()
         self.table.insertRow(row)
-        self.table.setItem(row, 0, QTableWidgetItem(""))
+        self.table.setItem(row, 0, QTableWidgetItem(new_comment))
         self.table.setItem(row, 1, QTableWidgetItem(query))
         self.table.setItem(row, 2, QTableWidgetItem(""))
         self.table.setCurrentCell(row, 0)

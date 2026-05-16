@@ -6,6 +6,64 @@ used throughout the application, such as file system helpers.
 """
 import os
 from contextlib import contextmanager
+from PySide6.QtDBus import QDBusConnection, QDBusMessage
+from .constants import PROG_ID, UITexts
+
+
+class PowerManager:
+    """Manages system power inhibition (screensaver, sleep) via DBus."""
+    _inhibit_counter = 0
+    _inhibit_cookie = None
+
+    @classmethod
+    def inhibit(cls):
+        """
+        Increments the inhibition counter and sends a DBus request to inhibit
+        the screensaver if it's the first request.
+        """
+        cls._inhibit_counter += 1
+        if cls._inhibit_counter > 1:
+            return
+
+        try:
+            msg = QDBusMessage.createMethodCall(
+                "org.freedesktop.ScreenSaver",
+                "/org/freedesktop/ScreenSaver",
+                "org.freedesktop.ScreenSaver",
+                "Inhibit"
+            )
+            msg.setArguments([PROG_ID, "Viewing images"])
+            reply = QDBusConnection.sessionBus().call(msg)
+            if reply.type() == QDBusMessage.ReplyMessage:
+                cls._inhibit_cookie = reply.arguments()[0]
+            else:
+                cls._inhibit_cookie = None
+        except Exception as e:
+            print(f"{UITexts.ERROR} inhibiting power management: {e}")
+            cls._inhibit_cookie = None
+
+    @classmethod
+    def uninhibit(cls):
+        """
+        Decrements the counter and releases the screensaver inhibit lock
+        via DBus when the counter reaches zero.
+        """
+        if cls._inhibit_counter > 0:
+            cls._inhibit_counter -= 1
+
+        if cls._inhibit_counter == 0 and cls._inhibit_cookie is not None:
+            try:
+                msg = QDBusMessage.createMethodCall(
+                    "org.freedesktop.ScreenSaver",
+                    "/org/freedesktop/ScreenSaver",
+                    "org.freedesktop.ScreenSaver",
+                    "UnInhibit"
+                )
+                msg.setArguments([int(cls._inhibit_cookie)])
+                QDBusConnection.sessionBus().call(msg)
+                cls._inhibit_cookie = None
+            except Exception as e:
+                print(f"{UITexts.ERROR} uninhibiting: {e}")
 
 
 @contextmanager

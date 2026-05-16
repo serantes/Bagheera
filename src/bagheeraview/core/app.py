@@ -4,14 +4,16 @@ Bagheera Image Viewer - Main Application.
 
 This is the main entry point for the Bagheera Image Viewer application. It
 initializes the main window, handles application-wide shortcuts, manages the
-thumbnail grid, and coordinates background scanning, caching, and image viewing.
+thumbnail grid, and coordinates background scanning, caching, and image
+viewing.
 
 The application uses a model-view-delegate pattern for the thumbnail grid to
 efficiently handle very large collections of images.
 
 Classes:
     AppShortcutController: Global event filter for keyboard shortcuts.
-    MainWindow: The main application window containing the thumbnail grid and docks.
+    MainWindow: The main application window containing the thumbnail grid and
+    docks.
 """
 
 import sys
@@ -25,16 +27,17 @@ from collections import deque
 from itertools import groupby
 
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QLineEdit,
-    QTextEdit, QPushButton, QFileDialog, QComboBox, QSlider, QMessageBox, QSizePolicy,
-    QMenu, QInputDialog, QTableWidget, QTableWidgetItem, QHeaderView, QTabWidget,
-    QProgressDialog, QDockWidget, QAbstractItemView, QRadioButton, QButtonGroup,
-    QListView, QStyledItemDelegate, QStyle, QDialog, QKeySequenceEdit, QDialogButtonBox
+    QApplication, QMainWindow, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
+    QLineEdit, QTextEdit, QPushButton, QFileDialog, QComboBox, QSlider,
+    QMessageBox, QSizePolicy, QMenu, QInputDialog, QTableWidget,
+    QTableWidgetItem, QHeaderView, QTabWidget, QProgressDialog, QDockWidget,
+    QAbstractItemView, QRadioButton, QButtonGroup, QListView,
+    QStyledItemDelegate, QStyle, QDialog, QKeySequenceEdit, QDialogButtonBox
 )
 from PySide6.QtGui import (
-    QDesktopServices, QFont, QFontMetrics, QIcon, QTransform, QImageReader, QPalette,
-    QStandardItemModel, QStandardItem, QColor, QPixmap, QPixmapCache, QPainter,
-    QKeySequence, QAction, QActionGroup, QImage
+    QDesktopServices, QFont, QFontMetrics, QIcon, QTransform, QImageReader,
+    QPalette, QStandardItemModel, QStandardItem, QColor, QPixmap, QPixmapCache,
+    QPainter, QKeySequence, QAction, QActionGroup, QImage
 )
 from PySide6.QtCore import (
     Qt, QPoint, QUrl, QObject, QEvent, QTimer, QByteArray,
@@ -46,20 +49,21 @@ from PySide6.QtDBus import QDBusConnection, QDBusMessage, QDBus
 from pathlib import Path
 
 from .constants import (
-    APP_CONFIG, CACHE_PATH, CONFIG_PATH, DEFAULT_GLOBAL_SHORTCUTS, DEFAULT_LANGUAGE,
-    DEFAULT_VIEWER_SHORTCUTS, GLOBAL_ACTIONS, HISTORY_PATH, ICON_THEME,
-    ICON_THEME_FALLBACK, SCANNER_GENERATE_SIZES, IMAGE_MIME_TYPES, IMAGE_EXTENSIONS,
-    LAYOUTS_DIR, FAVORITES_PATH, PROG_AUTHOR,
-    PROG_NAME, PROG_VERSION, RATING_XATTR_NAME,
-    SCANNER_SETTINGS_DEFAULTS, SUPPORTED_LANGUAGES, TAGS_MENU_MAX_ITEMS_DEFAULT,
-    THUMBNAILS_BG_COLOR_DEFAULT, THUMBNAILS_DEFAULT_SIZE, VIEWER_ACTIONS,
-    THUMBNAILS_FILENAME_COLOR_DEFAULT, THUMBNAILS_TOOLTIP_BG_COLOR_DEFAULT,
-    HAVE_IMAGEHASH, FACES_MENU_MAX_ITEMS_DEFAULT,
-    THUMBNAILS_TOOLTIP_FG_COLOR_DEFAULT, THUMBNAILS_FILENAME_LINES_DEFAULT,
-    THUMBNAILS_FILENAME_FONT_SIZE_DEFAULT, THUMBNAILS_TAGS_LINES_DEFAULT,
-    THUMBNAILS_TAGS_COLOR_DEFAULT, THUMBNAILS_RATING_COLOR_DEFAULT,
-    THUMBNAILS_TAGS_FONT_SIZE_DEFAULT, THUMBNAILS_REFRESH_INTERVAL_DEFAULT,
-    THUMBNAIL_SIZES, XATTR_NAME, UITexts, save_app_config
+    APP_CONFIG, CACHE_PATH, CONFIG_PATH, DEFAULT_GLOBAL_SHORTCUTS,
+    DEFAULT_LANGUAGE, DEFAULT_VIEWER_SHORTCUTS, GLOBAL_ACTIONS,
+    HISTORY_PATH, ICON_THEME, ICON_THEME_FALLBACK, SCANNER_GENERATE_SIZES,
+    IMAGE_MIME_TYPES, IMAGE_EXTENSIONS, LAYOUTS_DIR, FAVORITES_PATH,
+    PROG_AUTHOR, PROG_NAME, PROG_VERSION, RATING_XATTR_NAME,
+    SCANNER_SETTINGS_DEFAULTS, SUPPORTED_LANGUAGES, VIEWER_ACTIONS,
+    TAGS_MENU_MAX_ITEMS_DEFAULT, THUMBNAILS_BG_COLOR_DEFAULT,
+    THUMBNAILS_DEFAULT_SIZE, THUMBNAILS_FILENAME_COLOR_DEFAULT,
+    THUMBNAILS_TOOLTIP_BG_COLOR_DEFAULT, HAVE_IMAGEHASH,
+    FACES_MENU_MAX_ITEMS_DEFAULT, THUMBNAILS_TOOLTIP_FG_COLOR_DEFAULT,
+    THUMBNAILS_FILENAME_LINES_DEFAULT, THUMBNAILS_FILENAME_FONT_SIZE_DEFAULT,
+    THUMBNAILS_TAGS_LINES_DEFAULT, THUMBNAILS_TAGS_COLOR_DEFAULT,
+    THUMBNAILS_RATING_COLOR_DEFAULT, THUMBNAILS_TAGS_FONT_SIZE_DEFAULT,
+    THUMBNAILS_REFRESH_INTERVAL_DEFAULT, THUMBNAIL_SIZES, XATTR_NAME,
+    UITexts, save_app_config
 )
 from .settings import SettingsDialog
 if HAVE_IMAGEHASH:
@@ -69,7 +73,7 @@ else:
     DuplicateCache = None
     DuplicateDetector = None
 from .imagescanner import (CacheCleaner, ImageScanner, ThumbnailCache,
-                          ThumbnailGenerator, ThreadPoolManager)
+                           ThumbnailGenerator, ThreadPoolManager)
 from .imageviewer import ImageViewer
 from .propertiesdialog import PropertiesDialog
 from .widgets import (
@@ -105,9 +109,10 @@ class ShortcutHelpDialog(QDialog):
         self.table.setColumnCount(2)
         self.table.setHorizontalHeaderLabels([UITexts.SHORTCUTS_ACTION,
                                               UITexts.SHORTCUTS_KEY])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(1,
-                                                           QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeToContents)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -142,16 +147,17 @@ class ShortcutHelpDialog(QDialog):
             category = val[3] if len(val) > 3 else "Global"
             seq = QKeySequence(get_int_modifiers(mods) | key)
             shortcut_str = seq.toString(QKeySequence.NativeText)
-            shortcuts_list.append({'cat': category, 'desc': desc, 'sc': shortcut_str,
-                                   'key': (key, mods), 'src': self.global_shortcuts})
+            shortcuts_list.append(
+                {'cat': category, 'desc': desc, 'sc': shortcut_str,
+                 'key': (key, mods), 'src': self.global_shortcuts})
 
         # Viewer Shortcuts
         for (key, mods), (action, desc) in self.viewer_shortcuts.items():
             seq = QKeySequence(get_int_modifiers(mods) | key)
             shortcut_str = seq.toString(QKeySequence.NativeText)
-            shortcuts_list.append({'cat': "Viewer", 'desc': desc, 'sc': shortcut_str,
-                                   'key': (key, mods),
-                                   'src': self.viewer_shortcuts})
+            shortcuts_list.append(
+                {'cat': "Viewer", 'desc': desc, 'sc': shortcut_str,
+                 'key': (key, mods), 'src': self.viewer_shortcuts})
 
         # Sort by Category then Description
         shortcuts_list.sort(key=lambda x: (x['cat'], x['desc']))
@@ -239,10 +245,12 @@ class ShortcutHelpDialog(QDialog):
         dialog.setWindowTitle(UITexts.SHORTCUT_EDIT_TITLE)
         layout = QVBoxLayout(dialog)
         layout.addWidget(
-            QLabel(UITexts.SHORTCUT_EDIT_LABEL.format(self.table.item(row, 0).text())))
+            QLabel(UITexts.SHORTCUT_EDIT_LABEL.format(
+                self.table.item(row, 0).text())))
         key_edit = QKeySequenceEdit(current_sequence)
         layout.addWidget(key_edit)
-        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         button_box.accepted.connect(dialog.accept)
         button_box.rejected.connect(dialog.reject)
         layout.addWidget(button_box)
@@ -266,7 +274,8 @@ class ShortcutHelpDialog(QDialog):
             if conflict_desc and not is_same:
                 QMessageBox.warning(self, UITexts.SHORTCUT_CONFLICT_TITLE,
                                     UITexts.SHORTCUT_CONFLICT_TEXT.format(
-                                        new_sequence.toString(QKeySequence.NativeText),
+                                        new_sequence.toString(
+                                            QKeySequence.NativeText),
                                         conflict_desc))
                 return
 
@@ -339,7 +348,8 @@ class AppShortcutController(QObject):
             pass
 
     def check_conflict(self, key, mods):
-        """Checks if a shortcut is already assigned and returns its description."""
+        """Checks if a shortcut is already assigned and returns its
+        description."""
         key_tuple = (int(key), mods)
 
         # Global
@@ -352,12 +362,14 @@ class AppShortcutController(QObject):
 
         # Favorites
         if key_tuple in self._favorite_shortcuts:
-            return f"{UITexts.FAVORITES_TAB}: {self._favorite_shortcuts[key_tuple]}"
+            return f"{UITexts.FAVORITES_TAB}: {
+                self._favorite_shortcuts[key_tuple]}"
 
         return None
 
     def _get_actions(self):
-        """Returns a dictionary mapping action strings to callable functions."""
+        """Returns a dictionary mapping action strings to callable
+        functions."""
         return {
             "quit_app": self._quit_app,
             "toggle_visibility": self._toggle_visibility,
@@ -5249,7 +5261,8 @@ class MainWindow(QMainWindow):
     def on_duplicate_detection_finished(self):
         """Cleans up after duplicate detection is complete."""
         self.progress_bar.setValue(100)
-        self.progress_bar.setCustomColor(QColor("#2ecc71"))  # Green for success
+        self.progress_bar.setCustomColor(
+            QColor("#2ecc71"))  # Green for success
         self.hide_progress_timer.start(2000)  # Hide after 2 seconds
         self.btn_cancel_duplicates.hide()
         self.status_counter_lbl.hide()

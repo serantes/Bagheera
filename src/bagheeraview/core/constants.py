@@ -115,8 +115,8 @@ ICON_THEME_VIEWER_FALLBACK = "image"
 IMAGE_EXTENSIONS = {'.bmp', '.gif', '.jpeg', '.jpg', '.png', '.tiff', '.webp'}
 IMAGE_MIME_TYPES = "Image files (*" + ' *'.join(IMAGE_EXTENSIONS) + ")"
 
-# Path to KDE's screen configuration file. Used for more accurate screen geometry.
-# Maybe needed, maybe not, for calculating screen geometry
+# Path to KDE's screen configuration file. Used for more accurate screen
+# geometry. Maybe needed, maybe not, for calculating screen geometry
 KSCREEN_DOCTOR_MARGIN = 0
 KWINOUTPUTCONFIG_PATH = os.path.join(os.path.expanduser("~"),
                                      ".config/kwinoutputconfig.json")
@@ -127,11 +127,12 @@ try:
     from bagheerasearch.core.search_lib.search import BagheeraSearcher
     HAVE_BAGHEERASEARCH_LIB = True
 except ImportError:
-     HAVE_BAGHEERASEARCH_LIB = False
-     pass
+    HAVE_BAGHEERASEARCH_LIB = False
+    pass
 
 BALOOSEARCH_EXEC = shutil.which("baloosearch") or shutil.which("baloosearch6")
-SEARCH_CMD = [BALOOSEARCH_EXEC, "--type", "image"] if BALOOSEARCH_EXEC else None
+SEARCH_CMD = [BALOOSEARCH_EXEC, "--type", "image"] \
+    if BALOOSEARCH_EXEC else None
 
 # --- TAGS ---
 TAGS_MENU_MAX_ITEMS_DEFAULT = 25

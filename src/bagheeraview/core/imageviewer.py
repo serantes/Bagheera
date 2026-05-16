@@ -26,7 +26,6 @@ from PySide6.QtCore import (
     Signal, QPoint, QSize, Qt, QMimeData, QUrl, QTimer, QEvent, QRect, Slot, QRectF,
     QThread, QObject
 )
-from PySide6.QtDBus import QDBusConnection, QDBusMessage, QDBus
 
 from .constants import (
     APP_CONFIG, DEFAULT_FACE_BOX_COLOR, DEFAULT_PET_BOX_COLOR, DEFAULT_VIEWER_SHORTCUTS,
@@ -39,6 +38,7 @@ from .constants import (
 )
 from .imagecontroller import ImageController
 from .widgets import FaceNameInputWidget
+from .utils import PowerManager
 from .propertiesdialog import PropertiesDialog
 
 
@@ -1632,8 +1632,6 @@ class ImageViewer(QWidget):
         if self.main_win:
             self.status_bar_container.setVisible(self.main_win.show_viewer_status_bar)
 
-        self.inhibit_screensaver()
-
         # Inactivity timer for fullscreen
         self.hide_controls_timer = QTimer(self)
         self.hide_controls_timer.setInterval(3000)
@@ -1648,6 +1646,9 @@ class ImageViewer(QWidget):
 
         # Highlight frame for active pane
         self.highlight = HighlightWidget(self.view_container)
+
+        # Global power management
+        self.inhibit_screensaver()
 
         # Initialize first pane
         self.add_pane(image_list, current_index, initial_tags, initial_rating)
@@ -3452,22 +3453,7 @@ class ImageViewer(QWidget):
         Uses DBus to send an inhibit request to the session's screen saver
         service, which is common on Linux desktops.
         """
-        try:
-            msg = QDBusMessage.createMethodCall(
-                "org.freedesktop.ScreenSaver",
-                "/org/freedesktop/ScreenSaver",
-                "org.freedesktop.ScreenSaver",
-                "Inhibit"
-            )
-            msg.setArguments(["bagheeraview", "Viewing images"])
-            reply = QDBusConnection.sessionBus().call(msg)
-            if reply.type() == QDBusMessage.ReplyMessage:
-                self.inhibit_cookie = reply.arguments()[0]
-            else:
-                self.inhibit_cookie = None
-        except Exception as e:
-            print(f"{UITexts.ERROR} inhibiting power management: {e}")
-            self.inhibit_cookie = None
+        PowerManager.inhibit()
 
     def uninhibit_screensaver(self):
         """
@@ -3476,16 +3462,4 @@ class ImageViewer(QWidget):
         Uses DBus to uninhibit the screensaver using the cookie obtained
         during the inhibit call.
         """
-        if hasattr(self, 'inhibit_cookie') and self.inhibit_cookie is not None:
-            try:
-                msg = QDBusMessage.createMethodCall(
-                    "org.freedesktop.ScreenSaver",
-                    "/org/freedesktop/ScreenSaver",
-                    "org.freedesktop.ScreenSaver",
-                    "UnInhibit"
-                )
-                msg.setArguments([self.inhibit_cookie])
-                QDBusConnection.sessionBus().call(msg, QDBus.NoBlock)
-                self.inhibit_cookie = None
-            except Exception as e:
-                print(f"{UITexts.ERROR} uninhibiting: {e}")
+        PowerManager.uninhibit()
