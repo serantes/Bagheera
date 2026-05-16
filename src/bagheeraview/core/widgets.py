@@ -129,7 +129,7 @@ class TagEditWidget(QWidget):
         search_layout = QHBoxLayout()
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText(UITexts.TAG_SEARCH_PLACEHOLDER)
-        # Obtener la altura preferida del QLineEdit para usarla en los botones
+        # Get the preferred height of the QLineEdit to use it for the buttons
         line_edit_height = self.search_bar.sizeHint().height()
         self.search_bar.setClearButtonEnabled(True)
         self.btn_add_tag = QPushButton("+")
