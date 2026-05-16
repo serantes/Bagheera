@@ -974,7 +974,7 @@ class FaceCanvas(QLabel):
         if self.drawing:
             self.drawing = False
             if self.current_rect.width() > 10 and self.current_rect.height() > 10:
-                region_type = "Face"
+                region_type = self.viewer.viewer._next_region_type
                 # Check if Control key was held down to allow selecting type
                 if event.modifiers() & Qt.ControlModifier:
                     menu = QMenu(self)
@@ -1026,6 +1026,9 @@ class FaceCanvas(QLabel):
                     main_win=self.viewer.main_win, region_type=region_type)
 
                 if ok and full_tag:
+                    if not self.controller.show_faces:
+                        self.viewer.viewer.toggle_faces()
+
                     if self.viewer.main_win:
                         if region_type == "Pet":
                             self.viewer.main_win.pet_names_history = updated_history
@@ -1045,6 +1048,10 @@ class FaceCanvas(QLabel):
                     self.controller.add_face(
                         full_tag, center_x, center_y, norm_w, norm_h,
                         region_type=region_type)
+
+                    if region_type != "Face":
+                        self.viewer.viewer.set_next_region_type("Face")
+
                     self.controller.toggle_tag(full_tag, True)
                     self.update()  # Repaint to show the new face with its name
             self.current_rect = QRect()
@@ -1507,6 +1514,7 @@ class ImageViewer(QWidget):
         self.main_win = parent
         self.cache = cache
         self.set_window_icon()
+        self._next_region_type = "Face"
         self.setAttribute(Qt.WA_DeleteOnClose)
         # Standard window buttons
         self.setWindowFlags(self.windowFlags() | Qt.WindowMaximizeButtonHint |
@@ -1874,6 +1882,11 @@ class ImageViewer(QWidget):
             "flip_vertical": self.toggle_flip_vertical,
             "detect_faces": self.run_face_detection,
             "detect_pets": self.run_pet_detection,
+            "add_face_mode": lambda: self.set_next_region_type("Face"),
+            "add_pet_mode": lambda: self.set_next_region_type("Pet"),
+            "add_body_mode": lambda: self.set_next_region_type("Body"),
+            "add_object_mode": lambda: self.set_next_region_type("Object"),
+            "add_landmark_mode": lambda: self.set_next_region_type("Landmark"),
             "detect_bodies": self.run_body_detection,
             "fast_tag": self.show_fast_tag_menu,
             "rotate_right": lambda: self.apply_rotation(90, True),
@@ -2534,6 +2547,11 @@ class ImageViewer(QWidget):
             info_text += UITexts.COMPARE_LINKED \
                 if self.panes_linked else UITexts.COMPARE_UNLINKED
 
+        if self.controller.show_faces and hasattr(self, '_next_region_type') \
+           and self._next_region_type:
+            type_text = getattr(UITexts, f"TYPE_{self._next_region_type.upper()}")
+            info_text += f"  |  {UITexts.NEXT_AREA.format(type_text)}"
+
         self.sb_info_label.setText(info_text)
 
         # Use tags from metadata if provided (priority to avoid race conditions),
@@ -2916,6 +2934,12 @@ class ImageViewer(QWidget):
                      "action": "detect_pets",
                      "enabled": bool(AVAILABLE_PET_ENGINES),
                      "tooltip": "" if AVAILABLE_PET_ENGINES else UITexts.NO_FACE_LIBS},
+                    "separator",
+                    {"text": UITexts.VIEWER_MENU_ADD_FACE, "action": "add_face_mode", "icon": "list-add"},
+                    {"text": UITexts.VIEWER_MENU_ADD_PET, "action": "add_pet_mode", "icon": "list-add"},
+                    {"text": UITexts.VIEWER_MENU_ADD_BODY, "action": "add_body_mode", "icon": "list-add"},
+                    {"text": UITexts.VIEWER_MENU_ADD_OBJECT, "action": "add_object_mode", "icon": "list-add"},
+                    {"text": UITexts.VIEWER_MENU_ADD_LANDMARK, "action": "add_landmark_mode", "icon": "list-add"},
                     ]},
                 "separator",
                 {"text": UITexts.VIEWER_MENU_MANIPULATE,
@@ -3063,6 +3087,12 @@ class ImageViewer(QWidget):
         """Vertically flips the image."""
         self.controller.toggle_flip_v()
         self.update_view(resize_win=False)
+
+    def set_next_region_type(self, region_type):
+        self._next_region_type = region_type
+        self.update_status_bar()
+        if not self.controller.show_faces:
+            self.toggle_faces()
 
     def contextMenuEvent(self, event):
         """Shows a context menu with viewer options.
@@ -3303,6 +3333,7 @@ class ImageViewer(QWidget):
             if self.active_pane:
                 self.main_win.show_faces = self.active_pane.controller.show_faces
             self.main_win.save_config()
+        self.update_status_bar()
 
     def show_fast_tag_menu(self):
         """Shows a context menu for quickly adding/removing tags."""
