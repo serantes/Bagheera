@@ -4161,6 +4161,15 @@ class MainWindow(QMainWindow):
         self.add_to_history(term)
         self.update_search_input()
 
+        # Ensure loading UI is active (backup for history/favorites calls)
+        if self.progress_bar.isHidden():
+            self.status_lbl.setText(UITexts.PREPARING_QUERY)
+            self.progress_bar.setRange(0, 0)
+            self.progress_bar.show()
+            self.btn_load_all.hide()
+            self.btn_load_more.hide()
+            self.btn_cancel_duplicates.hide()
+
         if term.startswith("layout:/"):
             if not self.is_xcb:
                 return
@@ -4234,9 +4243,18 @@ class MainWindow(QMainWindow):
         """Callback for when a search is triggered from the input box."""
         t = self.search_input.currentText().strip()
         if t:
+            # Immediate visual feedback before any disk/network check
+            self.status_lbl.setText(UITexts.PREPARING_QUERY)
+            self.progress_bar.setRange(0, 0)
+            self.progress_bar.show()
+            self.btn_load_all.hide()
+            self.btn_load_more.hide()
+            self.btn_cancel_duplicates.hide()
+            QApplication.processEvents() # Force UI to render the new status
+
             # Detect if the term is an existing path or a search query
-            self.process_term(f"file:/{t}" if os.path.exists(
-                os.path.expanduser(t)) else f"search:/{t}")
+            is_file = os.path.exists(os.path.expanduser(t))
+            self.process_term(f"file:/{t}" if is_file else f"search:/{t}")
 
     def select_directory(self):
         """Opens a file dialog to select an image or directory."""

@@ -952,6 +952,7 @@ _UI_TEXTS = {
         "FS_WATCHER_TOOLTIP": "File System Watcher (monitoring active directories)",
         "COPIED_TO": "Copied to {}",
         "ERROR_ROTATE_IMAGE": "Could not rotate image: {}",
+        "PREPARING_QUERY": "Preparing query...",
     },
     "es": {
         "READY": "Listo",
@@ -1517,6 +1518,7 @@ _UI_TEXTS = {
         "directorios activos)",
         "COPIED_TO": "Copiado a {}",
         "ERROR_ROTATE_IMAGE": "No se pudo girar la imagen: {}",
+        "PREPARING_QUERY": "Preparando consulta...",
     },
     "gl": {
         "READY": "Listo",
@@ -2082,6 +2084,7 @@ _UI_TEXTS = {
         "directorios activos)",
         "COPIED_TO": "Copiado a {}",
         "ERROR_ROTATE_IMAGE": "Non se puido xirar a imaxe: {}",
+        "PREPARING_QUERY": "Preparando consulta...",
     }
 }
 

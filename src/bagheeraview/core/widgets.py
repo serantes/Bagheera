@@ -28,7 +28,7 @@ from PySide6.QtGui import (
     QPalette, QAction, QKeySequence
 )
 from PySide6.QtCore import (
-    Signal, QSortFilterProxyModel, Slot, QStringListModel, Qt
+    Signal, QSortFilterProxyModel, Slot, QStringListModel, Qt, QTimer
 )
 
 from .metadatamanager import XattrManager
@@ -1298,10 +1298,40 @@ class CircularProgressBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._value = 0
+        self._min = 0
+        self._max = 100
         self._custom_color = None
+        self._angle = 0
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._rotate)
         # Match the height of other status bar widgets like buttons
         self.setFixedSize(22, 22)
         self.setToolTip(f"{self._value}%")
+
+    def _rotate(self):
+        self._angle = (self._angle + 10) % 360
+        self.update()
+
+    def setRange(self, min_val, max_val):
+        """Sets the progress range. Use (0, 0) for indeterminate mode."""
+        self._min = min_val
+        self._max = max_val
+        if min_val == 0 and max_val == 0:
+            if not self._timer.isActive():
+                self._timer.start(50)
+        else:
+            self._timer.stop()
+            self._angle = 0
+        self.update()
+
+    def hideEvent(self, event):
+        self._timer.stop()
+        super().hideEvent(event)
+
+    def showEvent(self, event):
+        if self._min == 0 and self._max == 0:
+            self._timer.start(50)
+        super().showEvent(event)
 
     def setCustomColor(self, color):
         """Sets a custom color for the progress arc. Pass None to use default."""
@@ -1310,6 +1340,9 @@ class CircularProgressBar(QWidget):
 
     def setValue(self, value):
         """Sets the progress value (0-100)."""
+        if self._min == 0 and self._max == 0:
+            # Switching from indeterminate to normal
+            self.setRange(0, 100)
         if self._value != value:
             self._value = max(0, min(100, value))
             self.setToolTip(f"{self._value}%")
@@ -1333,8 +1366,20 @@ class CircularProgressBar(QWidget):
         painter.setPen(QPen(track_color, 2))
         painter.drawEllipse(rect)
 
-        # 2. Draw the foreground arc (the progress)
-        if self._value > 0:
+        # 2. Draw the foreground arc
+        if self._min == 0 and self._max == 0:
+            # Indeterminate mode (spinning animation)
+            if self._custom_color:
+                progress_color = self._custom_color
+            else:
+                progress_color = self.palette().color(QPalette.Highlight)
+            pen = QPen(progress_color, 2)
+            pen.setCapStyle(Qt.RoundCap)
+            painter.setPen(pen)
+            start_angle = (90 - self._angle) * 16
+            span_angle = -120 * 16  # Fixed length arc for spinning
+            painter.drawArc(rect, start_angle, span_angle)
+        elif self._value > 0:
             # Use the palette's highlight color for the progress arc
             if self._custom_color:
                 progress_color = self._custom_color
