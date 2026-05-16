@@ -14,21 +14,21 @@ def test_basic_equality(eval_expr):
 
 
 def test_not_equal(eval_expr):
-    # Bagheera soporta != aunque Baloo no lo haga nativamente
+    # Bagheera supports != even if Baloo doesn't do it natively
     func = eval_expr.compile("rating != 5")
     assert func({"rating": "4"}) is True
     assert func({"rating": "5"}) is False
 
 
 def test_property_comparison(eval_expr):
-    # Comparación de dos campos: "width > height"
+    # Comparison of two fields: "width > height"
     func = eval_expr.compile("width > height")
     assert func({"width": 1920, "height": 1080}) is True
     assert func({"width": 800, "height": 1200}) is False
 
 
 def test_logical_operators(eval_expr):
-    # Combinación de AND, OR y NOT
+    # Combination of AND, OR and NOT
     expr = "(type=Audio OR type=Video) AND NOT artist=Unknown"
     func = eval_expr.compile(expr)
 
@@ -38,7 +38,7 @@ def test_logical_operators(eval_expr):
 
 
 def test_tags_matching(eval_expr):
-    # Simula el comportamiento de búsqueda en listas de tags
+    # Simulates the behavior of searching in tag lists
     func = eval_expr.compile("tags:vacaciones")
     data = {"tags": ["Personal", "Vacaciones", "2024"]}
     assert func(data) is True
@@ -48,7 +48,7 @@ def test_tags_matching(eval_expr):
 
 
 def test_case_sensitivity(eval_expr):
-    # '==' es estricto, ':' es flexible
+    # '==' is strict, ':' is flexible
     func_strict = eval_expr.compile("filename == Report.pdf")
     assert func_strict({"filename": "Report.pdf"}) is True
     assert func_strict({"filename": "report.pdf"}) is False

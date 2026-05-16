@@ -17,11 +17,11 @@ target_link_libraries(baloo_wrapper
     KF6::CoreAddons
 )
 
-# Importante: C++17 es necesario para el literal u"|"
+# Important: C++17 is necessary for the u"|" literal
 set_target_properties(baloo_wrapper PROPERTIES
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON
-    # Aseguramos que los símbolos marcados como default sean visibles
+    # We ensure that symbols marked as default are visible
     C_VISIBILITY_PRESET default
     CXX_VISIBILITY_PRESET default
     VISIBILITY_INLINES_HIDDEN OFF
