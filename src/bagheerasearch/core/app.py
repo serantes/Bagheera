@@ -341,7 +341,7 @@ def main():
         searcher = BagheeraSearcher()
         files_count = 0
 
-        # Consumir el generador de la librería
+        # Consume the library generator
         for item in searcher.search(query_text, main_options, other_options):
             if other_options["konsole"]:
                 output = f"file:/'{item['path']}'"
@@ -364,11 +364,11 @@ def main():
         print(e)
         sys.exit(1)
     except KeyboardInterrupt:
-        # Captura Ctrl+C dentro de main para una salida inmediata y limpia
+        # Capture Ctrl+C inside main for an immediate and clean exit
         print("\nSearch canceled at user request.")
         sys.exit(0)
     except BrokenPipeError:
-        # Silencia errores cuando se usa con 'head' o 'less' y se cierra el pipe
+        # Silence errors when used with 'head' or 'less' and the pipe is closed
         devnull = os.open(os.devnull, os.O_WRONLY)
         os.dup2(devnull, sys.stdout.fileno())
         sys.exit(1)
@@ -381,7 +381,7 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        # Respaldo por si la interrupción ocurre fuera del bloque principal de main
+        # Backup in case the interruption occurs outside the main block of main
         print("\nSearch canceled at user request.")
         try:
             sys.exit(0)

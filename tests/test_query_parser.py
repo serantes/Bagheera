@@ -42,7 +42,7 @@ def test_ago_expression(parser):
 
 
 def test_mixed_query(parser):
-    # Verifica que no rompa el resto de la búsqueda
+    # Verify it doesn't break the rest of the search
     input_q = "vacaciones MODIFIED TODAY"
     output_q = parser.parse_date(input_q)
     assert "vacaciones" in output_q

@@ -97,7 +97,7 @@ class BagheeraQueryParser:
             hour=0, minute=0, second=0, microsecond=0)
         q = self._convert_numbers(query)
 
-        # 1. Reemplazo de TODAY / YESTERDAY
+        # 1. Replacement of TODAY / YESTERDAY
         q = re.sub(r'\bMODIFIED\s+TODAY\b',
                    f"modified={self.today.strftime('%Y-%m-%d')}",
                    q, flags=re.IGNORECASE)
@@ -132,7 +132,7 @@ class BagheeraQueryParser:
         q = re.sub(r"\bMODIFIED\s+(LAST|THIS)\s+(YEAR|MONTH|WEEK)\b",
                    replace_simple, q, flags=re.IGNORECASE)
 
-        # 3. Reemplazo de LAST <N> (YEAR/MONTH/WEEK/DAY)
+        # 3. Replacement of LAST <N> (YEAR/MONTH/WEEK/DAY)
         def replace_last_n(m):
             n, unit = m.groups()
             unit = unit.upper()
@@ -158,7 +158,7 @@ class BagheeraQueryParser:
         q = re.sub(r"\bMODIFIED\s+LAST\s+(\d+)\s+(YEAR|MONTH|WEEK|DAY)S?\b",
                    replace_last_n, q, flags=re.IGNORECASE)
 
-        # 4. Reemplazo de <N> AGO
+        # 4. Replacement of <N> AGO
         def replace_ago(m):
             n, unit = m.groups()
             unit = unit.upper()
@@ -183,7 +183,7 @@ class BagheeraQueryParser:
 
 
 if __name__ == '__main__':
-    # Pruebas unitarias básicas para el parseo de fechas
+    # Basic unit tests for date parsing
     test_queries = [
         "MODIFIED TODAY",
         "first MODIFIED YESTERDAY last",

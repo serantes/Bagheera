@@ -9,16 +9,16 @@ from setuptools.command.build_ext import build_ext
 def compile_wrapper():
     base_path = os.path.abspath(os.path.dirname(__file__))
 
-    # Ruta de origen solicitada
+    # Source path requested
     source_file = os.path.join(
         base_path, 'src', 'bagheerasearch', 'tools', 'baloo_wrapper', 'baloo_wrapper.cpp'
     )
 
-    # Ruta de destino solicitada (dentro de core/bagheera_search_lib/)
+    # Destination path requested (inside core/bagheera_search_lib/)
     output_dir = os.path.join(base_path, 'src', 'bagheerasearch', 'core', 'search_lib')
     output_lib = os.path.join(output_dir, 'libbaloo_wrapper.so')
 
-    # Crear el directorio de destino si no existe
+    # Create destination directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
     if not os.path.exists(source_file):
@@ -76,7 +76,7 @@ class CustomBuildExt(build_ext):
         compile_wrapper()
         super().run()
 
-# Solo dejamos cmdclass, el resto se lee de pyproject.toml
+# Only cmdclass remains, the rest is read from pyproject.toml
 setup(
     cmdclass={
         'install': CustomInstall,

@@ -4,7 +4,7 @@ from bagheerasearch.core.app import main
 
 
 def test_version_output(capsys, monkeypatch):
-    # Simula ejecutar 'bagheerasearch --version'
+    # Simulate running 'bagheerasearch --version'
     monkeypatch.setattr(sys, "argv", ["bagheerasearch", "--version"])
     main()
 
@@ -13,13 +13,14 @@ def test_version_output(capsys, monkeypatch):
 
 
 def test_missing_year_with_month(monkeypatch):
-    # Debe lanzar un ValueError si se pone mes pero no año
+    # Should raise a ValueError if month is provided but not year
     monkeypatch.setattr(sys, "argv", ["bagheerasearch", "--month", "5"])
     with pytest.raises(ValueError, match="Missing --year"):
         main()
 
 
 def test_help_query(capsys, monkeypatch):
+    # Simulate running 'bagheerasearch --help-query' and check for expected output
     monkeypatch.setattr(sys, "argv", ["bagheerasearch", "--help-query"])
     main()
     captured = capsys.readouterr()

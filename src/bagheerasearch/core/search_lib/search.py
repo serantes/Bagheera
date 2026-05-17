@@ -455,13 +455,13 @@ class BagheeraSearcher:
 
 
 if __name__ == "__main__":
-    # Test de integración rápido
+    # Quick integration test
     print(f"Testing {__file__} integration:")
     try:
         searcher = BagheeraSearcher()
         print("✔ Library and wrapper loaded successfully.")
 
-        # Intento de búsqueda de prueba (limitado a 1 resultado)
+        # Test search attempt (limited to 1 result)
         test_main_opts = {"limit": 1}
         test_search_opts = {"limit": 1}
 

@@ -12,10 +12,10 @@
 #include <vector>
 #include <string>
 
-// Usamos extern "C" para evitar el "name mangling" de C++
+// Use extern "C" to avoid C++ name mangling
 extern "C" {
 
-    // Añadimos el atributo para forzar la visibilidad pública del símbolo
+    // Add the attribute to force public visibility of the symbol
     __attribute__((visibility("default")))
     const char* execute_baloo_query(const char* options_json) {
         // Parse JSON options
@@ -77,20 +77,20 @@ extern "C" {
 }
 
 extern "C" {
-    // Forzamos visibilidad para que ctypes lo vea
+    // Force visibility so ctypes can see it
     __attribute__((visibility("default")))
     const char* get_file_properties(const char* path) {
         QString filePath = QString::fromUtf8(path);
 
-        // Detectar tipo MIME
+        // Detect MIME type
         QMimeDatabase mimeDb;
         QString mimeType = mimeDb.mimeTypeForFile(filePath).name();
 
-        // Obtener extractores para ese tipo
+        // Get extractors for that type
         KFileMetaData::ExtractorCollection extractors;
         QList<KFileMetaData::Extractor*> exList = extractors.fetchExtractors(mimeType);
 
-        // Extraer metadatos
+        // Extract metadata
         KFileMetaData::SimpleExtractionResult result(filePath, mimeType);
         for (KFileMetaData::Extractor* ex : exList) {
             ex->extract(&result);
@@ -102,7 +102,7 @@ extern "C" {
         static std::string output;
         output = "";
 
-        // Formateamos las propiedades como un string simple: "Clave:Valor|Clave:Valor"
+        // Format the properties as a simple string: "Key:Value|Key:Value"
         for (auto it = props.constBegin(); it != props.constEnd(); ++it) {
             KFileMetaData::PropertyInfo pi(it.key());
 
