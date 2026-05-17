@@ -734,6 +734,16 @@ class ThumbnailCache(QObject):
         except Exception:
             pass
 
+    def invalidate_directory_cache(self, path):
+        """Removes the file list cache for a specific directory from disk."""
+        if not self._lmdb_env or not self._directory_db:
+            return
+        try:
+            with self._lmdb_env.begin(db=self._directory_db, write=True) as txn:
+                txn.delete(path.encode('utf-8'))
+        except lmdb.Error:
+            pass
+
     @contextmanager
     def _write_lock(self):
         """Context manager for write-safe access to cache."""
