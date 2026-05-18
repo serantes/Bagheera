@@ -1049,7 +1049,7 @@ class FaceCanvas(QLabel):
                         full_tag, center_x, center_y, norm_w, norm_h,
                         region_type=region_type)
 
-                    if region_type != "Face":
+                    if region_type != "Face" and APP_CONFIG.get("areas_reset_to_face", False):
                         self.viewer.viewer.set_next_region_type("Face")
 
                     self.controller.toggle_tag(full_tag, True)

@@ -834,6 +834,12 @@ class SettingsDialog(QDialog):
             UITexts.SETTINGS_USE_LAST_NAME_TOOLTIP)
         faces_layout.addWidget(self.landmark_use_last_name_check)
 
+        # --- General Areas Settings ---
+        faces_layout.addSpacing(10)
+        self.areas_reset_to_face_check = QCheckBox(UITexts.SETTINGS_AREAS_RESET_TO_FACE_LABEL)
+        self.areas_reset_to_face_check.setToolTip(UITexts.SETTINGS_AREAS_RESET_TO_FACE_TOOLTIP)
+        faces_layout.addWidget(self.areas_reset_to_face_check)
+
         # --- Viewer Tab ---
         viewer_wheel_layout = QHBoxLayout()
         viewer_wheel_label = QLabel(UITexts.SETTINGS_VIEWER_WHEEL_SPEED_LABEL)
@@ -940,6 +946,7 @@ class SettingsDialog(QDialog):
         body_use_last_name = APP_CONFIG.get("body_use_last_name", False)
         object_use_last_name = APP_CONFIG.get("object_use_last_name", False)
         landmark_use_last_name = APP_CONFIG.get("landmark_use_last_name", False)
+        areas_reset_to_face = APP_CONFIG.get("areas_reset_to_face", False)
 
         thumbs_refresh_interval = APP_CONFIG.get(
             "thumbnails_refresh_interval", THUMBNAILS_REFRESH_INTERVAL_DEFAULT)
@@ -1061,6 +1068,7 @@ class SettingsDialog(QDialog):
         self.body_use_last_name_check.setChecked(body_use_last_name)
         self.object_use_last_name_check.setChecked(object_use_last_name)
         self.landmark_use_last_name_check.setChecked(landmark_use_last_name)
+        self.areas_reset_to_face_check.setChecked(areas_reset_to_face)
 
         self.thumbs_refresh_spin.setValue(thumbs_refresh_interval)
         self.set_thumbs_bg_button_color(thumbs_bg_color)

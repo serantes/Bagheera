@@ -157,7 +157,8 @@ SCANNER_SETTINGS_DEFAULTS = {
     "duplicate_confirm_delete": True,
     "default_delete_to_trash": True,
     "duplicate_whitelist": "",
-    "duplicate_blacklist": ""
+    "duplicate_blacklist": "",
+    "areas_reset_to_face": False
 }
 
 # --- IMAGE VIEWER DEFAULTS ---
@@ -662,6 +663,9 @@ _UI_TEXTS = {
         "SETTINGS_USE_LAST_NAME_LABEL": "Use last name by default",
         "SETTINGS_USE_LAST_NAME_TOOLTIP": "Automatically fill the assignment window "
         "with the last used name.",
+        "SETTINGS_AREAS_RESET_TO_FACE_LABEL": "Reset to 'Face' after selection",
+        "SETTINGS_AREAS_RESET_TO_FACE_TOOLTIP": "Automatically switch back to 'Face' "
+        "mode after adding a different region type (Pet, Body, etc.).",
         "SETTINGS_FACE_HISTORY_COUNT_LABEL": "Max face history:",
         "SETTINGS_THUMBS_REFRESH_LABEL": "Thumbs refresh interval (ms):",
         "MENU_VIEWER_SETTINGS": "Viewer Settings",
