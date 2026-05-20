@@ -521,9 +521,13 @@ class TagEditWidget(QWidget):
 
             # Refresh status bar on any open viewer showing one of the modified files
             if self.main_win:
-                for viewer in self.main_win.viewers:
-                    if viewer.controller.get_current_path() in paths_to_index:
-                        viewer.update_status_bar()
+                for viewer in list(self.main_win.viewers):
+                    try:
+                        if viewer.isVisible() and \
+                           viewer.controller.get_current_path() in paths_to_index:
+                            viewer.update_status_bar()
+                    except RuntimeError:
+                        continue
 
             self.load_available_tags()
             self._load_all = False

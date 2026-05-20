@@ -2037,9 +2037,12 @@ class MainWindow(QMainWindow):
     def refresh_shortcuts(self):
         """Saves current shortcuts configuration and updates running viewers."""
         self.save_config()
-        for viewer in self.viewers:
-            if isinstance(viewer, ImageViewer):
-                viewer.refresh_shortcuts()
+        for viewer in list(self.viewers):
+            try:
+                if isinstance(viewer, ImageViewer) and viewer.isVisible():
+                    viewer.refresh_shortcuts()
+            except RuntimeError:
+                continue
 
     def clean_thumbnail_cache(self):
         """Starts a background thread to clean invalid entries from the cache."""
@@ -3555,10 +3558,13 @@ class MainWindow(QMainWindow):
         """Toggles the global 'show_faces' state and updates open viewers."""
         self.show_faces = not self.show_faces
         self.save_config()
-        for viewer in self.viewers:
-            if isinstance(viewer, ImageViewer):
-                viewer.controller.show_faces = self.show_faces
-                viewer.update_view(resize_win=False)
+        for viewer in list(self.viewers):
+            try:
+                if isinstance(viewer, ImageViewer) and viewer.isVisible():
+                    viewer.controller.show_faces = self.show_faces
+                    viewer.update_view(resize_win=False)
+            except RuntimeError:
+                continue
 
     def on_tags_edited(self, tags_per_file=None):
         """Callback to update model items after their tags have been edited."""
@@ -5117,17 +5123,20 @@ class MainWindow(QMainWindow):
             self.cache.invalidate_directory_cache(new_dir)
 
         # Update other open viewers
-        for v in self.viewers:
-            if v is not source_viewer and isinstance(v, ImageViewer) and v.isVisible():
-                if old_path in v.controller.image_list:
-                    try:
-                        idx = v.controller.image_list.index(old_path)
-                        v.controller.image_list[idx] = new_path
-                        if v.controller.index == idx:
-                            v.update_view(resize_win=False)
-                        v.populate_filmstrip()
-                    except ValueError:
-                        pass
+        for v in list(self.viewers):
+            try:
+                if v is not source_viewer and isinstance(v, ImageViewer) and v.isVisible():
+                    if old_path in v.controller.image_list:
+                        try:
+                            idx = v.controller.image_list.index(old_path)
+                            v.controller.image_list[idx] = new_path
+                            if v.controller.index == idx:
+                                v.update_view(resize_win=False)
+                            v.populate_filmstrip()
+                        except ValueError:
+                            pass
+            except RuntimeError:
+                continue
 
     def rename_image(self, proxy_row_index):
         """Handles the logic for renaming a file from the main thumbnail view."""

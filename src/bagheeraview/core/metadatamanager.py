@@ -8,9 +8,10 @@ Classes:
     MetadataManager: A class with static methods to read metadata from files.
 """
 import os
+import sys
 import collections
 import logging
-from PySide6.QtDBus import QDBusConnection, QDBusMessage, QDBus
+from PySide6.QtDBus import QDBusConnection, QDBusMessage, QDBus, QDBusInterface
 try:
     import exiv2
     HAVE_EXIV2 = True
@@ -42,12 +43,43 @@ def mark_app_modified(path):
         _app_modified_callback(path)
 
 
-def notify_baloo(path):
+def is_baloo_available() -> bool:
+    """
+    Checks if the 'org.kde.baloo' service is registered on the DBus Session Bus.
+
+    Queries the core freedesktop DBus interface via QDBus to prevent blocking.
+
+    Returns:
+        bool: True if Baloo is available, False otherwise.
+    """
+    # Connect to the session bus
+    bus = QDBusConnection.sessionBus()
+    if not bus.isConnected():
+        return False
+
+    # Create an interface to the central freedesktop DBus management service
+    dbus_service = QDBusInterface(
+        "org.freedesktop.DBus",
+        "/org/freedesktop/DBus",
+        "org.freedesktop.DBus",
+        bus
+    )
+
+    if dbus_service.isValid():
+        # Synchronously call NameHasOwner to see if Baloo is alive
+        reply = dbus_service.call("NameHasOwner", "org.kde.baloo")
+        if reply.isValid():
+            # QDBusReply parses the variant directly into a Python boolean
+            return bool(reply.arguments()[0])
+
+    return False
+
+
+def notify_baloo(path: str) -> None:
     """
     Notifies the Baloo file indexer about a file change using DBus.
 
-    This is an asynchronous, non-blocking call. It's more efficient than
-    calling `balooctl` via subprocess.
+    Prints a warning message if the 'org.kde.baloo' service does not exist.
 
     Args:
         path (str): The absolute path of the file that was modified.
@@ -55,10 +87,21 @@ def notify_baloo(path):
     if not path:
         return
 
+    # Check if Baloo is registered on the bus before pushing the message
+    if not is_baloo_available():
+        print(
+            "Warning: Cannot notify Baloo. 'org.kde.baloo' service "
+            "is not available on DBus.",
+            file=sys.stderr
+        )
+        return
+
     # Use QDBusMessage directly for robust calling
     msg = QDBusMessage.createMethodCall(
-        "org.kde.baloo.file", "/org/kde/baloo/file",
-        "org.kde.baloo.file.indexer", "indexFile"
+        "org.kde.baloo.file",
+        "/org/kde/baloo/file",
+        "org.kde.baloo.file.indexer",
+        "indexFile"
     )
     msg.setArguments([path])
     QDBusConnection.sessionBus().call(msg, QDBus.NoBlock)
