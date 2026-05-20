@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Dict, Any, Iterator, Optional, Union
 
-from ...tools.baloo_tools import (get_info, get_mime_type, get_xattr_terms)
+from ...tools.baloo_tools import (get_dates, get_file_type, get_info, get_mime_type, get_xattr_terms)
 from ..query_parser_lib import parse_date
 
 from pyparsing import (
@@ -41,11 +41,16 @@ def analyze_query_properties(text: str) -> dict:
     pattern = r"\"[^\"]*\"|'[^']*'|\b(\w+)[ \t]*(?:==|!=|!:|>=|<=|=|>|<|:)"
 
     results = {
-        "xattr": 0,
+        "date": 0,
+        "mimetype": 0,
+        "property": 0,
         "type": 0,
-        "property": 0
+        "xattr": 0,
     }
 
+    # Created is not supported by Baloo, but we can still recognize it as a date property.
+    date_keywords = {"created", "modified"}
+    mimetype_keywords = {"mimetype"}
     xattr_keywords = {"tags", "rating", "usercomment"}
 
     # finditer allows us to process matches one by one
@@ -59,6 +64,10 @@ def analyze_query_properties(text: str) -> dict:
 
             if prop_lower in xattr_keywords:
                 results["xattr"] += 1
+            elif prop_lower in date_keywords:
+                results["date"] += 1
+            elif prop_lower in mimetype_keywords:
+                results["mimetype"] += 1
             elif prop_lower == "type":
                 results["type"] += 1
             else:
@@ -359,8 +368,10 @@ class BagheeraSearcher:
                     file_info = file_info | get_info(file_id)
                 if having_sources.get('xattr') > 0:
                     file_info = file_info | get_xattr_terms(file_id)
-                if having_sources.get('type') > 0:
+                if having_sources.get('mimetype') > 0:
                     file_info['type'] = get_mime_type(file_id)
+                if having_sources.get('type') > 0:
+                    file_info['type'] = get_file_type(file_id)
             else:
                 file_info = None
 
@@ -433,6 +444,10 @@ class BagheeraSearcher:
                     file_info = file_info | get_info(file_id)
                 if having_sources.get('xattr') > 0:
                     file_info = file_info | get_xattr_terms(file_id)
+                if having_sources.get('mimetype') > 0:
+                    file_info = file_info | get_mimetype(file_id)
+                if having_sources.get('date') > 0:
+                    file_info = file_info | get_dates(file_id)
                 if having_sources.get('type') > 0:
                     file_info['type'] = get_mime_type(file_id)
             else:

@@ -82,7 +82,7 @@ The full list of searchable properties is listed below, grouped by file type.
 All Files
   · filename
   · mimetype
-  · modified (formated as yyyy-MM-dd[ hh[:mm[:ss]]])
+  · modified (formated as yyyy-MM-dd)
   · rating
   · tags
   · userComment
@@ -105,7 +105,7 @@ Audio
 Documents
   · Author
   · Copyright
-  · CreationDate (formated as yyyy-MM-dd[ hh[:mm[:ss]]])
+  · CreationDate (formated as yyyy-MM-dd)
   · Generator
   · Keywords
   · Language
@@ -123,7 +123,7 @@ Media
   · Width
 
 Images
-  · ImageDateTime
+  · ImageDateTime (formated as yyyy-MM-dd)
   · ImageMake
   · ImageModel
   · ImageOrientation

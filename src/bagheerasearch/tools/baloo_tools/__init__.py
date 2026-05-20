@@ -3,10 +3,22 @@ from .baloo_tools import BalooTools
 from typing import Tuple
 
 
+def get_dates(id: int) -> json:
+    """Simplified interface for the library."""
+    tools = BalooTools()
+    return tools.get_dates(id)
+
+
 def get_docterms(id: int) -> str:
     """Simplified interface for the library."""
     tools = BalooTools()
     return tools.get_docterms(id)
+
+
+def get_file_type(id: int) -> str:
+    """Simplified interface for the library."""
+    tools = BalooTools()
+    return tools.get_file_type(id)
 
 
 def get_info(id: int) -> json:

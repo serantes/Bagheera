@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import unicodedata
+from datetime import datetime
 from typing import List, Tuple
 
 
@@ -305,6 +306,59 @@ class BalooTools:
             os.path.expanduser("~"), ".local/share/baloo/index"
         )
 
+    def get_dates(self, file_id: int) -> json:
+        """
+        Retrieves file dates metadata from the Baloo index.
+
+        Args:
+            file_id: The integer ID of the file.
+
+        Returns:
+            A json with all file metadata fields.
+        """
+        try:
+            # Using context manager ensures the environment is closed properly
+            with lmdb.Environment(
+                self.baloo_db_path,
+                subdir=False,
+                readonly=True,
+                lock=False,
+                max_dbs=20
+            ) as env:
+                document_data_db = env.open_db(b'documenttimedb')
+
+                with env.begin() as txn:
+                    cursor = txn.cursor(document_data_db)
+
+                    # Convert ID to 8-byte little-endian format
+                    file_id_bytes = int.to_bytes(
+                        file_id, length=8, byteorder='little', signed=False
+                    )
+
+                    if cursor.set_range(file_id_bytes):
+                        for key, value in cursor:
+                            if key != file_id_bytes:
+                                break
+
+                            try:
+                                if len(value) == 8:
+                                    # Extraemos ctime (bytes 0-3) y mtime (bytes 4-7)
+                                    mtyme = int.from_bytes(value[:4], 'little')
+                                    ctyme = int.from_bytes(value[4:], 'little')
+                                    mtyme = datetime.fromtimestamp(mtyme).strftime('%Y-%m-%d %H:%M:%S')
+                                    ctyme = datetime.fromtimestamp(ctyme).strftime('%Y-%m-%d %H:%M:%S')
+                                    print(f"Debug: Extracted ctime={ctyme}, mtime={mtyme} for file_id={file_id}")
+                                    return {'created': ctyme, 'modified': mtyme}
+                                return {}
+                            except (ValueError, OverflowError, OSError):
+                                return {}
+
+        except lmdb.Error as e:
+            print(f"Warning: Failed to access Baloo LMDB index: "
+                  f"{e}", file=sys.stderr)
+
+        return {}
+
     def get_docterms(self, file_id: int) -> str:
         """
         Retrieves raw  metadata from the Baloo index.
@@ -346,6 +400,21 @@ class BalooTools:
                   f"{e}", file=sys.stderr)
 
         return b''
+
+    def get_file_type(self, file_id: int) -> str:
+        """
+        Retrieves the Baloo file type of a file from the Baloo index.
+
+        Args:
+            file_id: The integer ID of the file.
+
+        Returns:
+            The Baloo file type as a string, or 'Unknown' if not found.
+        """
+        try:
+            return get_mime_type_baloo_name(self.get_docterms(file_id))
+        except Exception:
+            return "Unknown"
 
     def get_info(self, file_id: int) -> json:
         """
