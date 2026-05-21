@@ -131,37 +131,36 @@ def decode_baloo_terms(raw_bytes: bytes, t_shortcut: bool = False) -> list[str]:
     Decodes the Baloo buffer by blindly concatenating the left side of \x01
     to the literal full block that preceded the last \x00.
     """
-    chunks = raw_bytes.split(b"\x00")
+    chunks = raw_bytes.split(b"\x00")  # Split once by null byte
     terms = []
-    last_full_chunk = ""
+    last_full_chunk_bytes = b""  # Keep track of the last full chunk as bytes
 
     for chunk in chunks:
         if not chunk:
             continue
 
-        # Si encontramos el delimitador \x01, se cierra el bloque de concatenación
+        # If we find the \x01 delimiter, it closes the concatenation block
         if b"\x01" in chunk:
             left_bytes, right_bytes = chunk.split(b"\x01", 1)
 
-            suffix = left_bytes.decode("utf-8", errors="ignore")
-            next_term = right_bytes.decode("utf-8", errors="ignore")
+            # Exact rule: previous full term (bytes) + left part (bytes)
+            concatenated_bytes = last_full_chunk_bytes + left_bytes
+            if concatenated_bytes:
+                terms.append(concatenated_bytes.decode("utf-8", errors="ignore"))
 
-            # Regla exacta: Término anterior completo + texto de la izquierda
-            concatenated = last_full_chunk + suffix
-            if concatenated:
-                terms.append(concatenated)
-
-            # El texto de la derecha es el nuevo término independiente
-            if next_term:
-                terms.append(next_term)
-                # Pasa a ser la nueva base para futuros bloques con \x01
-                last_full_chunk = next_term
+            # The right part is the new independent term
+            if right_bytes:
+                terms.append(right_bytes.decode("utf-8", errors="ignore"))
+                # Becomes the new base for future blocks with \x01
+                last_full_chunk_bytes = right_bytes
+            else:
+                last_full_chunk_bytes = b""  # Reset if right part is empty
         else:
-            # Bloque normal: se añade tal cual y se registra como la última base
+            # Normal block: add as is and register as the last base
             term_str = chunk.decode("utf-8", errors="ignore")
             if term_str:
                 terms.append(term_str)
-                last_full_chunk = term_str
+                last_full_chunk_bytes = chunk  # Update with bytes
 
     return terms
 
