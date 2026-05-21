@@ -15,19 +15,13 @@ def get_docterms(id: int) -> str:
     return tools.get_docterms(id)
 
 
-def get_file_type(id: int) -> str:
-    """Simplified interface for the library."""
-    tools = BalooTools()
-    return tools.get_file_type(id)
-
-
 def get_info(id: int) -> json:
     """Simplified interface for the library."""
     tools = BalooTools()
     return tools.get_info(id)
 
 
-def get_mime_type(id: int) -> str:
+def get_mime_type(id: int) -> json:
     """Simplified interface for the library."""
     tools = BalooTools()
     return tools.get_mime_type(id)

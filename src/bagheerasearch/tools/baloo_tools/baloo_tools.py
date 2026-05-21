@@ -126,28 +126,44 @@ PROPERTIES_ID_MAP = {
 }
 
 
-def get_mime_type_baloo_name(bstr: str) -> str:
+def decode_baloo_terms(raw_bytes: bytes, t_shortcut: bool = False) -> list[str]:
     """
-    Parses a raw string to extract and translate its type tag.
-
-    The function looks for a pattern starting with 'T' followed by
-    a digit (e.g., T4) delimited by \x00 and returns the corresponding
-    value from MIME_TYPE_MAP.
-
-    Args:
-        bstr (str): The binary string containing the raw metadata from Baloo.
-
-    Returns:
-        str: The translated type name or 'Unknown' if not found.
+    Decodes the Baloo buffer by blindly concatenating the left side of \x01
+    to the literal full block that preceded the last \x00.
     """
-    fields = bstr.split(b'\x00')
+    chunks = raw_bytes.split(b"\x00")
+    terms = []
+    last_full_chunk = ""
 
-    # Look for the field that starts with 'T' (e.g., b'T4')
-    for field in fields:
-        if field.startswith(b'T'):
-            return MIME_TYPE_MAP.get(field, "Unknown")
+    for chunk in chunks:
+        if not chunk:
+            continue
 
-    return "Unknown"
+        # Si encontramos el delimitador \x01, se cierra el bloque de concatenación
+        if b"\x01" in chunk:
+            left_bytes, right_bytes = chunk.split(b"\x01", 1)
+
+            suffix = left_bytes.decode("utf-8", errors="ignore")
+            next_term = right_bytes.decode("utf-8", errors="ignore")
+
+            # Regla exacta: Término anterior completo + texto de la izquierda
+            concatenated = last_full_chunk + suffix
+            if concatenated:
+                terms.append(concatenated)
+
+            # El texto de la derecha es el nuevo término independiente
+            if next_term:
+                terms.append(next_term)
+                # Pasa a ser la nueva base para futuros bloques con \x01
+                last_full_chunk = next_term
+        else:
+            # Bloque normal: se añade tal cual y se registra como la última base
+            term_str = chunk.decode("utf-8", errors="ignore")
+            if term_str:
+                terms.append(term_str)
+                last_full_chunk = term_str
+
+    return terms
 
 
 def get_kfile_metadata_types(mime_type: str) -> List[str]:
@@ -285,6 +301,39 @@ def get_kfile_metadata_types(mime_type: str) -> List[str]:
     return types
 
 
+def get_mime_type_baloo_name(bstr: str) -> json:
+    """
+    Parses a raw string to extract and translate its type tag.
+
+    The function looks for a pattern starting with 'T' followed by
+    a digit (e.g., T4) delimited by \x00 and returns the corresponding
+    value from MIME_TYPE_MAP.
+
+    Args:
+        bstr (str): The binary string containing the raw metadata from Baloo.
+
+    Returns:
+        str: The translated type name or 'Unknown' if not found.
+    """
+    fields = bstr.split(b'\x00')
+
+    # Look for the field that starts with 'T' (e.g., b'T4')
+    result = {'type': "Unknown", 'mimetype': []}
+    for field in fields:
+        if field.startswith(b'M'):
+            mime_type = field.removeprefix(b'M').decode('utf-8', errors='ignore')
+            result["mimetype"] += [mime_type]
+
+        elif field.startswith(b'T'):
+            result["type"] = MIME_TYPE_MAP.get(field, "Unknown")
+            break
+
+    if result["mimetype"] == []:
+        result["mimetype"] = "Unknown"
+
+    return result
+
+
 def normalize_text(text):
     """
     Remove accents/diacritics for string comparison.
@@ -401,21 +450,6 @@ class BalooTools:
 
         return b''
 
-    def get_file_type(self, file_id: int) -> str:
-        """
-        Retrieves the Baloo file type of a file from the Baloo index.
-
-        Args:
-            file_id: The integer ID of the file.
-
-        Returns:
-            The Baloo file type as a string, or 'Unknown' if not found.
-        """
-        try:
-            return get_mime_type_baloo_name(self.get_docterms(file_id))
-        except Exception:
-            return "Unknown"
-
     def get_info(self, file_id: int) -> json:
         """
         Retrieves file metadata from the Baloo index.
@@ -463,7 +497,7 @@ class BalooTools:
 
         return {}
 
-    def get_mime_type(self, file_id: int) -> str:
+    def get_mime_type(self, file_id: int) -> json:
         """
         Retrieves the MIME type of a file from the Baloo index.
 
@@ -471,12 +505,12 @@ class BalooTools:
             file_id: The integer ID of the file.
 
         Returns:
-            The MIME type as a string, or 'Unknown' if not found.
+            The MIME type as a json object, or 'Unknown' if not found.
         """
         try:
             return get_mime_type_baloo_name(self.get_docterms(file_id))
         except Exception:
-            return "Unknown"
+            return {'type': "Unknown", 'mimetype': "Unknown"}
 
     def get_rating(self, file_id: int) -> int:
         """

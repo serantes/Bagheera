@@ -81,11 +81,12 @@ The full list of searchable properties is listed below, grouped by file type.
 
 All Files
   · filename
-  · mimetype
+  · mimetype (you cannot search for full strings like "text/plain". Instead, search for text, plain, or both words separated: mimetype:text AND mimetype:plain)
   · modified (formated as yyyy-MM-dd)
   · rating
   · tags
-  · userComment
+  · userComment (you cannot search for full strings. Instead, search for individual words: userComment=ready AND userComment=script)
+  · created (formated as yyyy-MM-dd, only available in having clauses)
 
 Audio
   · Album
@@ -123,7 +124,7 @@ Media
   · Width
 
 Images
-  · ImageDateTime (formated as yyyy-MM-dd)
+  · ImageDateTime (formated as yyyy-MM-dd, only works in having clauses)
   · ImageMake
   · ImageModel
   · ImageOrientation
