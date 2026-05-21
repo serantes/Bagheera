@@ -82,11 +82,10 @@ The full list of searchable properties is listed below, grouped by file type.
 All Files
   · filename
   · mimetype (you cannot search for full strings like "text/plain". Instead, search for text, plain, or both words separated: mimetype:text AND mimetype:plain)
-  · modified (formated as yyyy-MM-dd)
+  · modified (formatted as yyyy-MM-dd)
   · rating
   · tags
   · userComment (you cannot search for full strings. Instead, search for individual words: userComment=ready AND userComment=script)
-  · created (formated as yyyy-MM-dd, only available in having clauses)
 
 Audio
   · Album
@@ -106,7 +105,7 @@ Audio
 Documents
   · Author
   · Copyright
-  · CreationDate (formated as yyyy-MM-dd)
+  · CreationDate (formatted as yyyy-MM-dd)
   · Generator
   · Keywords
   · Language
@@ -124,7 +123,7 @@ Media
   · Width
 
 Images
-  · ImageDateTime (formated as yyyy-MM-dd, only works in having clauses)
+  · ImageDateTime (formatted as yyyy-MM-dd, for reasons unknown does not work with Baloo, but can be used in having options)
   · ImageMake
   · ImageModel
   · ImageOrientation
@@ -187,7 +186,7 @@ Baloo documentation ends here, but {PROG_NAME} adds some extra features on top o
 
 - BAGHEERA-SPECIFIC FEATURES -
 
-The search engine recognizes certain English natural language phrases, provided they are capitalized, and transforms them into queries that can be interpreted by the engine.
+The search engine recognizes certain English natural language phrases, provided they are capitalized, and transforms them into interpretable queries.
 
 Supported natural language patterns are:
   · MODIFIED TODAY
@@ -200,7 +199,7 @@ Supported natural language patterns are:
 
 - 'Subquery' option -
 
-The '--subquery' option allows you to perform a secondary search within the results of a main query. This is particularly useful for refining searches within specific folders or categories. When using '--subquery', the main query first filters results based on the initial criteria; the subquery is then applied to all files located within those results to further narrow down the search.
+The '--subquery' option allows you to perform a secondary search within the folders obtained from main query. This is particularly useful for refining searches within specific folders. When using '--subquery', the main query first filters folders based on the initial criteria; the subquery is then applied to all files located within those folders to further narrow down the search.
 You can provide a query string with the '--subquery' option to filter the results of the main query, or you can use the option without additional text to simply list all items within those results.
 This behavior is useful for performing deep searches. For example, you can search for all folders with 'Project' in their name and then use a subquery to find documents within those folders that were modified in the last week.
 
@@ -211,18 +210,18 @@ This is a complex query to locate all files of the 'Presentation' type situated 
 
 - 'Having' and 'subquery-having' options -
 
-The '--having' and '--subquery-having' options allow you to filter files out of the results.
-The syntax for both options supports parentheses and logical operators (AND, OR, and NOT) to combine multiple patterns.
-In addition to standard query comparison operators, 'case-sensitive equal' (==), 'not equal' (!=) and 'not include' (!:) operators are available for comparing properties against specific values. Furthermore, you can compare two properties directly; for example, 'width > height' is a valid expression.
+The '--having' and '--subquery-having' options allow you to filter files out of the results. The syntax for both options is the same as in Baloo and, additionally, supports the logical operator 'NOT'.
+In addition to Baloo comparison operators, 'case-sensitive equal' (==), 'not equal' (!=) and 'not include' (!:) operators are available for comparing properties against specific values. Furthermore, you can compare two properties directly; for example, 'width > height' is a valid expression.
+A new property called 'created', which is not available in Baloo, formatted as yyyy-MM-dd, can be used to compare against the file creation date.
 
 Remarks:
 . All text comparisons are case-insensitive except when 'case-sensitive equal' (==) is used. For example, 'filename:report' matches 'report.docx', 'Report.docx', and 'REPORT.docx', while 'filename==report.docx' only matches 'report.docx'.
-· You can include properties without value in search expressions, such as 'tags=' or 'rating!=', to check for the presence or ausence of any value in that property. For example, 'tags!=' matches any file that has at least one tag, regardless of its content, while 'tags=' matches files without any tags.
+· You can include properties without value or with '' value in search expressions, such as 'tags=' or 'rating!=', to check for the presence or ausence of any value in that property. For example, 'tags!=' matches any file that has at least one tag, regardless of its content, while 'tags=' matches files without any tags.
 . Tag comparisons are performed against both the individual full tag string (using the '/' character as a level separator) and each individual level. All individual level values are normalized and stripped of accents or diacritics. For example, a file tagged as 'Opera,Person/Maria Callas,Singer' would match any of the following elements: ['Callas', 'Maria', 'Person', 'Opera', 'Person/Maria Callas', 'Singer']. Please pay attention to this behavior when using 'not contain' (!:) and 'not include' (!=) operators with tags, as they will match against all these values.
-. Only text and numeric data are supported; dates are not supported as of now for these specific options.
+. Natural language date expressions are not supported in '--having' and '--subquery-having' options.
 . The Baloo limit of at least three characters for string property values is not applied in '--having' and '--subquery-having' options, allowing you to use shorter values.
 
-Example:
+Having exclusion example:
 If you have a tag named 'Science' and another one 'Science Fiction', you cannot obtain only results tagged with 'Science' because the Baloo search engine will match both when using 'tags:Science'. To exclude 'Science Fiction', you can use the following query:
     {PROG_ID} tags=Science --having "NOT tags=Fiction" """
     print(help_query)
