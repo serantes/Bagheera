@@ -27,13 +27,20 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest"]
+all = [
+    "exiv2",
+    "face-recognition",
+    "face_recognition_models",
+    "mediapipe",
+    "pytest",
+]
+exiv = ["exiv2"]
 faces = [
     "face-recognition",
     "face_recognition_models",
     "mediapipe"
 ]
-exiv = ["exiv2"]
+test = ["pytest"]
 
 [project.scripts]
 bagheerasearch = "bagheerasearch.core:main"
