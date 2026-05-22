@@ -81,11 +81,11 @@ The full list of searchable properties is listed below, grouped by file type.
 
 All Files
   · filename
-  · mimetype (you cannot search for full strings like "text/plain". Instead, search for text, plain, or both words separated: mimetype:text AND mimetype:plain)
+  · mimetype (you cannot search for full text like "text/plain". Instead, search for text, plain, or both words separated: mimetype:text AND mimetype:plain)
   · modified (formatted as yyyy-MM-dd)
   · rating
   · tags
-  · userComment (you cannot search for full strings. Instead, search for individual words: userComment=ready AND userComment=script)
+  · userComment (you cannot search for full text. Instead, search for individual words: userComment:ready AND userComment:script)
 
 Audio
   · Album
