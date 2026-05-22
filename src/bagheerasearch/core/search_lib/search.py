@@ -389,19 +389,20 @@ class BagheeraSearcher:
         """
         if search_opts['having']:
             ee = EvaluateExpression()
-            having_evaluator = ee.compile(search_opts['having'])
-            having_sources = analyze_query_properties(search_opts['having'])
+            having = parse_date(search_opts['having'])
+            # print(f"Debug: having={having}")
+            having_evaluator = ee.compile(having)
+            having_sources = analyze_query_properties(having)
         else:
             having_sources = {}
             having_evaluator = None
 
         if search_opts['subquery_having']:
             ee = EvaluateExpression()
-            subquery_having_evaluator = ee.compile(
-                search_opts['subquery_having'])
-            subquery_having_sources = {}
-            subquery_having_sources = analyze_query_properties(
-                search_opts['subquery_having'])
+            having = parse_date(search_opts['subquery_having'])
+            # print(f"Debug: subquery_having={having}")
+            subquery_having_evaluator = ee.compileh(having)
+            subquery_having_sources = analyze_query_properties(having)
         else:
             subquery_having_sources = {}
             subquery_having_evaluator = None
@@ -462,32 +463,6 @@ class BagheeraSearcher:
     def reset_state(self) -> None:
         """Clears the processed IDs to allow for fresh consecutive searches."""
         self.ids_processed.clear()
-
-
-if __name__ == "__main__":
-    # Quick integration test
-    print(f"Testing {__file__} integration:")
-    try:
-        searcher = BagheeraSearcher()
-        print("✔ Library and wrapper loaded successfully.")
-
-        # Test search attempt (limited to 1 result)
-        test_main_opts = {"limit": 1}
-        test_search_opts = {"limit": 1}
-
-        print("Searching for recent files...")
-        results = list(searcher.search("MODIFIED TODAY", test_main_opts,
-                                       test_search_opts))
-
-        if results:
-            print(f"✔ Found: {results[0].get('path')}")
-        else:
-            print("? No files found for today, but search executed correctly.")
-
-    except FileNotFoundError as e:
-        print(f"✘ Setup error: {e}")
-    except Exception as e:
-        print(f"✘ Unexpected error: {e}")
 
 
 if __name__ == "__main__":
