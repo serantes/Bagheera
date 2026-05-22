@@ -5,6 +5,8 @@ from setuptools import setup
 from setuptools.command.install import install
 from setuptools.command.develop import develop
 from setuptools.command.build_ext import build_ext
+from setuptools.command.build_py import build_py
+
 
 def compile_wrapper():
     base_path = os.path.abspath(os.path.dirname(__file__))
@@ -57,24 +59,34 @@ def compile_wrapper():
     try:
         print(f"Executing compilation:\n{' '.join(compile_cmd)}")
         subprocess.check_call(compile_cmd)
-    except subprocess.CalledProcessError as e:
-        print(f"\n✘ Compilation failed.")
+    except subprocess.CalledProcessError:
+        print("\n✘ Compilation failed.")
         sys.exit(1)
+
 
 class CustomInstall(install):
     def run(self):
         compile_wrapper()
         super().run()
 
+
 class CustomDevelop(develop):
     def run(self):
         compile_wrapper()
         super().run()
 
+
 class CustomBuildExt(build_ext):
     def run(self):
         compile_wrapper()
         super().run()
+
+
+class CustomBuildPy(build_py):
+    def run(self):
+        compile_wrapper()
+        super().run()
+
 
 # Only cmdclass remains, the rest is read from pyproject.toml
 setup(
@@ -82,5 +94,6 @@ setup(
         'install': CustomInstall,
         'develop': CustomDevelop,
         'build_ext': CustomBuildExt,
+        'build_py': CustomBuildPy,
     }
 )
