@@ -28,9 +28,10 @@ def analyze_query_properties(text: str) -> dict:
     quoted values while identifying the property name preceding them.
 
     Categories:
-    - xattr: tags, rating, usercomment
-    - type: type
+    - dates: created, modified
+    - mimetype: mimetype, type
     - property: any other property followed by an operator
+    - xattr: rating, tags, usercomment
     """
 
     # Pattern explanation:
