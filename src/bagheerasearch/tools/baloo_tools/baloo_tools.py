@@ -393,12 +393,20 @@ class BalooTools:
                                     # Extraemos ctime (bytes 0-3) y mtime (bytes 4-7)
                                     mtyme = int.from_bytes(value[:4], 'little')
                                     ctyme = int.from_bytes(value[4:], 'little')
-                                    # mtyme = datetime.fromtimestamp(mtyme).strftime('%Y-%m-%d %H:%M:%S')
-                                    # ctyme = datetime.fromtimestamp(ctyme).strftime('%Y-%m-%d %H:%M:%S')
-                                    mtyme = datetime.fromtimestamp(mtyme).strftime('%Y-%m-%d')
-                                    ctyme = datetime.fromtimestamp(ctyme).strftime('%Y-%m-%d')
-                                    # print(f"Debug: Extracted ctime={ctyme}, mtime={mtyme} for file_id={file_id}")
-                                    return {'created': ctyme, 'modified': mtyme}
+                                    # mtyme = datetime.fromtimestamp(mtyme).strftime(
+                                    #     '%Y-%m-%d %H:%M:%S')
+                                    # ctyme = datetime.fromtimestamp(ctyme).strftime(
+                                    #     '%Y-%m-%d %H:%M:%S')
+                                    mtyme_str = datetime.fromtimestamp(
+                                        mtyme).strftime('%Y-%m-%d')
+                                    ctyme_str = datetime.fromtimestamp(
+                                        ctyme).strftime('%Y-%m-%d')
+                                    # print(f"Debug: Extracted ctime={ctyme_str},"
+                                    #       f" mtime={mtyme_str} for file_id={file_id}")
+                                    return {
+                                        'created': ctyme_str,
+                                        'modified': mtyme_str
+                                    }
                                 return {}
                             except (ValueError, OverflowError, OSError):
                                 return {}

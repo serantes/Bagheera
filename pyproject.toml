@@ -43,8 +43,8 @@ faces = [
 test = ["pytest"]
 
 [project.scripts]
-bagheerasearch = "bagheerasearch.core:main"
-bagheeraview = "bagheeraview.core:main"
+bagheerasearch = "bagheerasearch.core.app:main"
+bagheeraview = "bagheeraview.core.app:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

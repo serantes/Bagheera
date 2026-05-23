@@ -402,7 +402,7 @@ class BagheeraSearcher:
             ee = EvaluateExpression()
             having = parse_date(search_opts['subquery_having'])
             # print(f"Debug: subquery_having={having}")
-            subquery_having_evaluator = ee.compileh(having)
+            subquery_having_evaluator = ee.compile(having)
             subquery_having_sources = analyze_query_properties(having)
         else:
             subquery_having_sources = {}

@@ -823,6 +823,8 @@ class FaceCanvas(QLabel):
                         rect.moveBottom(self.height())
                 else:
                     # Determine fixed anchor point based on handle
+                    fixed = None
+                    moving = None
                     if self.crop_handle == 'TL':
                         fixed = self.crop_start_rect.bottomRight()
                         moving = self.crop_start_rect.topLeft()
@@ -835,6 +837,9 @@ class FaceCanvas(QLabel):
                     elif self.crop_handle == 'BR':
                         fixed = self.crop_start_rect.topLeft()
                         moving = self.crop_start_rect.bottomRight()
+
+                    if fixed is None or moving is None:
+                        return
 
                     # Calculate new moving point candidate
                     current_moving = moving + QPoint(dx, dy)
@@ -2935,11 +2940,31 @@ class ImageViewer(QWidget):
                      "enabled": bool(AVAILABLE_PET_ENGINES),
                      "tooltip": "" if AVAILABLE_PET_ENGINES else UITexts.NO_FACE_LIBS},
                     "separator",
-                    {"text": UITexts.VIEWER_MENU_ADD_FACE, "action": "add_face_mode", "icon": "list-add"},
-                    {"text": UITexts.VIEWER_MENU_ADD_PET, "action": "add_pet_mode", "icon": "list-add"},
-                    {"text": UITexts.VIEWER_MENU_ADD_BODY, "action": "add_body_mode", "icon": "list-add"},
-                    {"text": UITexts.VIEWER_MENU_ADD_OBJECT, "action": "add_object_mode", "icon": "list-add"},
-                    {"text": UITexts.VIEWER_MENU_ADD_LANDMARK, "action": "add_landmark_mode", "icon": "list-add"},
+                    {
+                        "text": UITexts.VIEWER_MENU_ADD_FACE,
+                        "action": "add_face_mode",
+                        "icon": "list-add"
+                    },
+                    {
+                        "text": UITexts.VIEWER_MENU_ADD_PET,
+                        "action": "add_pet_mode",
+                        "icon": "list-add"
+                    },
+                    {
+                        "text": UITexts.VIEWER_MENU_ADD_BODY,
+                        "action": "add_body_mode",
+                        "icon": "list-add"
+                    },
+                    {
+                        "text": UITexts.VIEWER_MENU_ADD_OBJECT,
+                        "action": "add_object_mode",
+                        "icon": "list-add"
+                    },
+                    {
+                        "text": UITexts.VIEWER_MENU_ADD_LANDMARK,
+                        "action": "add_landmark_mode",
+                        "icon": "list-add"
+                    },
                     ]},
                 "separator",
                 {"text": UITexts.VIEWER_MENU_MANIPULATE,

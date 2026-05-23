@@ -3634,7 +3634,9 @@ class MainWindow(QMainWindow):
                 try:
                     st = os.stat(path)
                     tags = item.data(TAGS_ROLE) or []
-                    self.cache.set_metadata(st.st_dev, st.st_ino, st.st_mtime, tags, new_rating, path)
+                    self.cache.set_metadata(
+                        st.st_dev, st.st_ino, st.st_mtime,
+                        tags, new_rating, path)
                 except OSError:
                     pass
 

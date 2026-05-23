@@ -10,6 +10,4 @@ __license__ = "GPLv3"
 __status__ = "Production"
 # "Prototype, Development, Alpha, Beta, Production, Stable, Deprecated"
 
-from .core.app import main
-
-__all__ = ["EvaluateExpression", "__version__"]
+__all__ = ["__version__"]

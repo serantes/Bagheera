@@ -29,7 +29,7 @@ if FORCE_X11:
 # --- CONFIGURATION ---
 PROG_NAME = "Bagheera Image Viewer"
 PROG_ID = "bagheeraview"
-PROG_VERSION = "0.9.26"
+PROG_VERSION = "1.0.0"
 PROG_AUTHOR = "Ignacio Serantes"
 
 # --- CACHE SETTINGS ---
@@ -126,7 +126,7 @@ KWINOUTPUTCONFIG_PATH = os.path.join(os.path.expanduser("~"),
 # --- EXTERNAL TOOLS ---
 # Command definitions for external search tools.
 try:
-    from bagheerasearch.core.search_lib.search import BagheeraSearcher
+    import bagheerasearch.core.search_lib.search  # noqa: F401
     HAVE_BAGHEERASEARCH_LIB = True
 except ImportError:
     HAVE_BAGHEERASEARCH_LIB = False

@@ -1518,7 +1518,7 @@ class ThumbnailCache(QObject):
                   False if the caller waited and should check cache again.
         """
         # Resolve identity for locking key
-        mtime, dev_id, inode_key = self._resolve_file_identity(
+        _, dev_id, inode_key = self._resolve_file_identity(
             path, curr_mtime, inode, device_id)
 
         if not inode_key or dev_id == 0:
