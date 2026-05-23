@@ -3598,7 +3598,8 @@ class MainWindow(QMainWindow):
                 try:
                     st = os.stat(path)
                     self.cache.set_metadata(st.st_dev, st.st_ino, st.st_mtime, tags, 0, path)
-                except OSError: pass
+                except OSError:
+                    pass
 
                 # Update proxy filter cache immediately
                 self.proxy_model.add_to_cache(path, tags)
@@ -3634,7 +3635,8 @@ class MainWindow(QMainWindow):
                     st = os.stat(path)
                     tags = item.data(TAGS_ROLE) or []
                     self.cache.set_metadata(st.st_dev, st.st_ino, st.st_mtime, tags, new_rating, path)
-                except OSError: pass
+                except OSError:
+                    pass
 
                 self._update_internal_data(path, rating=new_rating)
 
@@ -4068,7 +4070,8 @@ class MainWindow(QMainWindow):
                 try:
                     st = os.stat(path)
                     self.cache.set_metadata(st.st_dev, st.st_ino, st.st_mtime, tags, rating, path)
-                except OSError: pass
+                except OSError:
+                    pass
 
         if self.main_dock.isVisible():
             self.on_tags_tab_changed(self.tags_tabs.currentIndex())
