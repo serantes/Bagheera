@@ -2599,91 +2599,113 @@ class MainWindow(QMainWindow):
                 self, UITexts.SYSTEM_ERROR, UITexts.ERROR_DELETING_FILE.format(e))
 
     def move_current_image(self):
-        """Moves the selected image to another directory via a file dialog."""
-        path = self.get_current_selected_path()
-        if not path:
+        """Moves the selected image(s) to another directory."""
+        paths = self.get_selected_paths()
+        if not paths:
             return
+
+        # Use the directory of the first image as start point for the dialog
+        start_dir = os.path.dirname(paths[0])
         target_dir = QFileDialog.getExistingDirectory(
-            self, UITexts.CONTEXT_MENU_MOVE_TO, os.path.dirname(path))
+            self, UITexts.CONTEXT_MENU_MOVE_TO, start_dir)
 
         if not target_dir:
             return
 
-        new_path = os.path.join(target_dir, os.path.basename(path))
-        if os.path.exists(new_path):
-            reply = QMessageBox.question(
-                self, UITexts.CONFIRM_OVERWRITE_TITLE,
-                UITexts.CONFIRM_OVERWRITE_TEXT.format(new_path),
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if reply != QMessageBox.Yes:
-                return
-
+        moved_count = 0
+        self.thumbnail_view.setUpdatesEnabled(False)
         try:
-            shutil.move(path, new_path)
+            for path in paths:
+                new_path = os.path.join(target_dir, os.path.basename(path))
+                if os.path.exists(new_path):
+                    reply = QMessageBox.question(
+                        self, UITexts.CONFIRM_OVERWRITE_TITLE,
+                        UITexts.CONFIRM_OVERWRITE_TEXT.format(new_path),
+                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                    if reply != QMessageBox.Yes:
+                        continue
 
-            # Find and remove item from model
-            for row in range(self.thumbnail_model.rowCount()):
-                item = self.thumbnail_model.item(row)
-                if item and item.data(PATH_ROLE) == path:
-                    self.thumbnail_model.removeRow(row)
+                try:
+                    shutil.move(path, new_path)
+                    moved_count += 1
+
+                    # Notify open viewers of the deletion
+                    for w in QApplication.topLevelWidgets():
+                        if isinstance(w, ImageViewer):
+                            if path in w.controller.image_list:
+                                try:
+                                    deleted_idx = w.controller.image_list.index(path)
+                                    new_list = list(w.controller.image_list)
+                                    new_list.remove(path)
+                                    w.refresh_after_delete(new_list, deleted_idx)
+                                except (ValueError, RuntimeError):
+                                    pass
+
+                    # Remove from model using persistent index for efficiency
                     if path in self._path_to_model_index:
+                        p_idx = self._path_to_model_index[path]
+                        if p_idx.isValid():
+                            self.thumbnail_model.removeRow(p_idx.row())
                         del self._path_to_model_index[path]
+
+                    # Update internal data structures
+                    self.found_items_data = [x for x in self.found_items_data
+                                             if x[0] != path]
+                    self._known_paths.discard(path)
+
+                    # Clean up grouping and proxy caches
+                    keys_to_remove = [k for k in self._group_info_cache if k[0] == path]
+                    for k in keys_to_remove:
+                        del self._group_info_cache[k]
+
+                    self.proxy_model.remove_from_cache(path)
+                    self._visible_paths_cache = None
+                except Exception as e:
+                    QMessageBox.critical(
+                        self, UITexts.ERROR, UITexts.ERROR_MOVE_FILE.format(e))
                     break
-
-            # Remove from found_items_data to ensure consistency
-            self.found_items_data = [x for x in self.found_items_data if x[0] != path]
-            self._known_paths.discard(path)
-            # Clean up group cache
-            keys_to_remove = [k for k in self._group_info_cache if k[0] == path]
-            for k in keys_to_remove:
-                del self._group_info_cache[k]
-
-            # Clean up proxy model cache
-            if path in self.proxy_model._data_cache:
-                del self.proxy_model._data_cache[path]
-
-            self._visible_paths_cache = None
-
-            # Notify viewers
-            for w in QApplication.topLevelWidgets():
-                if isinstance(w, ImageViewer):
-                    if path in w.controller.image_list:
-                        new_list = list(w.controller.image_list)
-                        new_list.remove(path)
-                        w.refresh_after_delete(new_list, -1)
-
-            self.status_lbl.setText(UITexts.MOVED_TO.format(target_dir))
-
         except Exception as e:
             QMessageBox.critical(self, UITexts.ERROR, UITexts.ERROR_MOVE_FILE.format(e))
+        finally:
+            self.thumbnail_view.setUpdatesEnabled(True)
+            self.rebuild_view()
+            if moved_count > 0:
+                self.status_lbl.setText(UITexts.MOVED_TO.format(target_dir))
 
     def copy_current_image(self):
-        """Copies the selected image to another directory via a file dialog."""
-        path = self.get_current_selected_path()
-        if not path:
+        """Copies the selected image(s) to another directory."""
+        paths = self.get_selected_paths()
+        if not paths:
             return
 
+        start_dir = os.path.dirname(paths[0])
         target_dir = QFileDialog.getExistingDirectory(
-            self, UITexts.CONTEXT_MENU_COPY_TO, os.path.dirname(path))
+            self, UITexts.CONTEXT_MENU_COPY_TO, start_dir)
 
         if not target_dir:
             return
 
-        new_path = os.path.join(target_dir, os.path.basename(path))
-        if os.path.exists(new_path):
-            reply = QMessageBox.question(
-                self, UITexts.CONFIRM_OVERWRITE_TITLE,
-                UITexts.CONFIRM_OVERWRITE_TEXT.format(new_path),
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if reply != QMessageBox.Yes:
-                return
+        copied_count = 0
+        for path in paths:
+            new_path = os.path.join(target_dir, os.path.basename(path))
+            if os.path.exists(new_path):
+                reply = QMessageBox.question(
+                    self, UITexts.CONFIRM_OVERWRITE_TITLE,
+                    UITexts.CONFIRM_OVERWRITE_TEXT.format(new_path),
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                if reply != QMessageBox.Yes:
+                    continue
 
-        try:
-            shutil.copy2(path, new_path)
+            try:
+                shutil.copy2(path, new_path)
+                copied_count += 1
+            except Exception as e:
+                QMessageBox.critical(
+                    self, UITexts.ERROR, UITexts.ERROR_COPY_FILE.format(e))
+                break
+
+        if copied_count > 0:
             self.status_lbl.setText(UITexts.COPIED_TO.format(target_dir))
-
-        except Exception as e:
-            QMessageBox.critical(self, UITexts.ERROR, UITexts.ERROR_COPY_FILE.format(e))
 
     def rotate_current_image(self, degrees):
         """Rotates the selected image, attempting lossless rotation for JPEGs."""
