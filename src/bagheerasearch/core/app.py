@@ -81,11 +81,11 @@ The full list of searchable properties is listed below, grouped by file type.
 
 All Files
   · filename
-  · mimetype (you cannot search for full text like "text/plain". Instead, search for text, plain, or both words separated: mimetype:text AND mimetype:plain)
-  · modified (formatted as yyyy-MM-dd)
+  · mimetype (Note: You cannot search for full strings like `"text/plain"`. Search for individual words: `mimetype:text AND mimetype:plain`)
+  · modified (Formatted as yyyy-MM-dd)
   · rating
   · tags
-  · userComment (you cannot search for full text. Instead, search for individual words: userComment:ready AND userComment:script)
+  · userComment (Note: Search for individual words: `userComment:ready AND userComment:script` because **Baloo engine** does not support quoted strings within the `userComment` search)
 
 Audio
   · Album
@@ -95,7 +95,7 @@ Audio
   · Channels
   · Comment
   · Composer
-  · Duration (this value must be in seconds, for example use 'duration > 300' to find files longer than 5 minutes)
+  · Duration (Value in seconds; e.g., `'duration > 300'` for files longer than 5 minutes)
   · Genre
   · Lyricist
   · ReleaseYear
@@ -105,7 +105,7 @@ Audio
 Documents
   · Author
   · Copyright
-  · CreationDate (formatted as yyyy-MM-dd)
+  · CreationDate (Formatted as yyyy-MM-dd)
   · Generator
   · Keywords
   · Language
@@ -123,7 +123,7 @@ Media
   · Width
 
 Images
-  · ImageDateTime (formatted as yyyy-MM-dd, for reasons unknown does not work with Baloo, but can be used in having options)
+  · ImageDateTime (Formatted as yyyy-MM-dd. Note: Currently inconsistent in **Baloo**; use in `having` options for reliability).
   · ImageMake
   · ImageModel
   · ImageOrientation
@@ -205,24 +205,31 @@ This behavior is useful for performing deep searches. For example, you can searc
 
 Example:
 This is a complex query to locate all files of the 'Presentation' type situated within any directory that contains 'KDE' in its name, specifically under the '~/Documents' path. The search is further refined to include only those files that contain either 'Baloo' or 'Bagheera' in their metadata or filename and are not tagged as 'Obsolete' or 'Revised'.
+
     {PROG_ID} --directory '~/Documents' KDE --subquery 'Baloo OR Bagheera' --type Presentation --having 'NOT (tags=Obsolete OR tags=Revised)'
 
 
 - 'Having' and 'subquery-having' options -
 
-The '--having' and '--subquery-having' options allow you to filter files out of the results. The syntax for both options is the same as in Baloo and, additionally, supports the logical operator 'NOT'.
-In addition to Baloo comparison operators, 'case-sensitive equal' (==), 'not equal' (!=) and 'not include' (!:) operators are available for comparing properties against specific values. Furthermore, you can compare two properties directly; for example, 'width > height' is a valid expression.
-A new property called 'created', which is not available in Baloo, formatted as yyyy-MM-dd, can be used to compare against the file creation date.
+The '--having' and '--subquery-having' options allow you to filter the results returned by **Baloo**. They support the standard **Baloo** syntax plus the `NOT` operator.
 
-Remarks:
-. All text comparisons are case-insensitive except when 'case-sensitive equal' (==) is used. For example, 'filename:report' matches 'report.docx', 'Report.docx', and 'REPORT.docx', while 'filename==report.docx' only matches 'report.docx'.
-· You can include properties without value or with '' value in search expressions, such as 'tags=' or 'rating!=', to check for the presence or ausence of any value in that property. For example, 'tags!=' matches any file that has at least one tag, regardless of its content, while 'tags=' matches files without any tags.
-. Tag comparisons are performed against both the individual full tag string (using the '/' character as a level separator) and each individual level. All individual level values are normalized and stripped of accents or diacritics. For example, a file tagged as 'Opera,Person/Maria Callas,Singer' would match any of the following elements: ['Callas', 'Maria', 'Person', 'Opera', 'Person/Maria Callas', 'Singer']. Please pay attention to this behavior when using 'not contain' (!:) and 'not include' (!=) operators with tags, as they will match against all these values.
-. Natural language date expressions are not supported in '--having' and '--subquery-having' options.
-. The Baloo limit of at least three characters for string property values is not applied in '--having' and '--subquery-having' options, allowing you to use shorter values.
+Additionally, you can use:
+
+- '==' (case-sensitive equal)
+- '!=' (not equal)
+- '!:' (does not contains)
+- Property-to-property comparison (e.g., `width > height`).
+- 'created', a **Bagheera-specific** property for file creation dates (Formatted as `yyyy-MM-dd`).
+
+Important Remarks:
+· Case Sensitivity: All text comparisons are case-insensitive unless '==' is used.
+· Empty Values: You can check for the presence or absence of values using empty quotes. For example, 'tags!=""' matches any file with at least one tag, while 'tags=""' matches files with no tags.
+· Tag Levels: Comparisons are performed against the full tag path and each individual level. A file tagged 'Person/Maria Callas' matches 'Maria', 'Callas', 'Person', and the full string.
+· Character Limit: Unlike Baloo, the 3-character minimum limit for string values is not enforced within 'having' options.
 
 Having exclusion example:
-If you have a tag named 'Science' and another one 'Science Fiction', you cannot obtain only results tagged with 'Science' because the Baloo search engine will match both when using 'tags:Science'. To exclude 'Science Fiction', you can use the following query:
+Get files tagget as "Science" ignoring "Science Fiction" tag.
+
     {PROG_ID} tags=Science --having "NOT tags=Fiction" """
     print(help_query)
 

@@ -51,15 +51,15 @@ Combine multiple criteria using uppercase logical operators:
 
 Filter by specific file metadata using the `property <operator> value` syntax. When using having options, you can also use `property <operator> property` to compare two different metadata fields.
 
-| Property   | Description                                                  |
-| ---------- | ------------------------------------------------------------ |
-| `tags`     | Keywords or labels assigned to the file.                     |
-| `rating`   | File rating (from 1 to 10).                                  |
-| `filename` | The name of the file.                                        |
-| `height`   | Image height in pixels.                                      |
-| `width`    | Image width in pixels.                                       |
-| type       | The file **Baloo** type (a full list of available types is provided in Chapter 6) |
-| `mimetype` | The file mimetype (e.g., `jpeg`).                            |
+| Property   | Description                                                                       |
+| ---------- | --------------------------------------------------------------------------------- |
+| `tags`     | Keywords or labels assigned to the file.                                          |
+| `rating`   | File rating (from 1 to 10).                                                       |
+| `filename` | The name of the file.                                                             |
+| `height`   | Image height in pixels.                                                           |
+| `width`    | Image width in pixels.                                                            |
+| `type`     | The file **Baloo** type (a full list of available types is provided in Chapter 6) |
+| `mimetype` | The file mimetype (e.g., `jpeg`).                                                 |
 
 A full list of available properties is provided in Chapter 7.
 
@@ -68,7 +68,7 @@ A full list of available properties is provided in Chapter 7.
 **Bagheera** supports various ways to compare values:
 
 - `=`: Equals.
-- `==`: Strict equality (case-sensitive), available only with `having` options. 
+- `==`: Strict equality (case-sensitive), available only with `having` options.
 - `!=`: Not equal, available only with `having` options.
 - `>` / `<`/ `>=`/ `<=`: Greater than, less than, greater than or equal to, less than or equal to (for numeric values and dates).
 - `:`:  Contains or flexible match (case-insensitive).
@@ -116,7 +116,7 @@ Tags are stored with a path-like structure (e.g., `Person/Julia`).
 
 ## 6. Supportted types
 
-The following types, to use in `--type` option or `type` property,  are supported:
+The following types, to use in `--type` option or `type` property, are supported:
 
 * Archive
 * Folder
@@ -132,75 +132,75 @@ The following types, to use in `--type` option or `type` property,  are supporte
 
 ## 7. Supportted searchable properties
 
-Properties are grouped by file type for easier reference.. 
+Properties are grouped by file type for easier reference..
 
-### All Files 
-* filename 
+### All Files
+* filename
 * mimetype (Note: You cannot search for full strings like `"text/plain"`. Search for individual words: `mimetype:text AND mimetype:plain`)
-* modified (Formatted as yyyy-MM-dd) 
-* rating 
-* tags 
+* modified (Formatted as yyyy-MM-dd)
+* rating
+* tags
 * type
-* userComment: (Note: Search for individual words: `userComment:ready AND userComment:script` because **Baloo engine** does not support quoted strings within the `userComment` search)
+* userComment (Note: Search for individual words: `userComment:ready AND userComment:script` because **Baloo engine** does not support quoted strings within the `userComment` search)
 
-### Audio 
-* Album 
-* AlbumArtist 
-* Artist 
-* BitRate 
-* Channels 
-* Comment 
-* Composer 
-* Duration (Value in seconds; e.g., `'duration > 300'` for files longer than 5 minutes) 
-* Genre 
-* Lyricist 
-* ReleaseYear 
-* SampleRate 
-* TrackNumber 
+### Audio
+* Album
+* AlbumArtist
+* Artist
+* BitRate
+* Channels
+* Comment
+* Composer
+* Duration (Value in seconds; e.g., `'duration > 300'` for files longer than 5 minutes)
+* Genre
+* Lyricist
+* ReleaseYear
+* SampleRate
+* TrackNumber
 
-### Documents 
-* Author 
-* Copyright 
-* CreationDate (Formatted as yyyy-MM-dd) 
-* Generator 
-* Keywords 
-* Language 
-* LineCount 
-* PageCount 
-* Publisher 
-* Subject 
-* Title 
-* WordCount 
+### Documents
+* Author
+* Copyright
+* CreationDate (Formatted as yyyy-MM-dd)
+* Generator
+* Keywords
+* Language
+* LineCount
+* PageCount
+* Publisher
+* Subject
+* Title
+* WordCount
 
-### Media 
-* AspectRatio 
-* FrameRate 
-* Height 
-* Width 
+### Media
+* AspectRatio
+* FrameRate
+* Height
+* Width
 
-### Images 
+### Images
 * ImageDateTime (Formatted as yyyy-MM-dd. Note: Currently inconsistent in **Baloo**; use in `having` options for reliability).
-* ImageMake 
-* ImageModel 
-* ImageOrientation 
-* PhotoApertureValue 
-* PhotoDateTimeOriginal 
-* PhotoExposureBiasValue 
-* PhotoExposureTime 
-* PhotoFlash 
-* PhotoFNumber 
-* PhotoFocalLength 
-* PhotoFocalLengthIn35mmFilm 
-* PhotoGpsAltitude 
-* PhotoGpsLatitude 
-* PhotoGpsLongitude 
-* PhotoISOSpeedRatings 
-* PhotoMeteringMode 
-* PhotoPixelXDimension 
-* PhotoPixelYDimension 
-* PhotoSaturation 
-* PhotoSharpness 
-* PhotoWhiteBalance 
+* ImageMake
+* ImageModel
+* ImageOrientation
+* PhotoApertureValue
+* PhotoDateTimeOriginal
+* PhotoExposureBiasValue
+* PhotoExposureTime
+* PhotoFlash
+* PhotoFNumber
+* PhotoFocalLength
+* PhotoFocalLengthIn35mmFilm
+* PhotoGpsAltitude
+* PhotoGpsLatitude
+* PhotoGpsLongitude
+* PhotoISOSpeedRatings
+* PhotoMeteringMode
+* PhotoPixelXDimension
+* PhotoPixelYDimension
+* PhotoSaturation
+* PhotoSharpness
+* PhotoWhiteBalance
 
 ### Other available properties
 
@@ -217,28 +217,28 @@ The following properties are undocumented but available in the source code. They
 * Ensemble
 * Label
 * License
-* Location 
-* Lyrics 
-* Manufacturer 
-* Model 
-* Opus 
-* OriginUrl 
-* OriginEmailSubject 
-* OriginEmailSender 
-* OriginEmailMessageId 
-* Performer 
-* PixelFormat 
-* ReplayGainAlbumPeak 
-* ReplayGainAlbumGain 
-* ReplayGainTrackPeak 
-* ReplayGainTrackGain 
-* TranslationUnitsTotal 
-* TranslationUnitsWithTranslation 
-* TranslationUnitsWithDraftTranslation 
-* TranslationLastAuthor 
-* TranslationLastUpDate 
-* TranslationTemplateDate 
-* VideoCodec 
+* Location
+* Lyrics
+* Manufacturer
+* Model
+* Opus
+* OriginUrl
+* OriginEmailSubject
+* OriginEmailSender
+* OriginEmailMessageId
+* Performer
+* PixelFormat
+* ReplayGainAlbumPeak
+* ReplayGainAlbumGain
+* ReplayGainTrackPeak
+* ReplayGainTrackGain
+* TranslationUnitsTotal
+* TranslationUnitsWithTranslation
+* TranslationUnitsWithDraftTranslation
+* TranslationLastAuthor
+* TranslationLastUpDate
+* TranslationTemplateDate
+* VideoCodec
 
 ---
 
@@ -314,4 +314,4 @@ Ensure **Baloo** is enabled and has finished indexing (`balooctl6 status`). Bagh
 
 ### Dependency Issues
 
-Bagheera requires the compiled C++ wrapper `libbaloo_wrapper.so`. If the tool fails to start, ensure you have the `KF6Baloo` and `Qt6Core` development headers installed and reinstall the package to trigger the `setup.py` compilation. 
+Bagheera requires the compiled C++ wrapper `libbaloo_wrapper.so`. If the tool fails to start, ensure you have the `KF6Baloo` and `Qt6Core` development headers installed and reinstall the package to trigger the `setup.py` compilation.
