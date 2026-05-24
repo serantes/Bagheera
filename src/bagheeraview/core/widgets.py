@@ -415,7 +415,7 @@ class TagEditWidget(QWidget):
         if not full_path:
             return ""
         words = full_path.replace('/', ' ').split()
-        search_terms = [f"tags='{word}'" for word in words if word]
+        search_terms = [f"tags='{word}'" for word in words if word not in ('-')]
         return " ".join(search_terms)
 
     def _get_current_query_text(self):
