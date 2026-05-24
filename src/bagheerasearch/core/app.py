@@ -9,7 +9,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from .help_texts import HELP_QUERY_TEMPLATE
+from .help_texts import HelpTexts
 from .search_lib import BagheeraSearcher
 
 # --- CONFIGURATION ---
@@ -17,7 +17,7 @@ PROG_NAME = "Bagheera Search Tool"
 PROG_ID = "bagheerasearch"
 PROG_VERSION = "1.0.0"
 PROG_BY = "Ignacio Serantes"
-PROG_DATE = "2026-05-22"
+PROG_DATE = "2026-05-24"
 
 CONFIG_DIR = Path.home() / ".config" / PROG_ID
 CONFIG_FILE = CONFIG_DIR / "config.json"
@@ -30,7 +30,7 @@ def load_config() -> dict:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except (json.JSONDecodeError, OSError) as e:
-            print(f"Warning: Could not load config file: {e}")
+            print(HelpTexts.ERR_LOAD_CONFIG.format(e))
     return {}
 
 
@@ -41,46 +41,45 @@ def save_config(config: dict) -> None:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=4)
     except OSError as e:
-        print(f"Warning: Could not save config file: {e}")
+        print(HelpTexts.ERR_SAVE_CONFIG.format(e))
 
 
 def print_help_query() -> None:
     """Prints the detailed help for query syntax."""
-    print(HELP_QUERY_TEMPLATE.format(prog_name=PROG_NAME, prog_id=PROG_ID))
+    print(HelpTexts.HELP_QUERY_TEMPLATE.format(prog_name=PROG_NAME, prog_id=PROG_ID))
 
 
 def print_version() -> None:
     """Prints version information."""
     print(f"{PROG_NAME} v{PROG_VERSION} - {PROG_DATE}")
     print(
-        f"Copyright (C) {PROG_DATE[:4]} by {PROG_BY} and, mostly, "
-        "the good people at KDE"
+        HelpTexts.COPYRIGHT_INFO.format(year=PROG_DATE[:4], author=PROG_BY)
     )
 
 def main():
     parser = argparse.ArgumentParser(
-        description="An improved search tool for Baloo"
+        description=HelpTexts.CLI_DESC
     )
-    parser.add_argument("query", nargs="?", help="list of words to query for")
-    parser.add_argument("-d", "--directory", help="limit search to specified directory tree")
-    parser.add_argument("-e", "--having", help="having expression applied over query results")
-    parser.add_argument("-i", "--id", action="store_true", help="show document IDs")
-    parser.add_argument("-k", "--konsole", action="store_true", help="show files using file:/ and quotes")
-    parser.add_argument("-l", "--limit", type=int, help="the maximum number of results")
-    parser.add_argument("-o", "--offset", type=int, help="offset from which to start the search")
-    parser.add_argument("-q", "--subquery", nargs="?", const="", default=None, help="enable a subquery over folder results with or without a query")
-    parser.add_argument("-n", "--subquery-indent", help="subquery results indent character")
-    parser.add_argument("-x", "--subquery-having", help="having expression applied over subquery results")
-    parser.add_argument("-s", "--sort", help="sorting criteria <auto|none>")
-    parser.add_argument("-t", "--type", help="type of Baloo data to be searched")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose mode")
+    parser.add_argument("query", nargs="?", help=HelpTexts.ARG_QUERY)
+    parser.add_argument("-d", "--directory", help=HelpTexts.ARG_DIR)
+    parser.add_argument("-e", "--having", help=HelpTexts.ARG_HAVING)
+    parser.add_argument("-i", "--id", action="store_true", help=HelpTexts.ARG_ID)
+    parser.add_argument("-k", "--konsole", action="store_true", help=HelpTexts.ARG_KONSOLE)
+    parser.add_argument("-l", "--limit", type=int, help=HelpTexts.ARG_LIMIT)
+    parser.add_argument("-o", "--offset", type=int, help=HelpTexts.ARG_OFFSET)
+    parser.add_argument("-q", "--subquery", nargs="?", const="", default=None, help=HelpTexts.ARG_SUBQUERY)
+    parser.add_argument("-n", "--subquery-indent", help=HelpTexts.ARG_SUBQUERY_INDENT)
+    parser.add_argument("-x", "--subquery-having", help=HelpTexts.ARG_SUBQUERY_HAVING)
+    parser.add_argument("-s", "--sort", help=HelpTexts.ARG_SORT)
+    parser.add_argument("-t", "--type", help=HelpTexts.ARG_TYPE)
+    parser.add_argument("-v", "--verbose", action="store_true", help=HelpTexts.ARG_VERBOSE)
 
-    parser.add_argument("--day", type=int, help="day fixed filter, --month is required")
-    parser.add_argument("--month", type=int, help="month fixed filter, --year is required")
-    parser.add_argument("--year", type=int, help="year fixed filter")
+    parser.add_argument("--day", type=int, help=HelpTexts.ARG_DAY)
+    parser.add_argument("--month", type=int, help=HelpTexts.ARG_MONTH)
+    parser.add_argument("--year", type=int, help=HelpTexts.ARG_YEAR)
 
-    parser.add_argument("--help-query", action="store_true", help="show query syntax help")
-    parser.add_argument("--version", action="store_true", help="show version information")
+    parser.add_argument("--help-query", action="store_true", help=HelpTexts.ARG_HELP_QUERY)
+    parser.add_argument("--version", action="store_true", help=HelpTexts.ARG_VERSION)
 
     args, unknown_args = parser.parse_known_args()
 
@@ -91,10 +90,10 @@ def main():
     query_text = " ".join(query_parts)
 
     if args.day is not None and args.month is None:
-        raise ValueError("Missing --month (required when --day is used)")
+        raise ValueError(HelpTexts.ERR_MISSING_MONTH)
 
     if args.month is not None and args.year is None:
-        raise ValueError("Missing --year (required when --month is used)")
+        raise ValueError(HelpTexts.ERR_MISSING_YEAR)
 
     if args.help_query:
         print_help_query()
@@ -154,9 +153,9 @@ def main():
     }
 
     if other_options["verbose"]:
-        print(f"Query: '{query_text}'")
-        print(f"Main Options: {main_options}")
-        print(f"Other Options: {other_options}")
+        print(HelpTexts.MSG_QUERY.format(query_text))
+        print(HelpTexts.MSG_MAIN_OPTS.format(main_options))
+        print(HelpTexts.MSG_OTHER_OPTS.format(other_options))
         print("-" * 30)
 
     try:
@@ -171,23 +170,23 @@ def main():
                 output = item["path"]
 
             if other_options["id"]:
-                output += f" [ID: {item['id']}]"
+                output += HelpTexts.MSG_ID_INFO.format(item['id'])
 
             print(output)
             files_count += 1
 
         if other_options["verbose"]:
             if files_count == 0:
-                print("No results found.")
+                print(HelpTexts.MSG_NO_RESULTS)
             else:
-                print(f"Total: {files_count} files found.")
+                print(HelpTexts.MSG_TOTAL_RESULTS.format(files_count))
 
     except FileNotFoundError as e:
         print(e)
         sys.exit(1)
     except KeyboardInterrupt:
         # Capture Ctrl+C inside main for an immediate and clean exit
-        print("\nSearch canceled at user request.")
+        print(HelpTexts.MSG_CANCELED)
         sys.exit(0)
     except BrokenPipeError:
         # Silence errors when used with 'head' or 'less' and the pipe is closed
@@ -195,7 +194,7 @@ def main():
         os.dup2(devnull, sys.stdout.fileno())
         sys.exit(1)
     except Exception as e:
-        print(f"Error executing search: {e}")
+        print(HelpTexts.ERR_EXEC_SEARCH.format(e))
         sys.exit(1)
 
 
@@ -204,11 +203,11 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         # Backup in case the interruption occurs outside the main block of main
-        print("\nSearch canceled at user request.")
+        print(HelpTexts.MSG_CANCELED)
         try:
             sys.exit(0)
         except SystemExit:
             os._exit(0)
     except Exception as e:
-        print(f"Critical error: {e}")
+        print(HelpTexts.ERR_CRITICAL.format(e))
         sys.exit(1)
