@@ -1,3 +1,3 @@
 """
-Bagheera Search Tool: a search tool for Baloo.
+Bagheera View: an image viewer for Bagheera
 """
