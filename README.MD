@@ -171,7 +171,7 @@ bagheerasearch MODIFIED YESTERDAY
 Exclude specific types or tags using complex logic:
 ```bash
 # Fetch files containing 'report' while abandoning results where the file path includes 'pdf' or the file is marked with the 'Draft' tag.
-bagheerasearch report --exclude "pdf OR tags:Draft"
+bagheerasearch report --having "pdf OR tags:Draft"
 ```
 
 #### Subquery Search
@@ -220,40 +220,38 @@ These are some common properties available to use in queries (run `--help-query`
 ### BagheeraSearch Command Help
 
 ```text
-    usage: bagheerasearch [-h] [-d DIRECTORY] [-e EXCLUDE] [-i] [-k] [-l LIMIT] [-o OFFSET] [-r [RECURSIVE]]
-                          [-n RECURSIVE_INDENT] [-x RECURSIVE_EXCLUDE] [-s SORT] [-t TYPE] [-v] [--day DAY] [--month MONTH]
-                          [--year YEAR] [--help-query] [--version]
-                          [query]
+usage: bagheerasearch [-h] [-d DIRECTORY] [-e HAVING] [-i] [-k] [-l LIMIT] [-o OFFSET] [-q [SUBQUERY]] [-n SUBQUERY_INDENT] [-x SUBQUERY_HAVING]
+                      [-s SORT] [-t TYPE] [-v] [--day DAY] [--month MONTH] [--year YEAR] [--help-query] [--version]
+                      [query]
 
-    An improved search tool for Baloo
+An improved search tool for Baloo
 
-    positional arguments:
-      query                 list of words to query for
+positional arguments:
+  query                 list of words to query for
 
-    options:
-      -h, --help            show this help message and exit
-      -d, --directory DIRECTORY
-                            limit search to specified directory tree
-      -e, --exclude EXCLUDE
-                            Search exclude pattern
-      -i, --id              show document IDs
-      -k, --konsole         show files using file:/ and quotes
-      -l, --limit LIMIT     the maximum number of results
-      -o, --offset OFFSET   offset from which to start the search
-      -r, --recursive [RECURSIVE]
-                            enable recursion with or without a query
-      -n, --recursive-indent RECURSIVE_INDENT
-                            recursive indent character
-      -x, --recursive-exclude RECURSIVE_EXCLUDE
-                            recursion exclude query
-      -s, --sort SORT       sorting criteria <auto|none>
-      -t, --type TYPE       type of Baloo data to be searched
-      -v, --verbose         Verbose mode
-      --day DAY             day fixed filter, --month is required
-      --month MONTH         month fixed filter, --year is required
-      --year YEAR           year fixed filter
-      --help-query          show query syntax help
-      --version             show version information
+options:
+  -h, --help            show this help message and exit
+  -d, --directory DIRECTORY
+                        limit search to specified directory tree
+  -e, --having HAVING   having expression applied over query results
+  -i, --id              show document IDs
+  -k, --konsole         show files using file:/ and quotes
+  -l, --limit LIMIT     the maximum number of results
+  -o, --offset OFFSET   offset from which to start the search
+  -q, --subquery [SUBQUERY]
+                        enable a subquery over folder results with or without a query
+  -n, --subquery-indent SUBQUERY_INDENT
+                        subquery results indent character
+  -x, --subquery-having SUBQUERY_HAVING
+                        having expression applied over subquery results
+  -s, --sort SORT       sorting criteria <auto|none>
+  -t, --type TYPE       type of Baloo data to be searched
+  -v, --verbose         Verbose mode
+  --day DAY             day fixed filter, --month is required
+  --month MONTH         month fixed filter, --year is required
+  --year YEAR           year fixed filter
+  --help-query          show query syntax help
+  --version             show version information
 ```
 
 The full query syntax help is available by running:
