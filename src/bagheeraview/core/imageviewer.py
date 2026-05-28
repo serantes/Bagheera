@@ -1525,6 +1525,9 @@ class ImageViewer(QWidget):
         self.setWindowFlags(self.windowFlags() | Qt.WindowMaximizeButtonHint |
                             Qt.WindowMinimizeButtonHint)
 
+        self._desktop_width = 0
+        self._desktop_height = 0
+
         self._first_load = first_load
         self._is_persistent = persistent
         self.crop_mode = False
@@ -2069,12 +2072,15 @@ class ImageViewer(QWidget):
         """
         Determines the resolution of the primary desktop.
         """
+        if self._desktop_width and self._desktop_height:
+            return self._desktop_width, self._desktop_height
+
         try:
             """
             kwinoutputconfig.json
             """
-            return self.screen().availableGeometry().width(), \
-                self.screen().availableGeometry().height()
+            # return self.screen().availableGeometry().width(), \
+            #    self.screen().availableGeometry().height()
             # We run kscreen-doctor and look for the primary monitor line.
             if FORCE_X11:
                 if os.path.exists(KWINOUTPUTCONFIG_PATH):
@@ -2118,8 +2124,9 @@ class ImageViewer(QWidget):
                                                      "-f1", shell=True, text=True)
 
                 width, height = map(int, output.split('x'))
-                return width / scale - KSCREEN_DOCTOR_MARGIN, height / scale - \
-                    KSCREEN_DOCTOR_MARGIN
+                self._desktop_width = int(width / scale - KSCREEN_DOCTOR_MARGIN)
+                self._desktop_height = int(height / scale - KSCREEN_DOCTOR_MARGIN)
+                return self._desktop_width, self._desktop_height
 
             else:
                 # This can hang on X11.
@@ -2128,10 +2135,15 @@ class ImageViewer(QWidget):
                                                  "| cut -d' ' -f3", shell=True,
                                                  text=True)
                 width, height = map(int, output.split('x'))
-                return width-KSCREEN_DOCTOR_MARGIN, height-KSCREEN_DOCTOR_MARGIN
+                self._desktop_width = int(width-KSCREEN_DOCTOR_MARGIN)
+                self._desktop_height = int(height-KSCREEN_DOCTOR_MARGIN)
+                return self._desktop_width, self._desktop_height
+
         except Exception:
             screen_geo = self.screen().availableGeometry()
-            return screen_geo.width(), screen_geo.height()
+            self._desktop_width = screen_geo.width()
+            self._desktop_height = screen_geo.height()
+            return self._desktop_width, self._desktop_height
 
     def load_and_fit_image_for_pane(self, pane, restore_config=None):
         """
