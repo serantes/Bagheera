@@ -2216,8 +2216,8 @@ class ImageViewer(QWidget):
                     screen_height = screen_geo.height()
 
                 # Calculate available screen space for the image itself
-                available_w = screen_width * ZOOM_DESKTOP_RATIO
-                available_h = screen_height * ZOOM_DESKTOP_RATIO
+                available_w = int(screen_width * ZOOM_DESKTOP_RATIO)
+                available_h = int(screen_height * ZOOM_DESKTOP_RATIO)
 
                 filmstrip_position = self.main_win.filmstrip_position \
                     if self.main_win else 'bottom'
@@ -2228,6 +2228,9 @@ class ImageViewer(QWidget):
                     else:  # top, bottom
                         available_h -= self.filmstrip.height()
 
+                # BUG: on first load this call fails because status_bar_container is not
+                # visible yet, causing incorrect zoom calculation.
+                # All calls to self.status_bar_container.isVisible() must be fixed.
                 if self.status_bar_container.isVisible():
                     available_h -= self.status_bar_container.sizeHint().height()
                 should_resize = True
