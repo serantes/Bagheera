@@ -2434,6 +2434,10 @@ class ImageViewer(QWidget):
 
             new_path = os.path.join(old_dir, new_filename)
 
+            if self.main_win:
+                self.main_win._mark_path_as_app_modified(old_path)
+                self.main_win._mark_path_as_app_modified(new_path)
+
             if self.movie:
                 self.movie.stop()
                 self.movie = None

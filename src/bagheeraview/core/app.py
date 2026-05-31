@@ -23,7 +23,7 @@ import json
 import glob
 import shutil
 from datetime import datetime
-from collections import deque
+from collections import deque, defaultdict
 from itertools import groupby
 
 from PySide6.QtWidgets import (
@@ -837,10 +837,16 @@ class ThumbnailSortFilterProxyModel(QSortFilterProxyModel):
         super().__init__(parent)
         self.main_win = parent
         self._data_cache = {}
+        self._tag_to_paths_index = defaultdict(set)
+        self._all_paths = set()
         self.include_tags = set()
         self.exclude_tags = set()
         self.name_filter = ""
         self.match_mode = "AND"
+        self._name_to_paths_index = defaultdict(set)
+        self._name_matching_paths = set()
+        self._name_filter_active = False
+        self._last_name_criteria = None
         self.group_by_folder = False
         self.group_by_day = False
         self.group_by_week = False
@@ -854,6 +860,25 @@ class ThumbnailSortFilterProxyModel(QSortFilterProxyModel):
         self._tag_filter_active = False
         self._last_tag_criteria = None  # (frozenset(inc), frozenset(exc), mode)
 
+    def _tokenize(self, text):
+        """Splits text into words for indexing."""
+        if not text:
+            return []
+        # Replace common separators with spaces
+        for char in ' ._-()[]{}#@&!+=\\/:;,\'\"':
+            text = text.replace(char, ' ')
+        return [t for t in text.lower().split() if t]
+
+    def _matches_name_tokens(self, name_lower, search_text):
+        """Helper for incremental updates: checks if a name matches search tokens."""
+        search_tokens = self._tokenize(search_text)
+        if not search_tokens:
+            return True
+        for s_token in search_tokens:
+            if s_token not in name_lower:
+                return False
+        return True
+
     def prepare_filter(self):
         """Updates the filter matching set if criteria have changed."""
         if not self.main_win:
@@ -866,15 +891,55 @@ class ThumbnailSortFilterProxyModel(QSortFilterProxyModel):
                             self.match_mode)
 
         if current_criteria != self._last_tag_criteria:
-            # Criteria changed: Full O(N) re-evaluation required for the whole cache.
+            # Criteria changed: Full re-evaluation required.
             self._last_tag_criteria = current_criteria
-            self._tag_matching_paths.clear()
             self._tag_filter_active = bool(self.include_tags or self.exclude_tags)
 
-            if self._tag_filter_active:
-                for path, (tags, _) in self._data_cache.items():
-                    if self._matches_tags(tags):
-                        self._tag_matching_paths.add(path)
+            if not self._tag_filter_active:
+                self._tag_matching_paths.clear()
+                return
+
+            # Optimized Inverted Index lookup using native set operations
+            if self.include_tags:
+                tag_sets = [self._tag_to_paths_index[t] for t in self.include_tags]
+                if self.match_mode == "AND":
+                    self._tag_matching_paths = set.intersection(*tag_sets)
+                else:  # OR mode
+                    self._tag_matching_paths = set.union(*tag_sets)
+            else:
+                # Exclusion only mode: start with everything
+                self._tag_matching_paths = self._all_paths.copy()
+
+            if self.exclude_tags:
+                exclude_sets = [self._tag_to_paths_index[t] for t in self.exclude_tags]
+                self._tag_matching_paths -= set.union(*exclude_sets)
+
+        # Name filter optimization via word-based Inverted Index
+        if self.name_filter != self._last_name_criteria:
+            self._last_name_criteria = self.name_filter
+            search_tokens = self._tokenize(self.name_filter)
+            self._name_filter_active = bool(search_tokens)
+
+            if self._name_filter_active:
+                results = []
+                for s_token in search_tokens:
+                    token_paths = set()
+                    # Search over unique words in index instead of scanning all files
+                    for word, path_set in self._name_to_paths_index.items():
+                        if s_token in word:
+                            token_paths.update(path_set)
+
+                    if not token_paths:
+                        results = []
+                        break
+                    results.append(token_paths)
+
+                if results:
+                    self._name_matching_paths = set.intersection(*results)
+                else:
+                    self._name_matching_paths = set()
+            else:
+                self._name_matching_paths.clear()
 
     def _matches_tags(self, tags):
         """Internal helper to check if a set of tags matches current criteria."""
@@ -894,25 +959,63 @@ class ThumbnailSortFilterProxyModel(QSortFilterProxyModel):
     def clear_cache(self):
         """Clears the internal filter data cache."""
         self._data_cache = {}
+        self._tag_to_paths_index.clear()
+        self._name_to_paths_index.clear()
+        self._all_paths.clear()
         self._tag_matching_paths.clear()
+        self._name_matching_paths.clear()
         self._last_tag_criteria = None
+        self._last_name_criteria = None
 
     def add_to_cache(self, path, tags):
         """Adds a single item to the filter cache incrementally."""
-        t_set = set(tags) if tags else set()
-        self._data_cache[path] = (t_set, os.path.basename(path).lower())
+        self._all_paths.add(path)
+        name_lower = os.path.basename(path).lower()
+        new_t_set = set(tags) if tags else set()
+
+        # Update Inverted Index (handles updates correctly for existing items)
+        if path in self._data_cache:
+            old_t_set, _ = self._data_cache[path]
+            for t in old_t_set - new_t_set:
+                self._tag_to_paths_index[t].discard(path)
+            for t in new_t_set - old_t_set:
+                self._tag_to_paths_index[t].add(path)
+        else:
+            for t in new_t_set:
+                self._tag_to_paths_index[t].add(path)
+
+            # Index name tokens only on new items
+            tokens = self._tokenize(name_lower)
+            for token in tokens:
+                self._name_to_paths_index[token].add(path)
+
+        self._data_cache[path] = (new_t_set, name_lower)
 
         # Incremental update of matching paths avoids full cache scan in prepare_filter
         if self._tag_filter_active:
-            if self._matches_tags(t_set):
+            if self._matches_tags(new_t_set):
                 self._tag_matching_paths.add(path)
             else:
                 self._tag_matching_paths.discard(path)
 
+        if self._name_filter_active:
+            if self._matches_name_tokens(name_lower, self.name_filter):
+                self._name_matching_paths.add(path)
+            else:
+                self._name_matching_paths.discard(path)
+
     def remove_from_cache(self, path):
         """Removes an item from the cache and tracking sets."""
-        self._data_cache.pop(path, None)
+        self._all_paths.discard(path)
+        if path in self._data_cache:
+            tags, name_lower = self._data_cache.pop(path)
+            for t in tags:
+                self._tag_to_paths_index[t].discard(path)
+            for token in self._tokenize(name_lower):
+                self._name_to_paths_index[token].discard(path)
+
         self._tag_matching_paths.discard(path)
+        self._name_matching_paths.discard(path)
 
     def filterAcceptsRow(self, source_row, source_parent):
         """Determines if a row should be visible based on current filters."""
@@ -929,6 +1032,9 @@ class ThumbnailSortFilterProxyModel(QSortFilterProxyModel):
 
         # 1. Optimization: Check tags first using pre-calculated set (O(1) lookup)
         if self._tag_filter_active and path not in self._tag_matching_paths:
+            return False
+
+        if self._name_filter_active and path not in self._name_matching_paths:
             return False
 
         # Filter collapsed groups
@@ -2554,6 +2660,7 @@ class MainWindow(QMainWindow):
         _permanent = permanent if permanent is not None \
             else not APP_CONFIG.get("default_delete_to_trash", True)
         try:
+            self._mark_path_as_app_modified(path)
             if _permanent:
                 os.remove(path)
             else:
@@ -2624,6 +2731,9 @@ class MainWindow(QMainWindow):
                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
                     if reply != QMessageBox.Yes:
                         continue
+
+                self._mark_path_as_app_modified(path)
+                self._mark_path_as_app_modified(new_path)
 
                 try:
                     shutil.move(path, new_path)
@@ -2738,6 +2848,7 @@ class MainWindow(QMainWindow):
         # Fallback to lossy rotation using QImage
         if not success:
             try:
+                self._mark_path_as_app_modified(path)
                 reader = QImageReader(path)
                 reader.setAutoTransform(True)
                 img = reader.read()
@@ -4896,6 +5007,8 @@ class MainWindow(QMainWindow):
 
     def on_fs_file_created(self, path):
         """Handles a new file being created in a monitored directory."""
+        if os.path.abspath(path) in self._paths_being_modified_by_app:
+            return
         # Add to batch queue and (re)start the debounce timer
         self._fs_created_queue.add(path)
         self._fs_created_timer.start()
@@ -4953,6 +5066,8 @@ class MainWindow(QMainWindow):
     def on_fs_file_deleted(self, path):
         """Handles a file being deleted from a monitored directory."""
         path = os.path.abspath(path)
+        if path in self._paths_being_modified_by_app:
+            return
         if path not in self._known_paths:
             return  # Not a file we're tracking
 
@@ -4987,6 +5102,9 @@ class MainWindow(QMainWindow):
         """Handles a file being renamed or moved."""
         old_path = os.path.abspath(old_path)
         new_path = os.path.abspath(new_path)
+
+        if old_path in self._paths_being_modified_by_app:
+            return
 
         is_old_img = os.path.splitext(old_path)[1].lower() in IMAGE_EXTENSIONS
         is_new_img = os.path.splitext(new_path)[1].lower() in IMAGE_EXTENSIONS
@@ -5127,6 +5245,15 @@ class MainWindow(QMainWindow):
                 if item:
                     item.setData(new_path, PATH_ROLE)
                     item.setText(os.path.basename(new_path))
+                    item.setData(os.path.dirname(new_path), DIR_ROLE)
+                    # Actualizar el tooltip ya que contiene la ruta antigua
+                    tags = item.data(TAGS_ROLE) or []
+                    tooltip_text = f"{os.path.basename(new_path)}\n{new_path}"
+                    if tags:
+                        display_tags = [t.split('/')[-1] for t in tags]
+                        tooltip_text += f"\n{UITexts.TAGS_TAB}: {', '.join(display_tags)}"
+                    item.setToolTip(tooltip_text)
+
                     self._path_to_model_index[new_path] = p_idx
                     source_index = QModelIndex(p_idx)
                     self.thumbnail_model.dataChanged.emit(source_index, source_index)
@@ -5155,6 +5282,10 @@ class MainWindow(QMainWindow):
                             pass
             except RuntimeError:
                 continue
+
+        # rebuild_view(full_reset=False) garantiza que el orden se actualice
+        # quirúrgicamente sin parpadeos ni re-escaneos de disco.
+        self.rebuild_view(full_reset=False)
 
     def rename_image(self, proxy_row_index):
         """Handles the logic for renaming a file from the main thumbnail view."""
@@ -5185,6 +5316,8 @@ class MainWindow(QMainWindow):
                     new_filename = new_base_name + extension
 
                 new_path = os.path.join(old_dir, new_filename)
+                self._mark_path_as_app_modified(old_path)
+                self._mark_path_as_app_modified(new_path)
 
                 if os.path.exists(new_path):
                     QMessageBox.warning(self,
