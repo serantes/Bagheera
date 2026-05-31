@@ -22,6 +22,20 @@ class BagheeraQueryParser:
         'NINETEEN': 19, 'TWENTY': 20
     }
 
+    # Pre-compile regex patterns for performance
+    _NUM_PATTERN = re.compile(
+        r'\b(' + '|'.join(NUMBER_MAP.keys()) + r')\b', re.IGNORECASE)
+    _TODAY_PATTERN = re.compile(
+        r'\bMODIFIED\s+TODAY\b', re.IGNORECASE)
+    _YESTERDAY_PATTERN = re.compile(
+        r'\bMODIFIED\s+YESTERDAY\b', re.IGNORECASE)
+    _SIMPLE_PATTERN = re.compile(
+        r"\bMODIFIED\s+(LAST|THIS)\s+(YEAR|MONTH|WEEK)\b", re.IGNORECASE)
+    _LAST_N_PATTERN = re.compile(
+        r"\bMODIFIED\s+LAST\s+(\d+)\s+(YEAR|MONTH|WEEK|DAY)S?\b", re.IGNORECASE)
+    _AGO_PATTERN = re.compile(
+        r"\bMODIFIED\s+(\d+)\s+(YEAR|MONTH|WEEK|DAY)S?\s+AGO\b", re.IGNORECASE)
+
     def __init__(self):
         # Initialize today, but it will be refreshed on each parse_date call
         self.today = datetime.now().replace(
@@ -32,13 +46,11 @@ class BagheeraQueryParser:
         Replaces written numbers (ONE to TWENTY) with their numeric string
         equivalent. Replacing is case insensitive.
         """
-        pattern = r'\b(' + '|'.join(self.NUMBER_MAP.keys()) + r')\b'
-
         def replace(match):
             key = match.group(0).upper()
             return str(self.NUMBER_MAP.get(key, key))
 
-        return re.sub(pattern, replace, query, flags=re.IGNORECASE)
+        return self._NUM_PATTERN.sub(replace, query)
 
     def _safe_replace_date(self, dt: datetime, year: Optional[int] = None,
                            month: Optional[int] = None,
@@ -93,19 +105,24 @@ class BagheeraQueryParser:
             return dt - timedelta(days=n)
 
     def parse_date(self, query):
+        # Quick exit: If the query doesn't contain 'MODIFIED' (case insensitive),
+        # we can skip the heavy regex processing entirely.
+        if "MODIFIED" not in query.upper():
+            return query
+
         self.today = datetime.now().replace(
             hour=0, minute=0, second=0, microsecond=0)
         q = self._convert_numbers(query)
 
         # 1. Replacement of TODAY / YESTERDAY
-        q = re.sub(r'\bMODIFIED\s+TODAY\b',
+        q = self._TODAY_PATTERN.sub(
                    f"modified={self.today.strftime('%Y-%m-%d')}",
-                   q, flags=re.IGNORECASE)
+                   q)
 
         yest = self.today - timedelta(days=1)
-        q = re.sub(r'\bMODIFIED\s+YESTERDAY\b',
+        q = self._YESTERDAY_PATTERN.sub(
                    f"modified={yest.strftime('%Y-%m-%d')}",
-                   q, flags=re.IGNORECASE)
+                   q)
 
         # 2. Replacement of (LAST/THIS) (YEAR/MONTH/WEEK) tokens.
         # We use re.sub to locate these patterns anywhere within the query
@@ -129,8 +146,7 @@ class BagheeraQueryParser:
                     '%Y-%m-%d')
             return f"(modified>={start} AND modified<{end})"
 
-        q = re.sub(r"\bMODIFIED\s+(LAST|THIS)\s+(YEAR|MONTH|WEEK)\b",
-                   replace_simple, q, flags=re.IGNORECASE)
+        q = self._SIMPLE_PATTERN.sub(replace_simple, q)
 
         # 3. Replacement of LAST <N> (YEAR/MONTH/WEEK/DAY)
         def replace_last_n(m):
@@ -155,8 +171,7 @@ class BagheeraQueryParser:
             end = (self.today + timedelta(days=1)).strftime('%Y-%m-%d')
             return f"(modified>={start} AND modified<{end})"
 
-        q = re.sub(r"\bMODIFIED\s+LAST\s+(\d+)\s+(YEAR|MONTH|WEEK|DAY)S?\b",
-                   replace_last_n, q, flags=re.IGNORECASE)
+        q = self._LAST_N_PATTERN.sub(replace_last_n, q)
 
         # 4. Replacement of <N> AGO
         def replace_ago(m):
@@ -176,8 +191,7 @@ class BagheeraQueryParser:
             return f"(modified>={start.strftime(
                 '%Y-%m-%d')} AND modified<{end.strftime('%Y-%m-%d')})"
 
-        q = re.sub(r"\bMODIFIED\s+(\d+)\s+(YEAR|MONTH|WEEK|DAY)S?\s+AGO\b",
-                   replace_ago, q, flags=re.IGNORECASE)
+        q = self._AGO_PATTERN.sub(replace_ago, q)
 
         return q
 

@@ -5,6 +5,7 @@ A Python interface for the Baloo search wrapper.
 
 import ctypes
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -22,6 +23,12 @@ from pyparsing import (
 ParserElement.enable_packrat()
 
 
+PROP_ANALYSIS_PATTERN = re.compile(
+    r"\"[^\"]*\"|'[^']*'|\b(\w+)[ \t]*(?:==|!=|!:|>=|<=|=|>|<|:)",
+    re.IGNORECASE
+)
+
+
 def analyze_query_properties(text: str) -> dict:
     """
     Analyzes a query string and classifies properties, correctly handling
@@ -33,14 +40,6 @@ def analyze_query_properties(text: str) -> dict:
     - property: any other property followed by an operator
     - xattr: rating, tags, usercomment
     """
-
-    # Pattern explanation:
-    # 1. ("[^"]*"|'[^']*') : Match quoted strings (to be skipped)
-    # 2. |                 : OR
-    # 3. \b(\w+)[ \t]*(?:==|!=|!:|>=|<=|=|>|<|:) : Match a property name +
-    # operator
-    pattern = r"\"[^\"]*\"|'[^']*'|\b(\w+)[ \t]*(?:==|!=|!:|>=|<=|=|>|<|:)"
-
     results = {
         "dates": 0,
         "mimetype": 0,
@@ -54,7 +53,7 @@ def analyze_query_properties(text: str) -> dict:
     xattr_keywords = {"tags", "rating", "usercomment"}
 
     # finditer allows us to process matches one by one
-    for match in re.finditer(pattern, text, re.IGNORECASE):
+    for match in PROP_ANALYSIS_PATTERN.finditer(text):
         # group(1) will only be present if the third part of the regex (the
         # property) matched
         prop_name = match.group(1)
@@ -99,7 +98,7 @@ class EvaluateExpression:
 
     def _compare_single(self, l_val, op, r_val):
         """Performs comparison between two values based on the operator."""
-        r_is_empty_query = r_val is None or (
+        r_is_empty_query = not r_val or (
             isinstance(r_val, str) and not r_val.strip()
         )
 
@@ -115,6 +114,19 @@ class EvaluateExpression:
             return str(l_val) == str(r_val)
 
         if op in (">", "<", ">=", "<="):
+            # Faster numeric check: avoid try/except if types are already numbers
+            is_l_num = isinstance(l_val, (int, float))
+            is_r_num = isinstance(r_val, (int, float))
+            if is_l_num and is_r_num:
+                if op == ">":
+                    return l_val > r_val
+                if op == "<":
+                    return l_val < r_val
+                if op == ">=":
+                    return l_val >= r_val
+                if op == "<=":
+                    return l_val <= r_val
+
             try:
                 curr_l, curr_r = float(l_val), float(r_val)
                 if op == ">":
@@ -153,19 +165,17 @@ class EvaluateExpression:
 
     def _compare(self, data, left_key, op, right_val):
         """Resolves data keys and handles list-type values."""
-        normalized_data = {k.lower(): v for k, v in data.items()}
-        l_val = normalized_data.get(left_key.lower(), None)
+        l_val = data.get(left_key)
 
         r_key_lookup = str(right_val).lower()
-        if r_key_lookup in normalized_data:
-            r_val = normalized_data[r_key_lookup]
+        if r_key_lookup in data:
+            r_val = data[r_key_lookup]
         else:
             r_val = right_val
 
         if isinstance(l_val, list):
-            if not l_val and (
-               right_val is None or str(right_val).strip() == ""):
-                return self._compare_single(None, op, "")
+            if not l_val:
+                return self._compare_single(None, op, r_val)
             return any(self._compare_single(item, op, r_val) for item in l_val)
 
         return self._compare_single(l_val, op, r_val)
@@ -176,7 +186,8 @@ class EvaluateExpression:
         if len(t) == 1:
             return lambda data: self._compare(data, 'path', ':', t[0])
 
-        l_key = t[0]
+        # Pre-lower the key during compilation to save time in the loop
+        l_key = t[0].lower()
         op = t[1]
         r_val = t[2] if len(t) > 2 else ""
         return lambda data: self._compare(data, l_key, op, r_val)
@@ -335,6 +346,30 @@ class BagheeraSearcher:
             print(f"JSON decode error from Baloo wrapper: {e}")
             return []
 
+    def _get_item_info(self, item, file_id, needs: dict) -> dict:
+        """
+        Optimized helper to build the file metadata dictionary.
+        It populates keys in lowercase directly to avoid redundant loops.
+        """
+        info = {
+            'path': item["path"],
+            'filename': os.path.basename(item["path"]),
+            'type': "unknown"
+        }
+        if needs['property']:
+            for k, v in get_info(file_id).items():
+                info[k.lower()] = v
+        if needs['xattr']:
+            for k, v in get_xattr_terms(file_id).items():
+                info[k.lower()] = v
+        if needs['mimetype']:
+            for k, v in get_mime_type(file_id).items():
+                info[k.lower()] = v
+        if needs['dates']:
+            for k, v in get_dates(file_id).items():
+                info[k.lower()] = v
+        return info
+
     def search_subquery(
         self,
         query_text: str,
@@ -348,6 +383,9 @@ class BagheeraSearcher:
         options["query"] = query_text
         files = self._execute_query(options)
 
+        # Pre-calculate source requirements
+        needs = {k: v > 0 for k, v in having_sources.items()}
+
         for item in files:
             if search_opts.get("limit", 0) <= 0:
                 break
@@ -359,17 +397,7 @@ class BagheeraSearcher:
             self.ids_processed.add(file_id)
 
             if having_evaluator:
-                file_info = {'path': item["path"],
-                             'filename': Path(item["path"]).name,
-                             'type': "Unknown"}
-                if having_sources.get('property') > 0:
-                    file_info = file_info | get_info(file_id)
-                if having_sources.get('xattr') > 0:
-                    file_info = file_info | get_xattr_terms(file_id)
-                if having_sources.get('mimetype') > 0:
-                    file_info = file_info | get_mime_type(file_id)
-                if having_sources.get('dates') > 0:
-                    file_info = file_info | get_dates(file_id)
+                file_info = self._get_item_info(item, file_id, needs)
             else:
                 file_info = None
 
@@ -408,6 +436,9 @@ class BagheeraSearcher:
             subquery_having_sources = {}
             subquery_having_evaluator = None
 
+        # Pre-calculate source requirements for the main 'having'
+        needs = {k: v > 0 for k, v in having_sources.items()}
+
         main_options["query"] = parse_date(query_text)
         files = self._execute_query(main_options)
 
@@ -436,17 +467,7 @@ class BagheeraSearcher:
             self.ids_processed.add(file_id)
 
             if having_evaluator:
-                file_info = {'path': item["path"],
-                             'filename': Path(item["path"]).name,
-                             'type': "Unknown"}
-                if having_sources.get('property') > 0:
-                    file_info = file_info | get_info(file_id)
-                if having_sources.get('xattr') > 0:
-                    file_info = file_info | get_xattr_terms(file_id)
-                if having_sources.get('mimetype') > 0:
-                    file_info = file_info | get_mime_type(file_id)
-                if having_sources.get('dates') > 0:
-                    file_info = file_info | get_dates(file_id)
+                file_info = self._get_item_info(item, file_id, needs)
             else:
                 file_info = None
 
