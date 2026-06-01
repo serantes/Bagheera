@@ -10,7 +10,6 @@ import os
 import sys
 from pathlib import Path
 from .help_texts import HelpTexts
-from .search_lib import BagheeraSearcher
 
 # --- CONFIGURATION ---
 PROG_NAME = "Bagheera Search Tool"
@@ -56,7 +55,8 @@ def print_version() -> None:
         HelpTexts.COPYRIGHT_INFO.format(year=PROG_DATE[:4], author=PROG_BY)
     )
 
-def main():
+def main() -> None:
+    """Main entry point for the CLI tool."""
     parser = argparse.ArgumentParser(
         description=HelpTexts.CLI_DESC
     )
@@ -83,6 +83,14 @@ def main():
 
     args, unknown_args = parser.parse_known_args()
 
+    if args.version:
+        print_version()
+        return
+
+    if args.help_query:
+        print_help_query()
+        return
+
     query_parts = [args.query] if args.query else []
     if unknown_args:
         query_parts.extend(unknown_args)
@@ -95,14 +103,6 @@ def main():
     if args.month is not None and args.year is None:
         raise ValueError(HelpTexts.ERR_MISSING_YEAR)
 
-    if args.help_query:
-        print_help_query()
-        return
-
-    if args.version:
-        print_version()
-        return
-
     if not query_text and not args.subquery and not args.type and not args.directory:
         parser.print_help()
         return
@@ -110,8 +110,9 @@ def main():
     # Configuration and Sort restoring
     user_config = load_config()
     if args.sort:
-        user_config["last_sort_order"] = args.sort
-        save_config(user_config)
+        if user_config.get("last_sort_order") != args.sort:
+            user_config["last_sort_order"] = args.sort
+            save_config(user_config)
     elif "last_sort_order" in user_config:
         args.sort = user_config["last_sort_order"]
 
@@ -159,20 +160,24 @@ def main():
         print("-" * 30)
 
     try:
+        from .search_lib import BagheeraSearcher
         searcher = BagheeraSearcher()
         files_count = 0
 
+        # Pre-cache constant flags and formatting strings for the loop
+        show_id = other_options["id"]
+        use_konsole = other_options["konsole"]
+        id_fmt = HelpTexts.MSG_ID_INFO
+        write = sys.stdout.write
+
         # Consume the library generator
         for item in searcher.search(query_text, main_options, other_options):
-            if other_options["konsole"]:
-                output = f"file:/'{item['path']}'"
-            else:
-                output = item["path"]
+            path = item["path"]
+            output = f"file:/'{path}'" if use_konsole else path
+            if show_id:
+                output = f"{output}{id_fmt.format(item['id'])}"
 
-            if other_options["id"]:
-                output += HelpTexts.MSG_ID_INFO.format(item['id'])
-
-            print(output)
+            write(f"{output}\n")
             files_count += 1
 
         if other_options["verbose"]:

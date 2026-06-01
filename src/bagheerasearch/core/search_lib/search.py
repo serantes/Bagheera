@@ -114,21 +114,11 @@ class EvaluateExpression:
             return str(l_val) == str(r_val)
 
         if op in (">", "<", ">=", "<="):
-            # Faster numeric check: avoid try/except if types are already numbers
-            is_l_num = isinstance(l_val, (int, float))
-            is_r_num = isinstance(r_val, (int, float))
-            if is_l_num and is_r_num:
-                if op == ">":
-                    return l_val > r_val
-                if op == "<":
-                    return l_val < r_val
-                if op == ">=":
-                    return l_val >= r_val
-                if op == "<=":
-                    return l_val <= r_val
-
+            # Optimized numeric path
             try:
-                curr_l, curr_r = float(l_val), float(r_val)
+                # Check if they are already numbers or can be converted
+                curr_l = l_val if isinstance(l_val, (int, float)) else float(l_val)
+                curr_r = r_val if isinstance(r_val, (int, float)) else float(r_val)
                 if op == ">":
                     return curr_l > curr_r
                 if op == "<":
@@ -138,19 +128,25 @@ class EvaluateExpression:
                 if op == "<=":
                     return curr_l <= curr_r
             except (ValueError, TypeError):
+                # Fallback to string comparison if not numeric
                 pass
 
-        curr_l = str(l_val).lower()
-        curr_r = str(r_val).lower()
+        # Normalize to string and lower once for the remaining operators
+        try:
+            curr_l = l_val.lower() if isinstance(l_val, str) else str(l_val).lower()
+            curr_r = r_val.lower() if isinstance(r_val, str) else str(r_val).lower()
+        except AttributeError:
+            curr_l = str(l_val).lower()
+            curr_r = str(r_val).lower()
 
         if op == "=":
             return curr_l == curr_r
+        if op == ":":
+            return curr_r in curr_l
         if op == "!=":
             return curr_l != curr_r
         if op == "!:":
             return curr_r not in curr_l
-        if op == ":":
-            return curr_r in curr_l
 
         if op == ">":
             return curr_l > curr_r
@@ -184,7 +180,9 @@ class EvaluateExpression:
         """Creates a lambda function for a parsed condition block."""
         t = tokens[0]
         if len(t) == 1:
-            return lambda data: self._compare(data, 'path', ':', t[0])
+            # Pre-lowercase the search term once during compilation
+            search_term_lower = str(t[0]).lower()
+            return lambda data: self._compare_single(data.get('path'), ':', search_term_lower)
 
         # Pre-lower the key during compilation to save time in the loop
         l_key = t[0].lower()
@@ -351,23 +349,21 @@ class BagheeraSearcher:
         Optimized helper to build the file metadata dictionary.
         It populates keys in lowercase directly to avoid redundant loops.
         """
+        file_path = item["path"]  # Access item["path"] once
         info = {
-            'path': item["path"],
-            'filename': os.path.basename(item["path"]),
+            'path': file_path,
+            'filename': os.path.basename(file_path),
             'type': "unknown"
         }
+        # Using dict updates with comprehensions is faster than manual loops
         if needs['property']:
-            for k, v in get_info(file_id).items():
-                info[k.lower()] = v
+            info.update({k.lower(): v for k, v in get_info(file_id).items()})
         if needs['xattr']:
-            for k, v in get_xattr_terms(file_id).items():
-                info[k.lower()] = v
+            info.update({k.lower(): v for k, v in get_xattr_terms(file_id).items()})
         if needs['mimetype']:
-            for k, v in get_mime_type(file_id).items():
-                info[k.lower()] = v
+            info.update({k.lower(): v for k, v in get_mime_type(file_id).items()})
         if needs['dates']:
-            for k, v in get_dates(file_id).items():
-                info[k.lower()] = v
+            info.update({k.lower(): v for k, v in get_dates(file_id).items()})
         return info
 
     def search_subquery(
