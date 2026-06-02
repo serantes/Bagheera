@@ -105,9 +105,9 @@ class BagheeraQueryParser:
             return dt - timedelta(days=n)
 
     def parse_date(self, query):
-        # Quick exit: If the query doesn't contain 'MODIFIED' (case insensitive),
+        # Quick exit: If the query doesn't contain 'MODIFIED ' (case sensitive),
         # we can skip the heavy regex processing entirely.
-        if "MODIFIED" not in query.upper():
+        if not query or "MODIFIED " not in query:
             return query
 
         self.today = datetime.now().replace(

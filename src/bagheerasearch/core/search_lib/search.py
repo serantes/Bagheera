@@ -113,10 +113,9 @@ class EvaluateExpression:
         if op == "==":
             return str(l_val) == str(r_val)
 
+        # Try numeric comparison for >, <, >=, <=
         if op in (">", "<", ">=", "<="):
-            # Optimized numeric path
             try:
-                # Check if they are already numbers or can be converted
                 curr_l = l_val if isinstance(l_val, (int, float)) else float(l_val)
                 curr_r = r_val if isinstance(r_val, (int, float)) else float(r_val)
                 if op == ">":
@@ -131,13 +130,9 @@ class EvaluateExpression:
                 # Fallback to string comparison if not numeric
                 pass
 
-        # Normalize to string and lower once for the remaining operators
-        try:
-            curr_l = l_val.lower() if isinstance(l_val, str) else str(l_val).lower()
-            curr_r = r_val.lower() if isinstance(r_val, str) else str(r_val).lower()
-        except AttributeError:
-            curr_l = str(l_val).lower()
-            curr_r = str(r_val).lower()
+        # Normalize to lowercase strings for text comparison
+        curr_l = str(l_val).lower()
+        curr_r = str(r_val).lower()
 
         if op == "=":
             return curr_l == curr_r
@@ -147,7 +142,6 @@ class EvaluateExpression:
             return curr_l != curr_r
         if op == "!:":
             return curr_r not in curr_l
-
         if op == ">":
             return curr_l > curr_r
         if op == "<":
@@ -172,7 +166,12 @@ class EvaluateExpression:
         if isinstance(l_val, list):
             if not l_val:
                 return self._compare_single(None, op, r_val)
-            return any(self._compare_single(item, op, r_val) for item in l_val)
+            # Pre-compute r_val_lower once outside the any() loop
+            r_val_lower = str(r_val).lower() if isinstance(r_val, str) else r_val
+            return any(
+                self._compare_single(item, op, r_val_lower)
+                for item in l_val
+            )
 
         return self._compare_single(l_val, op, r_val)
 
@@ -256,6 +255,19 @@ class EvaluateExpression:
         except Exception as e:
             print(f"Syntax error on expression: {e}")
             return lambda data: False
+
+
+# Module-level cached evaluator to avoid reconstructing pyparsing grammar
+# on every search call.
+_evaluator: EvaluateExpression = None
+
+
+def _get_evaluator() -> EvaluateExpression:
+    """Lazily creates and caches the EvaluateExpression singleton."""
+    global _evaluator
+    if _evaluator is None:
+        _evaluator = EvaluateExpression()
+    return _evaluator
 
 
 class BagheeraSearcher:
@@ -412,10 +424,10 @@ class BagheeraSearcher:
         """
         Main search generator. Yields file dictionaries.
         """
+        ee = _get_evaluator()
+
         if search_opts['having']:
-            ee = EvaluateExpression()
             having = parse_date(search_opts['having'])
-            # print(f"Debug: having={having}")
             having_evaluator = ee.compile(having)
             having_sources = analyze_query_properties(having)
         else:
@@ -423,9 +435,7 @@ class BagheeraSearcher:
             having_evaluator = None
 
         if search_opts['subquery_having']:
-            ee = EvaluateExpression()
             having = parse_date(search_opts['subquery_having'])
-            # print(f"Debug: subquery_having={having}")
             subquery_having_evaluator = ee.compile(having)
             subquery_having_sources = analyze_query_properties(having)
         else:
@@ -435,8 +445,10 @@ class BagheeraSearcher:
         # Pre-calculate source requirements for the main 'having'
         needs = {k: v > 0 for k, v in having_sources.items()}
 
-        main_options["query"] = parse_date(query_text)
-        files = self._execute_query(main_options)
+        # Make a copy to avoid mutating the caller's dict
+        options = dict(main_options)
+        options["query"] = parse_date(query_text)
+        files = self._execute_query(options)
 
         if not files:
             return
@@ -444,9 +456,9 @@ class BagheeraSearcher:
         is_subquery = search_opts.get("subquery") is not None
         if is_subquery:
             if search_opts.get("type"):
-                main_options["type"] = search_opts["type"]
-            elif "type" in main_options:
-                main_options.pop("type")
+                options["type"] = search_opts["type"]
+            elif "type" in options:
+                options.pop("type")
 
             rec_query = search_opts.get("subquery")
             query_text = parse_date(rec_query) if rec_query else ""
@@ -469,9 +481,9 @@ class BagheeraSearcher:
 
             if not file_info or having_evaluator(file_info):
                 if is_subquery:
-                    main_options["directory"] = item["path"]
+                    options["directory"] = item["path"]
                     yield from self.search_subquery(
-                        query_text, main_options, search_opts, files_count,
+                        query_text, options, search_opts, files_count,
                         subquery_having_evaluator, subquery_having_sources
                     )
                 else:

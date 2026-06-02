@@ -12,7 +12,7 @@ import re
 import sys
 import unicodedata
 from datetime import datetime
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 
 INTERNAL_PROPERTY_MAP = {
@@ -300,7 +300,7 @@ def get_kfile_metadata_types(mime_type: str) -> List[str]:
     return types
 
 
-def get_mime_type_baloo_name(bstr: str) -> json:
+def get_mime_type_baloo_name(bstr: str) -> dict:
     """
     Parses a raw string to extract and translate its type tag.
 
@@ -349,12 +349,60 @@ class BalooTools:
     """Class to interact directly with the Baloo LMDB index."""
 
     def __init__(self) -> None:
-        """Initializes the connection path to the Baloo index."""
+        """Initializes the connection path and opens the Baloo LMDB environment."""
         self.baloo_db_path = os.path.join(
             os.path.expanduser("~"), ".local/share/baloo/index"
         )
+        self._env: Optional[lmdb.Environment] = None
+        self._dbs: dict = {}
 
-    def get_dates(self, file_id: int) -> json:
+    @property
+    def env(self) -> lmdb.Environment:
+        """Lazy-load and cache the LMDB environment (opened once)."""
+        if self._env is None:
+            try:
+                self._env = lmdb.Environment(
+                    self.baloo_db_path,
+                    subdir=False,
+                    readonly=True,
+                    lock=False,
+                    max_dbs=20
+                )
+            except lmdb.Error as e:
+                print(f"Warning: Failed to open Baloo LMDB environment: "
+                      f"{e}", file=sys.stderr)
+                raise
+        return self._env
+
+    def _open_db(self, name: bytes):
+        """Cache opened database handles to avoid repeated open_db calls."""
+        if name not in self._dbs:
+            self._dbs[name] = self.env.open_db(name)
+        return self._dbs[name]
+
+    def _read_single_value(self, db_name: bytes, file_id: int):
+        """
+        Generic helper to read a single value for a given file_id from a
+        specific LMDB database. Returns the raw value or None.
+        """
+        try:
+            db = self._open_db(db_name)
+            file_id_bytes = int.to_bytes(
+                file_id, length=8, byteorder='little', signed=False
+            )
+            with self.env.begin() as txn:
+                cursor = txn.cursor(db)
+                if cursor.set_range(file_id_bytes):
+                    for key, value in cursor:
+                        if key != file_id_bytes:
+                            break
+                        return value
+        except lmdb.Error as e:
+            print(f"Warning: Failed to access Baloo LMDB index: "
+                  f"{e}", file=sys.stderr)
+        return None
+
+    def get_dates(self, file_id: int) -> dict:
         """
         Retrieves file dates metadata from the Baloo index.
 
@@ -362,104 +410,36 @@ class BalooTools:
             file_id: The integer ID of the file.
 
         Returns:
-            A json with all file metadata fields.
+            A dict with all file metadata fields.
         """
+        value = self._read_single_value(b'documenttimedb', file_id)
+        if value is None:
+            return {}
         try:
-            # Using context manager ensures the environment is closed properly
-            with lmdb.Environment(
-                self.baloo_db_path,
-                subdir=False,
-                readonly=True,
-                lock=False,
-                max_dbs=20
-            ) as env:
-                document_data_db = env.open_db(b'documenttimedb')
-
-                with env.begin() as txn:
-                    cursor = txn.cursor(document_data_db)
-
-                    # Convert ID to 8-byte little-endian format
-                    file_id_bytes = int.to_bytes(
-                        file_id, length=8, byteorder='little', signed=False
-                    )
-
-                    if cursor.set_range(file_id_bytes):
-                        for key, value in cursor:
-                            if key != file_id_bytes:
-                                break
-
-                            try:
-                                if len(value) == 8:
-                                    # Extraemos ctime (bytes 0-3) y mtime (bytes 4-7)
-                                    mtyme = int.from_bytes(value[:4], 'little')
-                                    ctyme = int.from_bytes(value[4:], 'little')
-                                    # mtyme = datetime.fromtimestamp(mtyme).strftime(
-                                    #     '%Y-%m-%d %H:%M:%S')
-                                    # ctyme = datetime.fromtimestamp(ctyme).strftime(
-                                    #     '%Y-%m-%d %H:%M:%S')
-                                    mtyme_str = datetime.fromtimestamp(
-                                        mtyme).strftime('%Y-%m-%d')
-                                    ctyme_str = datetime.fromtimestamp(
-                                        ctyme).strftime('%Y-%m-%d')
-                                    # print(f"Debug: Extracted ctime={ctyme_str},"
-                                    #       f" mtime={mtyme_str} for file_id={file_id}")
-                                    return {
-                                        'created': ctyme_str,
-                                        'modified': mtyme_str
-                                    }
-                                return {}
-                            except (ValueError, OverflowError, OSError):
-                                return {}
-
-        except lmdb.Error as e:
-            print(f"Warning: Failed to access Baloo LMDB index: "
-                  f"{e}", file=sys.stderr)
-
+            if len(value) == 8:
+                mtime = int.from_bytes(value[:4], 'little')
+                ctime = int.from_bytes(value[4:], 'little')
+                mtime_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
+                ctime_str = datetime.fromtimestamp(ctime).strftime('%Y-%m-%d')
+                return {'created': ctime_str, 'modified': mtime_str}
+        except (ValueError, OverflowError, OSError):
+            pass
         return {}
 
-    def get_docterms(self, file_id: int) -> str:
+    def get_docterms(self, file_id: int) -> bytes:
         """
-        Retrieves raw  metadata from the Baloo index.
+        Retrieves raw metadata from the Baloo index.
 
         Args:
             file_id: The integer ID of the file.
 
         Returns:
-            A binary string with all data readed from LMDB.
+            A binary string with all data read from LMDB.
         """
-        try:
-            # Using context manager ensures the environment is closed properly
-            with lmdb.Environment(
-                self.baloo_db_path,
-                subdir=False,
-                readonly=True,
-                lock=False,
-                max_dbs=20
-            ) as env:
-                document_data_db = env.open_db(b'docterms')
+        value = self._read_single_value(b'docterms', file_id)
+        return value if value is not None else b''
 
-                with env.begin() as txn:
-                    cursor = txn.cursor(document_data_db)
-
-                    # Convert ID to 8-byte little-endian format
-                    file_id_bytes = int.to_bytes(
-                        file_id, length=8, byteorder='little', signed=False
-                    )
-
-                    if cursor.set_range(file_id_bytes):
-                        for key, value in cursor:
-                            if key != file_id_bytes:
-                                break
-
-                            return value
-
-        except lmdb.Error as e:
-            print(f"Warning: Failed to access Baloo LMDB index: "
-                  f"{e}", file=sys.stderr)
-
-        return b''
-
-    def get_info(self, file_id: int) -> json:
+    def get_info(self, file_id: int) -> dict:
         """
         Retrieves file metadata from the Baloo index.
 
@@ -467,46 +447,18 @@ class BalooTools:
             file_id: The integer ID of the file.
 
         Returns:
-            A json with all file metadata fields.
+            A dict with all file metadata fields.
         """
+        value = self._read_single_value(b'documentdatadb', file_id)
+        if value is None:
+            return {}
         try:
-            # Using context manager ensures the environment is closed properly
-            with lmdb.Environment(
-                self.baloo_db_path,
-                subdir=False,
-                readonly=True,
-                lock=False,
-                max_dbs=20
-            ) as env:
-                document_data_db = env.open_db(b'documentdatadb')
+            jvalue = json.loads(value.decode())
+            return {PROPERTIES_ID_MAP.get(k, k): v for k, v in jvalue.items()}
+        except (json.JSONDecodeError, KeyError):
+            return {}
 
-                with env.begin() as txn:
-                    cursor = txn.cursor(document_data_db)
-
-                    # Convert ID to 8-byte little-endian format
-                    file_id_bytes = int.to_bytes(
-                        file_id, length=8, byteorder='little', signed=False
-                    )
-
-                    if cursor.set_range(file_id_bytes):
-                        for key, value in cursor:
-                            if key != file_id_bytes:
-                                break
-
-                            try:
-                                jvalue = json.loads(value.decode())
-                                return {PROPERTIES_ID_MAP.get(k, k):
-                                        v for k, v in jvalue.items()}
-                            except (json.JSONDecodeError, KeyError):
-                                return {}
-
-        except lmdb.Error as e:
-            print(f"Warning: Failed to access Baloo LMDB index: "
-                  f"{e}", file=sys.stderr)
-
-        return {}
-
-    def get_mime_type(self, file_id: int) -> json:
+    def get_mime_type(self, file_id: int) -> dict:
         """
         Retrieves the MIME type of a file from the Baloo index.
 
@@ -514,12 +466,28 @@ class BalooTools:
             file_id: The integer ID of the file.
 
         Returns:
-            The MIME type as a json object, or 'Unknown' if not found.
+            The MIME type as a dict, or 'Unknown' if not found.
         """
         try:
             return get_mime_type_baloo_name(self.get_docterms(file_id))
         except Exception:
             return {'type': "Unknown", 'mimetype': "Unknown"}
+
+    @staticmethod
+    def _expand_tags(tags: list) -> list:
+        """
+        Expands a list of tag strings by adding individual word parts and
+        their normalized (accent-stripped) forms. Returns a sorted list.
+        """
+        result_set = set(tags)
+        for item in tags:
+            for part in re.split(r'[ /\n\t]+', item):
+                if part:
+                    result_set.add(part)
+                    normalize_part = normalize_text(part)
+                    if normalize_part:
+                        result_set.add(normalize_part)
+        return sorted(result_set)
 
     def get_rating(self, file_id: int) -> int:
         """
@@ -551,7 +519,11 @@ class BalooTools:
         except (json.JSONDecodeError, KeyError):
             return -1, -1
 
-    def get_tags(self, file_id: int) -> json:
+    def _read_xattr_value(self, file_id: int):
+        """Reads the raw xattr value from the shared environment."""
+        return self._read_single_value(b'docxatrrterms', file_id)
+
+    def get_tags(self, file_id: int) -> dict:
         """
         Retrieves a string with all file tags from the Baloo index.
 
@@ -559,87 +531,30 @@ class BalooTools:
             file_id: The integer ID of the file.
 
         Returns:
-            A json with a field called tags with all tags comma separated.
+            A dict with a field called tags with all tags comma separated.
         """
-        try:
-            # Using context manager ensures the environment is closed properly
-            with lmdb.Environment(
-                self.baloo_db_path,
-                subdir=False,
-                readonly=True,
-                lock=False,
-                max_dbs=20
-            ) as env:
-                document_data_db = env.open_db(b'docxatrrterms')
+        value = self._read_xattr_value(file_id)
+        if value is None:
+            return {}
 
-                with env.begin() as txn:
-                    cursor = txn.cursor(document_data_db)
+        text = value.decode('utf-8', errors='replace')
+        text = re.sub(r'\x00(?![T])', '', text)
+        parts = re.split(r'[\x00\x01]', text)
 
-                    # Convert ID to 8-byte little-endian format
-                    file_id_bytes = int.to_bytes(
-                        file_id, length=8, byteorder='little', signed=False
-                    )
+        tags = []
+        # 'TA' elements are tags normalized to lowercase and stripped of
+        # accents/diacritics, while 'TAG' elements are the original tags as
+        # they were added by the user. We only add original tags (TAG- prefix).
+        for p in parts:
+            p = p.strip()
+            if p and p.startswith('TAG-'):
+                tags.append(p.removeprefix('TAG-'))
 
-                    if cursor.set_range(file_id_bytes):
-                        for key, value in cursor:
-                            if key != file_id_bytes:
-                                break
+        if not tags:
+            return {}
 
-                            text = value.decode('utf-8', errors='replace')
-                            text = re.sub(r'\x00(?![T])', '', text)
-                            parts = re.split(r'[\x00\x01]', text)
-
-                            tags = []
-                            """ 'TA' elements are tags normalized to lowercase
-                            and stripped of accents/diacritics, while 'TAG'
-                            elements are the original tags as they were added
-                            by the user. We need to process both to ensure we
-                            can match tags in a case-insensitive and
-                            accent-insensitive way. But we only want to add the
-                            original tags to the final result, not the
-                            normalized  ones, because the normalized ones are
-                            not handle correctly tags with spaces and words
-                            with less than three characters.
-                            """
-                            for p in parts:
-                                p = p.strip()
-                                if p:
-                                    if p.startswith('TAG-'):
-                                        tag = p.removeprefix('TAG-')
-                                        tags.append(tag)
-
-                            result_set = set(tags)
-
-                            """ Must add individual parts of the tags to the
-                            result set to be able to match them with queries
-                            like 'tags:callas' or 'tags:maria' for tags "María
-                            Callas" or "Person/María Callas". To maintain Baloo
-                            tag behaviour with spaces, it's not possible to
-                            search for tags="María Callas" and must search for
-                            tags=María tags:Callas; items with spaces are not
-                            added to avoid syntax confusion."""
-                            for item in tags:
-                                parts = re.split(r'[ /\n\t]+', item)
-
-                                for part in parts:
-                                    if part:
-                                        result_set.add(part)
-                                        normalize_part = normalize_text(part)
-                                        if normalize_part:
-                                            result_set.add(normalize_part)
-
-                            tags = sorted(list(result_set))
-
-                            if not tags:
-                                return {}
-                            else:
-                                return {'tags': tags}
-
-        except lmdb.Error as e:
-            print(f"Warning: Failed to access Baloo LMDB index: "
-                  f"{e}", file=sys.stderr)
-
-        return {}
+        tags = self._expand_tags(tags)
+        return {'tags': tags} if tags else {}
 
     def get_user_comment(self, file_id: int) -> str:
         """
@@ -654,111 +569,56 @@ class BalooTools:
         # TODO: This method is currently implemented in a naive way,
         return ''
 
-    def get_xattr_terms(self, file_id: int) -> json:
+    def get_xattr_terms(self, file_id: int) -> dict:
         """
-        Retrieves a json with all available file xattr terms from the Baloo
+        Retrieves a dict with all available file xattr terms from the Baloo
         index.
 
         Args:
             file_id: The integer ID of the file.
 
         Returns:
-            A json with all available file xattr terms from the Baloo index.
+            A dict with all available file xattr terms from the Baloo index.
         """
-        try:
-            # Using context manager ensures the environment is closed properly
-            with lmdb.Environment(
-                self.baloo_db_path,
-                subdir=False,
-                readonly=True,
-                lock=False,
-                max_dbs=20
-            ) as env:
-                document_data_db = env.open_db(b'docxatrrterms')
+        value = self._read_xattr_value(file_id)
+        if value is None:
+            return {}
 
-                with env.begin() as txn:
-                    cursor = txn.cursor(document_data_db)
+        tags = []
+        rating = 0
+        user_comment = []
 
-                    # Convert ID to 8-byte little-endian format
-                    file_id_bytes = int.to_bytes(
-                        file_id, length=8, byteorder='little', signed=False
-                    )
+        fields = value.split(b'\x00')
+        for field in fields:
+            if not field:
+                continue
 
-                    tags = []
-                    rating = 0
-                    user_comment = []
+            if field.startswith(INTERNAL_PROPERTY_MAP['tag']):
+                tag = field.removeprefix(INTERNAL_PROPERTY_MAP['tag'])
+                tags.append(tag.decode("utf-8", errors="ignore"))
+            elif field.startswith(INTERNAL_PROPERTY_MAP['usercomment']):
+                comment = field.removeprefix(
+                    INTERNAL_PROPERTY_MAP['usercomment'])
+                user_comment.append(
+                    comment.decode("utf-8", errors="ignore"))
+            elif field.startswith(INTERNAL_PROPERTY_MAP['rating']):
+                rating_str = field.removeprefix(
+                    INTERNAL_PROPERTY_MAP['rating'])
+                try:
+                    rating = int(
+                        rating_str.decode("utf-8", errors="ignore"))
+                except ValueError:
+                    rating = None
 
-                    if cursor.set_range(file_id_bytes):
-                        for key, value in cursor:
-                            if key != file_id_bytes:
-                                break
+        result = {}
+        if tags:
+            result['tags'] = self._expand_tags(tags)
+        if rating >= 0:
+            result['rating'] = rating
+        if user_comment:
+            result['userComment'] = user_comment
 
-                            fields = value.split(b'\x00')
-                            for field in fields:
-                                # Skip empty fields (like the trailing one)
-                                if not field:
-                                    continue
-
-                                if field.startswith(
-                                        INTERNAL_PROPERTY_MAP['tag']):
-                                    tag = field.removeprefix(
-                                        INTERNAL_PROPERTY_MAP['tag'])
-                                    tags.append(
-                                        tag.decode("utf-8", errors="ignore"))
-
-                                elif field.startswith(
-                                        INTERNAL_PROPERTY_MAP['usercomment']):
-                                    comment = field.removeprefix(
-                                        INTERNAL_PROPERTY_MAP['usercomment'])
-                                    user_comment.append(
-                                        comment.decode(
-                                            "utf-8", errors="ignore"))
-
-                                elif field.startswith(
-                                        INTERNAL_PROPERTY_MAP['rating']):
-                                    rating = field.removeprefix(
-                                        INTERNAL_PROPERTY_MAP['rating'])
-                                    rating = int(
-                                        rating.decode(
-                                            "utf-8", errors="ignore"))
-
-                            result_set = set(tags)
-
-                            """ Must add individual parts of the tags to the
-                            result set to be able to match them with queries
-                            like 'tags:callas' or 'tags:maria' for tags "María
-                            Callas" or "Person/María Callas". To maintain Baloo
-                            tag behaviour with spaces, it's not possible to
-                            search for tags="María Callas" and must search for
-                            tags=María tags:Callas; items with spaces are not
-                            added to avoid syntax confusion."""
-                            for item in tags:
-                                parts = re.split(r'[ /\n\t]+', item)
-
-                                for part in parts:
-                                    if part:
-                                        result_set.add(part)
-                                        normalize_part = normalize_text(part)
-                                        if normalize_part:
-                                            result_set.add(normalize_part)
-
-                            tags = sorted(list(result_set))
-
-                        result = {}
-                        if tags:
-                            result['tags'] = tags
-                        if rating >= 0:
-                            result['rating'] = rating
-                        if user_comment:
-                            result['userComment'] = user_comment
-
-                        return result
-
-        except lmdb.Error as e:
-            print(f"Warning: Failed to access Baloo LMDB index: "
-                  f"{e}", file=sys.stderr)
-
-        return {}
+        return result
 
 
 if __name__ == '__main__':

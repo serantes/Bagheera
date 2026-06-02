@@ -98,10 +98,10 @@ def main() -> None:
     query_text = " ".join(query_parts)
 
     if args.day is not None and args.month is None:
-        raise ValueError(HelpTexts.ERR_MISSING_MONTH)
+        parser.error(HelpTexts.ERR_MISSING_MONTH)
 
     if args.month is not None and args.year is None:
-        raise ValueError(HelpTexts.ERR_MISSING_YEAR)
+        parser.error(HelpTexts.ERR_MISSING_YEAR)
 
     if not query_text and not args.subquery and not args.type and not args.directory:
         parser.print_help()
