@@ -8,6 +8,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from .help_texts import HelpTexts
 
@@ -109,12 +110,12 @@ def main() -> None:
 
     # Configuration and Sort restoring
     user_config = load_config()
-    if args.sort:
-        if user_config.get("last_sort_order") != args.sort:
-            user_config["last_sort_order"] = args.sort
-            save_config(user_config)
-    elif "last_sort_order" in user_config:
-        args.sort = user_config["last_sort_order"]
+    # if args.sort:
+    #     if user_config.get("last_sort_order") != args.sort:
+    #         user_config["last_sort_order"] = args.sort
+    #         save_config(user_config)
+    # elif "last_sort_order" in user_config:
+    #     args.sort = user_config["last_sort_order"]
 
     # Build options dictionary
     main_options = {}
@@ -154,6 +155,7 @@ def main() -> None:
     }
 
     if other_options["verbose"]:
+        start_time = time.time()
         print(HelpTexts.MSG_QUERY.format(query_text))
         print(HelpTexts.MSG_MAIN_OPTS.format(main_options))
         print(HelpTexts.MSG_OTHER_OPTS.format(other_options))
@@ -181,10 +183,11 @@ def main() -> None:
             files_count += 1
 
         if other_options["verbose"]:
+            elapsed = time.time() - start_time
             if files_count == 0:
                 print(HelpTexts.MSG_NO_RESULTS)
             else:
-                print(HelpTexts.MSG_TOTAL_RESULTS.format(files_count))
+                print(HelpTexts.MSG_TOTAL_RESULTS.format(files_count, elapsed))
 
     except FileNotFoundError as e:
         print(e)
