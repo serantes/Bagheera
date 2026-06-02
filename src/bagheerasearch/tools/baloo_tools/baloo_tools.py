@@ -126,43 +126,41 @@ PROPERTIES_ID_MAP = {
 }
 
 
-def decode_baloo_terms(raw_bytes: bytes, t_shortcut: bool = False) -> list[str]:
+def decode_baloo_terms(raw_bytes: bytes) -> list[str]:
     """
     Decodes the Baloo buffer by blindly concatenating the left side of \x01
     to the literal full block that preceded the last \x00.
     """
-    chunks = raw_bytes.split(b"\x00")  # Split once by null byte
-    terms = []
-    last_full_chunk_bytes = b""  # Keep track of the last full chunk as bytes
+    if not raw_bytes:
+        return []
+
+    chunks = raw_bytes.split(b"\x00")
+    byte_results = []
+    last_base = b""
 
     for chunk in chunks:
         if not chunk:
             continue
 
-        # If we find the \x01 delimiter, it closes the concatenation block
-        if b"\x01" in chunk:
-            left_bytes, right_bytes = chunk.split(b"\x01", 1)
+        # Use partition for faster parsing (avoids double search in vs split)
+        prefix_part, sep, new_base = chunk.partition(b"\x01")
 
-            # Exact rule: previous full term (bytes) + left part (bytes)
-            concatenated_bytes = last_full_chunk_bytes + left_bytes
-            if concatenated_bytes:
-                terms.append(concatenated_bytes.decode("utf-8", errors="ignore"))
-
-            # The right part is the new independent term
-            if right_bytes:
-                terms.append(right_bytes.decode("utf-8", errors="ignore"))
-                # Becomes the new base for future blocks with \x01
-                last_full_chunk_bytes = right_bytes
+        if sep:
+            # Compressed entry: produces two terms usually
+            if prefix_part or last_base:
+                byte_results.append(last_base + prefix_part)
+            if new_base:
+                byte_results.append(new_base)
+                last_base = new_base
             else:
-                last_full_chunk_bytes = b""  # Reset if right part is empty
+                last_base = b""
         else:
-            # Normal block: add as is and register as the last base
-            term_str = chunk.decode("utf-8", errors="ignore")
-            if term_str:
-                terms.append(term_str)
-                last_full_chunk_bytes = chunk  # Update with bytes
+            # Literal entry
+            byte_results.append(chunk)
+            last_base = chunk
 
-    return terms
+    # Batch decoding is more efficient than repeated calls inside the loop
+    return [t.decode("utf-8", errors="ignore") for t in byte_results]
 
 
 def get_kfile_metadata_types(mime_type: str) -> List[str]:
@@ -515,7 +513,7 @@ class BalooTools:
         """
         file_info = self.get_info(file_id)
         try:
-            return file_info.get('26', -1), file_info.get('27', -1)
+            return file_info.get('Width', -1), file_info.get('Height', -1)
         except (json.JSONDecodeError, KeyError):
             return -1, -1
 
@@ -608,7 +606,7 @@ class BalooTools:
                     rating = int(
                         rating_str.decode("utf-8", errors="ignore"))
                 except ValueError:
-                    rating = None
+                    rating = 0
 
         result = {}
         if tags:
