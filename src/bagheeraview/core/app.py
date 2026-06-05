@@ -3863,9 +3863,11 @@ class MainWindow(QMainWindow):
 
     def on_selection_changed(self, selected, deselected):
         """Callback to update dock widgets when the thumbnail selection changes."""
-        if self.tag_edit_widget.isVisible():
-            self.update_tag_edit_widget()
-        elif self.info_widget.isVisible():
+        # Always update tag edit widget data so available_tags is kept fresh
+        # for name autocompletion in viewers, even if the sidebar is hidden.
+        self.update_tag_edit_widget()
+
+        if self.info_widget.isVisible():
             self.update_info_widget()
 
     def invert_tag_selection(self):

@@ -187,12 +187,19 @@ class TagEditWidget(QWidget):
                                their current tags.
         """
         self.file_paths = list(files_data.keys())
-        self.original_tags_per_file = {path: set(tags) for path,
-                                       tags in files_data.items()}
+        # Handle None tags safely to avoid crashes during selection changes
+        self.original_tags_per_file = {
+            path: set(tags) if tags is not None else set()
+            for path, tags in files_data.items()
+        }
         self.refresh_ui()
 
     def refresh_available_tags(self):
         """Manual refresh of available tags from Baloo."""
+        self.search_bar.clear()
+        self.initial_states = {}
+        self.manually_changed = set()
+        self.forced_sync_tags = set()
         self.load_available_tags()
         self._load_all = True
         self.init_data()
@@ -227,13 +234,14 @@ class TagEditWidget(QWidget):
             logger.debug(f"Failed to load Baloo tags from {db_path}: {e}")
 
         if success:
-            # If the number of tags changed, trigger a full rebuild next time
-            if len(tags) != len(self.available_tags):
+            # Use set comparison to reliably detect any content change in tags
+            if set(tags) != set(self.available_tags):
                 self._load_all = True
-        self.available_tags = tags
+            self.available_tags = tags
 
     def init_data(self):
         """Initializes or updates the tag tree model based on current files."""
+        self.tree_view.setUpdatesEnabled(False)
         self._is_updating = True
         try:
             if self._load_all:
@@ -273,6 +281,8 @@ class TagEditWidget(QWidget):
                         self.get_or_create_node(t_path, self.root_favs, True,
                                                 is_italic)
 
+                # Update internal list for external consumers (e.g. FaceNameInputWidget)
+                self.available_tags = master
                 self._load_all = False
 
             else:
@@ -311,7 +321,9 @@ class TagEditWidget(QWidget):
                         if node_all.foreground().color().name() != "#ffffff":
                             node_all.setForeground(QColor("#ffffff"))
 
-                # Iterate only active tags to check/italicize
+                # Iterate only active tags to check/italicize.
+                # Also ensure discovered tags are in available_tags for autocomplete.
+                new_discovery = False
                 for t_path, count in tag_counts.items():
                     if count > 0:
                         is_italic = (0 < count < total and len(self.file_paths) > 1)
@@ -319,10 +331,17 @@ class TagEditWidget(QWidget):
 
                         self.get_or_create_node(t_path, self.root_favs, True, is_italic)
                         self.get_or_create_node(t_path, self.root_all, True, is_italic)
+                        if t_path not in self.available_tags:
+                            self.available_tags.append(t_path)
+                            new_discovery = True
+
+                if new_discovery:
+                    self.available_tags.sort()
 
             self.reset_expansion()
         finally:
             self._is_updating = False
+            self.tree_view.setUpdatesEnabled(True)
 
     def get_or_create_node(self, full_path, root, checked, italic):
         """Finds or creates a hierarchical node in the tree for a given tag path.
