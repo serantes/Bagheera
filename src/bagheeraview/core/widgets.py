@@ -14,6 +14,7 @@ import glob
 import shutil
 import json
 import lmdb
+import logging
 from datetime import datetime
 from collections import deque
 
@@ -36,6 +37,8 @@ from .constants import (
     LAYOUTS_DIR, RATING_XATTR_NAME, XATTR_COMMENT_NAME, XATTR_NAME, UITexts,
     FACES_MENU_MAX_ITEMS_DEFAULT, APP_CONFIG, FAVORITES_PATH
 )
+
+logger = logging.getLogger(__name__)
 
 
 class TagTreeView(QTreeView):
@@ -120,6 +123,8 @@ class TagEditWidget(QWidget):
         self.item_mapping = {}
         self.available_tags = []
         self._is_updating = False
+        self.root_favs = None
+        self.root_all = None
         self._load_all = True
 
         layout = QVBoxLayout(self)
@@ -195,14 +200,18 @@ class TagEditWidget(QWidget):
     def load_available_tags(self):
         """Loads all known tags from the Baloo index database."""
         db_path = os.path.expanduser("~/.local/share/baloo/index")
-        if not os.path.exists(db_path):
+        if not os.path.exists(db_path) or not os.access(db_path, os.R_OK):
             self.available_tags = []
+            self._load_all = True
             return
         tags = []
+        success = False
         try:
+            # Auto-detect if it's a directory or a file to set subdir correctly
+            is_dir = os.path.isdir(db_path)
             # Connect to the LMDB environment for Baloo
-            with lmdb.Environment(db_path, subdir=False, readonly=True,
-                                  lock=False, max_dbs=20) as env:
+            with lmdb.open(db_path, subdir=is_dir, readonly=True,
+                           lock=False, max_dbs=20) as env:
                 postingdb = env.open_db(b'postingdb')
                 with env.begin() as txn:
                     cursor = txn.cursor(postingdb)
@@ -213,9 +222,14 @@ class TagEditWidget(QWidget):
                             if not key.startswith(prefix):
                                 break
                             tags.append(key[4:].decode('utf-8'))
-        except Exception:
-            # Silently fail if Baloo DB is not accessible
-            pass
+                success = True
+        except Exception as e:
+            logger.debug(f"Failed to load Baloo tags from {db_path}: {e}")
+
+        if success:
+            # If the number of tags changed, trigger a full rebuild next time
+            if len(tags) != len(self.available_tags):
+                self._load_all = True
         self.available_tags = tags
 
     def init_data(self):
@@ -262,6 +276,13 @@ class TagEditWidget(QWidget):
                 self._load_all = False
 
             else:
+                # Recovery: if roots are missing or ALL TAGS was never populated,
+                # force a full load.
+                if not self.root_all or (self.root_all.rowCount() == 0 and self.available_tags):
+                    self._load_all = True
+                    self.init_data()
+                    return
+
                 # Subsequent loads: update existing tree
                 tag_counts = {}
                 for path in self.file_paths:
@@ -565,10 +586,18 @@ class TagEditWidget(QWidget):
         """Resets the tree expansion to a default state."""
         if handling_search:
             self.tree_view.collapseAll()
-        fav_idx = self.proxy_model.index(0, 0)
+
+        # Safety check to ensure model is populated
+        if self.source_model.rowCount() < 2:
+            return
+
+        # Map source roots to proxy indices to expand correctly even when
+        # the "Used Tags" root is filtered out or hidden.
+        fav_idx = self.proxy_model.mapFromSource(self.source_model.index(0, 0))
         if fav_idx.isValid():
             self._expand_recursive(fav_idx)
-        all_idx = self.proxy_model.index(1, 0)
+
+        all_idx = self.proxy_model.mapFromSource(self.source_model.index(1, 0))
         if all_idx.isValid():
             # Expand only the top level of the "All Tags" section
             self.tree_view.expand(all_idx)
