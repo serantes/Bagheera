@@ -715,7 +715,7 @@ class ThumbnailCache(QObject):
         try:
             with self._lmdb_env.begin(db=self._directory_db, write=False) as txn:
                 val = txn.get(path.encode('utf-8'))
-                if val and len(val) > 8:
+                if val and len(val) >= 8:
                     mtime = struct.unpack('d', val[:8])[0]
                     files = val[8:].decode('utf-8').split('\0')
                     return mtime, [f for f in files if f]
@@ -1842,8 +1842,10 @@ class ImageScanner(QThread):
         self._update_viewers(force=True)
 
     def _scan_directory(self, dir_path, current_depth):
-        if not self._is_running or current_depth > APP_CONFIG.get(
-                "scan_max_level", SCANNER_SETTINGS_DEFAULTS["scan_max_level"]):
+        max_level = APP_CONFIG.get(
+            "scan_max_level", SCANNER_SETTINGS_DEFAULTS["scan_max_level"])
+
+        if not self._is_running or current_depth > max_level:
             return
 
         # Try to retrieve results from cache
@@ -1851,11 +1853,24 @@ class ImageScanner(QThread):
         try:
             dir_stat = os.stat(str(dir_path))
             cached_mtime, cached_files = self.cache.get_directory_cache(str(dir_path))
-            if cached_files and abs(cached_mtime - dir_stat.st_mtime) < 0.001:
+            # Si mtime es > 0 significa que hay una entrada en caché (aunque esté vacía de imágenes)
+            if cached_mtime > 0 and abs(cached_mtime - dir_stat.st_mtime) < 0.001:
                 for p in cached_files:
                     if p and p not in self._seen_files:
                         self.all_files.append(p)
                         self._seen_files.add(p)
+
+                # IMPORTANTE: Aunque usemos la caché para las imágenes de ESTA carpeta,
+                # debemos seguir explorando subdirectorios si no hemos llegado al límite.
+                if current_depth < max_level:
+                    try:
+                        for item in dir_path.iterdir():
+                            if not self._is_running:
+                                return
+                            if item.is_dir():
+                                self._scan_directory(item, current_depth + 1)
+                    except (PermissionError, OSError):
+                        pass
                 return
         except OSError:
             pass
@@ -1876,7 +1891,7 @@ class ImageScanner(QThread):
                     self._scan_directory(item, current_depth + 1)
 
             # Cache findings for this directory
-            if files_in_dir and dir_stat:
+            if dir_stat:
                 self.cache.set_directory_cache(
                     str(dir_path), dir_stat.st_mtime, sorted(files_in_dir))
 
