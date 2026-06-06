@@ -249,6 +249,18 @@ if HAVE_MEDIAPIPE:
 DEFAULT_FACE_ENGINE = AVAILABLE_FACE_ENGINES[0] if AVAILABLE_FACE_ENGINES else None
 DEFAULT_PET_ENGINE = AVAILABLE_PET_ENGINES[0] if AVAILABLE_PET_ENGINES else None
 
+# --- Data roles for the thumbnail model ---
+PATH_ROLE = Qt.UserRole + 1
+MTIME_ROLE = Qt.UserRole + 2
+TAGS_ROLE = Qt.UserRole + 3
+RATING_ROLE = Qt.UserRole + 4
+ITEM_TYPE_ROLE = Qt.UserRole + 5
+DIR_ROLE = Qt.UserRole + 6
+INODE_ROLE = Qt.UserRole + 7
+DEVICE_ROLE = Qt.UserRole + 8
+IMAGE_DATA_ROLE = Qt.UserRole + 9
+GROUP_NAME_ROLE = Qt.UserRole + 10
+
 HAVE_IMAGEHASH = importlib.util.find_spec("imagehash") is not None
 
 # --- DUPLICATE DETECTION ---
@@ -433,6 +445,10 @@ _UI_TEXTS = {
         "FILTERED_COUNT": "Filtered: {}",
         "VIEW_MODE_DAY": "Separate by Day",
         "VIEW_MODE_WEEK": "Separate by Week",
+        "MENU_FIND_SIMILAR": "Find similar images",
+        "SIMILAR_SEARCH_TITLE": "Similar images to '{}'",
+        "SIMILAR_SEARCH_PROGRESS": "Searching similar images: {} found...",
+        "RESCAN": "Rescan",
         "VIEW_MODE_MONTH": "Separate by Month",
         "VIEW_MODE_YEAR": "Separate by Year",
         "VIEW_MODE_RATING": "Separate by Rating",
@@ -997,6 +1013,10 @@ _UI_TEXTS = {
         "FILTERED_COUNT": "Filtrados: {}",
         "VIEW_MODE_DAY": "Separar por Día",
         "VIEW_MODE_WEEK": "Separar por Semana",
+        "MENU_FIND_SIMILAR": "Buscar imágenes similares",
+        "SIMILAR_SEARCH_TITLE": "Imágenes similares a '{}'",
+        "SIMILAR_SEARCH_PROGRESS": "Buscando imágenes similares: {} encontradas...",
+        "RESCAN": "Buscar de nuevo",
         "VIEW_MODE_MONTH": "Separar por Mes",
         "VIEW_MODE_YEAR": "Separar por Año",
         "VIEW_MODE_RATING": "Separar por Valoración",
@@ -1571,6 +1591,10 @@ _UI_TEXTS = {
         "FILTERED_COUNT": "Filtrados: {}",
         "VIEW_MODE_DAY": "Separar por Día",
         "VIEW_MODE_WEEK": "Separar por Semana",
+        "MENU_FIND_SIMILAR": "Buscar imaxes similares",
+        "SIMILAR_SEARCH_TITLE": "Imaxes similares a '{}'",
+        "SIMILAR_SEARCH_PROGRESS": "Buscando imaxes similares: {} atopadas...",
+        "RESCAN": "Buscar de novo",
         "VIEW_MODE_MONTH": "Separar por Mes",
         "VIEW_MODE_YEAR": "Separar por Ano",
         "VIEW_MODE_RATING": "Separar por Valoración",

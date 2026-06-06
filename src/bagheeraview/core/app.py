@@ -63,12 +63,15 @@ from .constants import (
     THUMBNAILS_TAGS_LINES_DEFAULT, THUMBNAILS_TAGS_COLOR_DEFAULT,
     THUMBNAILS_RATING_COLOR_DEFAULT, THUMBNAILS_TAGS_FONT_SIZE_DEFAULT,
     THUMBNAILS_REFRESH_INTERVAL_DEFAULT, THUMBNAIL_SIZES, XATTR_NAME,
-    UITexts, save_app_config
+    UITexts, save_app_config, PATH_ROLE, MTIME_ROLE, TAGS_ROLE, RATING_ROLE,
+    ITEM_TYPE_ROLE, DIR_ROLE, INODE_ROLE, DEVICE_ROLE, IMAGE_DATA_ROLE,
+    GROUP_NAME_ROLE
 )
 from .settings import SettingsDialog
 if HAVE_IMAGEHASH:
     from .duplicatecache import DuplicateCache, DuplicateDetector
     from .duplicatedialog import DuplicateManagerDialog
+    from .similardialog import SimilarImagesDialog
 else:
     DuplicateCache = None
     DuplicateDetector = None
@@ -556,19 +559,6 @@ class AppShortcutController(QObject):
                 else:
                     size -= 16
                 self.main_win.slider.setValue(size)
-
-
-# --- Data roles for the thumbnail model ---
-PATH_ROLE = Qt.UserRole + 1
-MTIME_ROLE = Qt.UserRole + 2
-TAGS_ROLE = Qt.UserRole + 3
-RATING_ROLE = Qt.UserRole + 4
-ITEM_TYPE_ROLE = Qt.UserRole + 5
-DIR_ROLE = Qt.UserRole + 6
-INODE_ROLE = Qt.UserRole + 7
-DEVICE_ROLE = Qt.UserRole + 8
-IMAGE_DATA_ROLE = Qt.UserRole + 9
-GROUP_NAME_ROLE = Qt.UserRole + 10
 
 
 class ThumbnailDelegate(QStyledItemDelegate):
@@ -4725,9 +4715,16 @@ class MainWindow(QMainWindow):
 
         menu.addSeparator()
 
+        if HAVE_IMAGEHASH:
+            action_find_similar = menu.addAction(QIcon.fromTheme("edit-find"), UITexts.MENU_FIND_SIMILAR)
+            action_find_similar.triggered.connect(lambda: self.find_similar_images(path))
+
+        menu.addSeparator()
+
         add_action_with_shortcut(menu, UITexts.CONTEXT_MENU_RENAME, "edit-rename",
                                  "rename_image",
                                  lambda: self.rename_image(selected_indexes[0].row()))
+
         action_move = menu.addAction(QIcon.fromTheme("edit-move"),
                                      UITexts.CONTEXT_MENU_MOVE_TO)
         action_move.triggered.connect(self.move_current_image)
@@ -5504,6 +5501,13 @@ class MainWindow(QMainWindow):
             self.status_lbl.setText(UITexts.CANCEL)
             self.btn_cancel_duplicates.hide()
             self.status_counter_lbl.hide()
+
+    def find_similar_images(self, path):
+        """Opens the similar images search dialog for the given path."""
+        if not HAVE_IMAGEHASH:
+            return
+        dialog = SimilarImagesDialog(path, self)
+        dialog.show()
 
 
 def main():

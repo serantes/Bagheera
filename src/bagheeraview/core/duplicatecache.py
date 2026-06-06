@@ -1052,7 +1052,7 @@ class DuplicateDetector(QThread):
             for i in range(0, len(paths_to_hash_parallel), batch_size):
                 if not self._is_running:
                     break
-                current_batch = paths_to_hash_parallel[i : i + batch_size]
+                current_batch = paths_to_hash_parallel[i: i + batch_size]
                 for p_data in current_batch:
                     pool.start(HashWorker(
                         p_data[0], self, new_hashes, results_mutex, sem))
@@ -1225,3 +1225,80 @@ class DuplicateDetector(QThread):
 
         self.duplicates_found.emit(found_duplicates)
         self.detection_finished.emit()
+
+
+class SimilarSearchWorker(QThread):
+    """
+    Worker thread to find similar images to a target path.
+    Uses BK-Tree query and filters by whitelist/blacklist.
+    """
+    progress_update = Signal(int, int, str)
+    results_found = Signal(list)  # List of (path, similarity)
+    finished = Signal()
+
+    def __init__(self, target_path, duplicate_cache, threshold, whitelist_str, blacklist_str):
+        super().__init__()
+        self.target_path = os.path.abspath(os.path.normpath(target_path))
+        self.cache = duplicate_cache
+        self.threshold = threshold
+        self._is_running = True
+
+        self.whitelist = [os.path.abspath(os.path.expanduser(p.strip()))
+                          for p in whitelist_str.split(',') if p.strip()]
+        self.blacklist = [os.path.abspath(os.path.expanduser(p.strip()))
+                          for p in blacklist_str.split(',') if p.strip()]
+
+    def stop(self):
+        self._is_running = False
+        self.wait()
+
+    def run(self):
+        try:
+            st = os.stat(self.target_path)
+            h_str, _, _ = self.cache.get_hash_info_for_path(self.target_path, st.st_mtime)
+
+            if not h_str:
+                with PIL.Image.open(self.target_path) as img:
+                    h_str = str(imagehash.dhash(img))
+                    self.cache.add_hash_for_path(self.target_path, h_str, st.st_mtime)
+
+            dist_threshold = int(MAX_DHASH_DISTANCE * (100 - self.threshold) / 100)
+            similar_hashes = self.cache.persistent_bktree_query(h_str, dist_threshold)
+
+            results = []
+            processed = 0
+            total = len(similar_hashes)
+
+            for h_bytes, dist in similar_hashes:
+                if not self._is_running:
+                    break
+
+                matches = self.cache.get_files_for_hash(h_bytes)
+                sim = int((1.0 - (dist / MAX_DHASH_DISTANCE)) * 100)
+
+                for path, dev, inode in matches:
+                    if self._is_allowed(path):
+                        if os.path.abspath(path) != self.target_path:
+                            results.append((path, sim))
+
+                processed += 1
+                self.progress_update.emit(processed, total, UITexts.SIMILAR_SEARCH_PROGRESS.format(len(results)))
+
+            results.sort(key=lambda x: x[1], reverse=True)
+            self.results_found.emit(results)
+        except Exception as e:
+            logger.error(f"SimilarSearchWorker error: {e}")
+        finally:
+            self.finished.emit()
+
+    def _is_allowed(self, path):
+        abs_p = os.path.abspath(os.path.normpath(path))
+        for b in self.blacklist:
+            if abs_p == b or abs_p.startswith(b + os.sep):
+                return False
+        if not self.whitelist:
+            return True
+        for w in self.whitelist:
+            if abs_p == w or abs_p.startswith(w + os.sep):
+                return True
+        return False
