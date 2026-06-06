@@ -53,7 +53,7 @@ from .constants import (
     DEFAULT_LANGUAGE, DEFAULT_VIEWER_SHORTCUTS, GLOBAL_ACTIONS,
     HISTORY_PATH, ICON_THEME, ICON_THEME_FALLBACK, SCANNER_GENERATE_SIZES,
     IMAGE_MIME_TYPES, IMAGE_EXTENSIONS, LAYOUTS_DIR, FAVORITES_PATH,
-    PROG_AUTHOR, PROG_NAME, PROG_VERSION, RATING_XATTR_NAME,
+    PROG_AUTHOR, PROG_ID, PROG_NAME, PROG_VERSION, RATING_XATTR_NAME,
     SCANNER_SETTINGS_DEFAULTS, SUPPORTED_LANGUAGES, VIEWER_ACTIONS,
     TAGS_MENU_MAX_ITEMS_DEFAULT, THUMBNAILS_BG_COLOR_DEFAULT,
     THUMBNAILS_DEFAULT_SIZE, THUMBNAILS_FILENAME_COLOR_DEFAULT,
@@ -5516,6 +5516,13 @@ def main():
 
     # Increase QPixmapCache limit (default is usually small, ~10MB) to ~100MB
     QPixmapCache.setCacheLimit(104857600)  # Old value: 102400
+
+    app.setApplicationName(PROG_NAME)
+    app.setDesktopFileName(PROG_ID)
+
+    icon_path = os.path.join(os.path.dirname(__file__), "..", "assets", "bagheeraview.png")
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
 
     duplicate_cache = DuplicateCache() if HAVE_IMAGEHASH else None
     thread_pool_manager = ThreadPoolManager()

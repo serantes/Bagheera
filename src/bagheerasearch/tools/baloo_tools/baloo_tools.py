@@ -345,21 +345,21 @@ def normalize_text(text):
 
 class BalooTools:
     """Class to interact directly with the Baloo LMDB index."""
+    _shared_env: Optional[lmdb.Environment] = None
+    _shared_dbs: dict = {}
 
     def __init__(self) -> None:
         """Initializes the connection path and opens the Baloo LMDB environment."""
         self.baloo_db_path = os.path.join(
             os.path.expanduser("~"), ".local/share/baloo/index"
         )
-        self._env: Optional[lmdb.Environment] = None
-        self._dbs: dict = {}
 
     @property
     def env(self) -> lmdb.Environment:
         """Lazy-load and cache the LMDB environment (opened once)."""
-        if self._env is None:
+        if BalooTools._shared_env is None:
             try:
-                self._env = lmdb.Environment(
+                BalooTools._shared_env = lmdb.Environment(
                     self.baloo_db_path,
                     subdir=False,
                     readonly=True,
@@ -370,13 +370,13 @@ class BalooTools:
                 print(f"Warning: Failed to open Baloo LMDB environment: "
                       f"{e}", file=sys.stderr)
                 raise
-        return self._env
+        return BalooTools._shared_env
 
     def _open_db(self, name: bytes):
         """Cache opened database handles to avoid repeated open_db calls."""
-        if name not in self._dbs:
-            self._dbs[name] = self.env.open_db(name)
-        return self._dbs[name]
+        if name not in BalooTools._shared_dbs:
+            BalooTools._shared_dbs[name] = self.env.open_db(name)
+        return BalooTools._shared_dbs[name]
 
     def _read_single_value(self, db_name: bytes, file_id: int):
         """

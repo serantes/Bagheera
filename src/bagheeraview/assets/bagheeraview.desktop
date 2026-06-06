@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Name=Bagheera Image Viewer
+Name[es]=Bagheera Image Viewer
+Name[gl]=Bagheera Image Viewer
+GenericName=Image Viewer
+GenericName[es]=Visor de imágenes
+GenericName[gl]=Visor de imaxes
+Comment=Simple image viewer and manager for KDE with Baloo support
+Comment[es]=Un visor y gestor de imágenes simple para KDE con soporte para Baloo
+Comment[gl]=Un visor e xestor de imaxes sinxelo para KDE con soporte para Baloo
+Exec=bagheeraview %F
+Icon=bagheeraview
+Terminal=false
+Categories=Graphics;RasterGraphics;Viewer;KDE;Qt
+MimeType=inode/directory;image/x-xbitmap;image/x-tga;image/x-portable-pixmap;image/x-portable-graymap;image/x-portable-bitmap;image/x-pict;image/webp;image/vnd.zbrush.pcx;image/vnd.adobe.photoshop;image/tiff;image/png;image/jpeg;image/gif;image/bmp;
+Keywords=image;viewer;photo;manager;baloo;
+Keywords[es]=imagen;visor;foto;gestor;baloo;
+Keywords[gl]=imaxe;visor;foto;xestor;baloo;
