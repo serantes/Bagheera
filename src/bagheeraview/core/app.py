@@ -2096,9 +2096,9 @@ class MainWindow(QMainWindow):
 
             new_max_tags = APP_CONFIG.get("tags_menu_max_items",
                                           TAGS_MENU_MAX_ITEMS_DEFAULT)
-            if self.mru_tags.maxlen != new_max_tags:
-                # Recreate deque with new size, preserving content
-                self.mru_tags = deque(self.mru_tags, maxlen=new_max_tags)
+            # Recreate deque with updated content and configured max size
+            self.mru_tags = deque(APP_CONFIG.get("mru_tags", []),
+                                  maxlen=new_max_tags)
 
             new_max_faces = APP_CONFIG.get("faces_menu_max_items",
                                            FACES_MENU_MAX_ITEMS_DEFAULT)

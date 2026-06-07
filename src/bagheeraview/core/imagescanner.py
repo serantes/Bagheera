@@ -1853,15 +1853,15 @@ class ImageScanner(QThread):
         try:
             dir_stat = os.stat(str(dir_path))
             cached_mtime, cached_files = self.cache.get_directory_cache(str(dir_path))
-            # Si mtime es > 0 significa que hay una entrada en caché (aunque esté vacía de imágenes)
+            # mtime > 0 means there is a cache entry (even if empty of images)
             if cached_mtime > 0 and abs(cached_mtime - dir_stat.st_mtime) < 0.001:
                 for p in cached_files:
                     if p and p not in self._seen_files:
                         self.all_files.append(p)
                         self._seen_files.add(p)
 
-                # IMPORTANTE: Aunque usemos la caché para las imágenes de ESTA carpeta,
-                # debemos seguir explorando subdirectorios si no hemos llegado al límite.
+                # IMPORTANT: Even if using cache for THIS folder's images,
+                # subdirectories must be explored if max depth isn't reached.
                 if current_depth < max_level:
                     try:
                         for item in dir_path.iterdir():

@@ -22,7 +22,9 @@ class SimilarImagesDialog(QDialog):
         self.worker = None
         self.results = []
 
-        self.setWindowTitle(UITexts.SIMILAR_SEARCH_TITLE.format(os.path.basename(target_path)))
+        title = UITexts.SIMILAR_SEARCH_TITLE.format(
+            os.path.basename(target_path))
+        self.setWindowTitle(title)
         self.resize(1000, 700)
 
         layout = QVBoxLayout(self)
@@ -62,7 +64,8 @@ class SimilarImagesDialog(QDialog):
         self.table = QTableWidget()
         self.table.setColumnCount(2)
         self.table.setHorizontalHeaderLabels(["%", UITexts.CONTEXT_MENU_OPEN])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -77,8 +80,8 @@ class SimilarImagesDialog(QDialog):
         self.splitter.addWidget(self.right_pane_widget)
         self.preview_pane = self.right_pane_widget.pane
 
-        self.splitter.setStretchFactor(0, 0)  # La tabla de la izquierda no se estira
-        self.splitter.setStretchFactor(1, 1)  # La imagen de la derecha se estira
+        self.splitter.setStretchFactor(0, 0)  # Left table doesn't stretch
+        self.splitter.setStretchFactor(1, 1)  # Right image stretches
 
         self.start_search()
 
@@ -189,7 +192,7 @@ class SimilarImagesDialog(QDialog):
             self.right_pane_widget.filename_lbl.setText(os.path.basename(path))
             self.right_pane_widget.dir_lbl.setText(os.path.dirname(path))
 
-            # Ajustar zoom para llenar el área de previsualización
+            # Adjust zoom to fill the preview area
             viewport = self.preview_pane.scroll_area.viewport()
             w, h = viewport.width(), viewport.height()
             if w > 1 and h > 1:
@@ -204,7 +207,7 @@ class SimilarImagesDialog(QDialog):
         return f"{size:.1f} TiB"
 
     def _show_pane_context_menu(self, pos):
-        """Muestra el menú de contexto para la imagen de previsualización."""
+        """Shows context menu for the preview image."""
         path = self.preview_pane.controller.get_current_path()
         if not path or not os.path.exists(path):
             return
@@ -266,7 +269,7 @@ class SimilarImagesDialog(QDialog):
 
         self.main_win.delete_file_by_path(path, permanent=_permanent)
 
-        # Actualizar lista local y tabla
+        # Update local list and table
         current_row = self.table.currentRow()
         self.results = [r for r in self.results if r[0] != path]
         self._populate_table()
@@ -276,7 +279,7 @@ class SimilarImagesDialog(QDialog):
             self.table.selectRow(new_row)
             self.table.setCurrentCell(new_row, 0)
         else:
-            # Limpiar etiquetas de previsualización
+            # Clear preview labels
             self.preview_pane.controller.update_list([], 0)
             self.preview_pane.controller.load_image()
             self.right_pane_widget.info_lbl.setText("")
@@ -289,7 +292,7 @@ class SimilarImagesDialog(QDialog):
         dlg = PropertiesDialog(path, initial_tags=tags, initial_rating=rating, parent=self)
         dlg.exec()
 
-    # Implementación de la API necesaria para ImagePane
+    # Implementation of API required for ImagePane
     def set_active_pane(self, pane):
         pass
 

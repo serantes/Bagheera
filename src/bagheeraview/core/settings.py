@@ -17,9 +17,10 @@ import urllib.request
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtGui import QColor, QIcon, QFont
 from PySide6.QtWidgets import (
-    QCheckBox, QColorDialog, QComboBox, QDialog, QDialogButtonBox, QHBoxLayout,
-    QLabel, QLineEdit, QMessageBox, QProgressDialog, QPushButton, QSpinBox,
-    QTabWidget, QVBoxLayout, QWidget, QSlider, QFileDialog, QListWidget,
+    QCheckBox, QColorDialog, QComboBox, QDialog, QDialogButtonBox,
+    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox,
+    QProgressDialog, QPushButton, QSpinBox, QTabWidget, QVBoxLayout,
+    QWidget, QSlider, QFileDialog, QListWidget, QListView, QAbstractItemView,
     QListWidgetItem, QProgressBar
 )
 from .constants import (
@@ -171,6 +172,9 @@ class SettingsDialog(QDialog):
 
         viewer_tab = QWidget()
         viewer_layout = QVBoxLayout(viewer_tab)
+
+        quick_tags_tab = QWidget()
+        quick_tags_layout = QVBoxLayout(quick_tags_tab)
 
         faces_tab = QWidget()
         faces_layout = QVBoxLayout(faces_tab)
@@ -550,15 +554,53 @@ class SettingsDialog(QDialog):
         duplicates_layout.addStretch()
 
         # --- Faces & People Tab ---
-        faces_tab = QWidget()
-        faces_layout = QVBoxLayout(faces_tab)
 
-        # Faces Header
-        faces_header = QLabel(UITexts.TYPE_FACE)
-        faces_header.setFont(QFont("Sans", 10, QFont.Bold))
-        faces_layout.addWidget(faces_header)
+        # --- Quick Tags Tab ---
+        self.quick_tags_list = QListWidget()
+        self.quick_tags_list.setViewMode(QListView.IconMode)
+        self.quick_tags_list.setResizeMode(QListView.Adjust)
+        self.quick_tags_list.setMovement(QListView.Static)
+        self.quick_tags_list.setFlow(QListView.LeftToRight)
+        self.quick_tags_list.setWrapping(True)
+        self.quick_tags_list.setSpacing(5)
+        self.quick_tags_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.quick_tags_list.setStyleSheet("""
+            QListWidget::item {
+                background-color: #333;
+                border-radius: 4px;
+                padding: 5px;
+                margin: 2px;
+            }
+            QListWidget::item:selected {
+                background-color: #3498db;
+            }
+        """)
+        quick_tags_layout.addWidget(self.quick_tags_list)
 
-        # --- Person Tags ---
+        qt_btns_layout = QHBoxLayout()
+        self.add_qt_btn = QPushButton(UITexts.CREATE)
+        self.add_qt_btn.setIcon(QIcon.fromTheme("list-add"))
+        self.add_qt_btn.clicked.connect(self.add_quick_tag)
+        self.remove_qt_btn = QPushButton(UITexts.DELETE)
+        self.remove_qt_btn.setIcon(QIcon.fromTheme("list-remove"))
+        self.remove_qt_btn.clicked.connect(self.remove_quick_tag)
+        qt_btns_layout.addWidget(self.add_qt_btn)
+        qt_btns_layout.addWidget(self.remove_qt_btn)
+        qt_btns_layout.addStretch()
+        quick_tags_layout.addLayout(qt_btns_layout)
+
+        regions_tab = QWidget()
+        regions_layout = QVBoxLayout(regions_tab)
+        regions_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.regions_sub_tabs = QTabWidget()
+        regions_layout.addWidget(self.regions_sub_tabs)
+
+        # --- Face Sub-tab ---
+        face_sub_tab = QWidget()
+        face_sub_layout = QVBoxLayout(face_sub_tab)
+
+        # Person Tags
         person_tags_layout = QHBoxLayout()
         person_tags_label = QLabel(UITexts.SETTINGS_PERSON_TAGS_LABEL)
         self.person_tags_edit = QLineEdit()
@@ -568,7 +610,7 @@ class SettingsDialog(QDialog):
         person_tags_layout.addWidget(self.person_tags_edit)
         person_tags_label.setToolTip(UITexts.SETTINGS_PERSON_TAGS_TOOLTIP)
         self.person_tags_edit.setToolTip(UITexts.SETTINGS_PERSON_TAGS_TOOLTIP)
-        faces_layout.addLayout(person_tags_layout)
+        face_sub_layout.addLayout(person_tags_layout)
 
         if AVAILABLE_FACE_ENGINES:
             face_engine_layout = QHBoxLayout()
@@ -589,7 +631,7 @@ class SettingsDialog(QDialog):
 
             face_engine_label.setToolTip(UITexts.SETTINGS_FACE_ENGINE_TOOLTIP)
             self.face_engine_combo.setToolTip(UITexts.SETTINGS_FACE_ENGINE_TOOLTIP)
-            faces_layout.addLayout(face_engine_layout)
+            face_sub_layout.addLayout(face_engine_layout)
         else:
             self.face_engine_combo = None
             self.download_model_btn = None
@@ -602,7 +644,7 @@ class SettingsDialog(QDialog):
         face_color_layout.addWidget(self.face_color_btn)
         face_color_label.setToolTip(UITexts.SETTINGS_FACE_COLOR_TOOLTIP)
         self.face_color_btn.setToolTip(UITexts.SETTINGS_FACE_COLOR_TOOLTIP)
-        faces_layout.addLayout(face_color_layout)
+        face_sub_layout.addLayout(face_color_layout)
 
         face_history_layout = QHBoxLayout()
         self.face_history_spin = QSpinBox()
@@ -612,17 +654,17 @@ class SettingsDialog(QDialog):
         face_history_layout.addWidget(self.face_history_spin)
         face_hist_label.setToolTip(UITexts.SETTINGS_FACE_HISTORY_TOOLTIP)
         self.face_history_spin.setToolTip(UITexts.SETTINGS_FACE_HISTORY_TOOLTIP)
-        faces_layout.addLayout(face_history_layout)
+        face_sub_layout.addLayout(face_history_layout)
 
         self.face_use_last_name_check = QCheckBox(UITexts.SETTINGS_USE_LAST_NAME_LABEL)
         self.face_use_last_name_check.setToolTip(UITexts.SETTINGS_USE_LAST_NAME_TOOLTIP)
-        faces_layout.addWidget(self.face_use_last_name_check)
+        face_sub_layout.addWidget(self.face_use_last_name_check)
+        face_sub_layout.addStretch()
+        self.regions_sub_tabs.addTab(face_sub_tab, UITexts.TYPE_FACE)
 
-        # --- Pets Section ---
-        faces_layout.addSpacing(10)
-        pets_header = QLabel(UITexts.TYPE_PET)
-        pets_header.setFont(QFont("Sans", 10, QFont.Bold))
-        faces_layout.addWidget(pets_header)
+        # --- Pet Sub-tab ---
+        pet_sub_tab = QWidget()
+        pet_sub_layout = QVBoxLayout(pet_sub_tab)
 
         pet_tags_layout = QHBoxLayout()
         pet_tags_label = QLabel(UITexts.SETTINGS_PET_TAGS_LABEL)
@@ -633,7 +675,7 @@ class SettingsDialog(QDialog):
         pet_tags_layout.addWidget(self.pet_tags_edit)
         pet_tags_label.setToolTip(UITexts.SETTINGS_PET_TAGS_TOOLTIP)
         self.pet_tags_edit.setToolTip(UITexts.SETTINGS_PET_TAGS_TOOLTIP)
-        faces_layout.addLayout(pet_tags_layout)
+        pet_sub_layout.addLayout(pet_tags_layout)
 
         pet_engine_layout = QHBoxLayout()
         pet_engine_label = QLabel(UITexts.SETTINGS_PET_ENGINE_LABEL)
@@ -652,7 +694,7 @@ class SettingsDialog(QDialog):
         pet_engine_layout.addWidget(self.download_pet_model_btn)
         pet_engine_label.setToolTip(UITexts.SETTINGS_PET_ENGINE_TOOLTIP)
         self.pet_engine_combo.setToolTip(UITexts.SETTINGS_PET_ENGINE_TOOLTIP)
-        faces_layout.addLayout(pet_engine_layout)
+        pet_sub_layout.addLayout(pet_engine_layout)
 
         pet_color_layout = QHBoxLayout()
         pet_color_label = QLabel(UITexts.SETTINGS_PET_COLOR_LABEL)
@@ -662,7 +704,7 @@ class SettingsDialog(QDialog):
         pet_color_layout.addWidget(self.pet_color_btn)
         pet_color_label.setToolTip(UITexts.SETTINGS_PET_COLOR_TOOLTIP)
         self.pet_color_btn.setToolTip(UITexts.SETTINGS_PET_COLOR_TOOLTIP)
-        faces_layout.addLayout(pet_color_layout)
+        pet_sub_layout.addLayout(pet_color_layout)
 
         pet_history_layout = QHBoxLayout()
         self.pet_history_spin = QSpinBox()
@@ -672,17 +714,17 @@ class SettingsDialog(QDialog):
         pet_history_layout.addWidget(self.pet_history_spin)
         pet_hist_label.setToolTip(UITexts.SETTINGS_PET_HISTORY_TOOLTIP)
         self.pet_history_spin.setToolTip(UITexts.SETTINGS_PET_HISTORY_TOOLTIP)
-        faces_layout.addLayout(pet_history_layout)
+        pet_sub_layout.addLayout(pet_history_layout)
 
         self.pet_use_last_name_check = QCheckBox(UITexts.SETTINGS_USE_LAST_NAME_LABEL)
         self.pet_use_last_name_check.setToolTip(UITexts.SETTINGS_USE_LAST_NAME_TOOLTIP)
-        faces_layout.addWidget(self.pet_use_last_name_check)
+        pet_sub_layout.addWidget(self.pet_use_last_name_check)
+        pet_sub_layout.addStretch()
+        self.regions_sub_tabs.addTab(pet_sub_tab, UITexts.TYPE_PET)
 
-        # --- Body Section ---
-        faces_layout.addSpacing(10)
-        body_header = QLabel(UITexts.TYPE_BODY)
-        body_header.setFont(QFont("Sans", 10, QFont.Bold))
-        faces_layout.addWidget(body_header)
+        # --- Body Sub-tab ---
+        body_sub_tab = QWidget()
+        body_sub_layout = QVBoxLayout(body_sub_tab)
 
         body_tags_layout = QHBoxLayout()
         body_tags_label = QLabel(UITexts.SETTINGS_BODY_TAGS_LABEL)
@@ -693,7 +735,7 @@ class SettingsDialog(QDialog):
         body_tags_layout.addWidget(self.body_tags_edit)
         body_tags_label.setToolTip(UITexts.SETTINGS_BODY_TAGS_TOOLTIP)
         self.body_tags_edit.setToolTip(UITexts.SETTINGS_BODY_TAGS_TOOLTIP)
-        faces_layout.addLayout(body_tags_layout)
+        body_sub_layout.addLayout(body_tags_layout)
 
         # body_engine_layout = QHBoxLayout()
         # body_engine_label = QLabel(UITexts.SETTINGS_BODY_ENGINE_LABEL)
@@ -713,7 +755,7 @@ class SettingsDialog(QDialog):
         body_color_layout.addWidget(self.body_color_btn)
         body_color_label.setToolTip(UITexts.SETTINGS_BODY_COLOR_TOOLTIP)
         self.body_color_btn.setToolTip(UITexts.SETTINGS_BODY_COLOR_TOOLTIP)
-        faces_layout.addLayout(body_color_layout)
+        body_sub_layout.addLayout(body_color_layout)
 
         body_history_layout = QHBoxLayout()
         self.body_history_spin = QSpinBox()
@@ -723,17 +765,17 @@ class SettingsDialog(QDialog):
         body_history_layout.addWidget(self.body_history_spin)
         body_hist_label.setToolTip(UITexts.SETTINGS_BODY_HISTORY_TOOLTIP)
         self.body_history_spin.setToolTip(UITexts.SETTINGS_BODY_HISTORY_TOOLTIP)
-        faces_layout.addLayout(body_history_layout)
+        body_sub_layout.addLayout(body_history_layout)
 
         self.body_use_last_name_check = QCheckBox(UITexts.SETTINGS_USE_LAST_NAME_LABEL)
         self.body_use_last_name_check.setToolTip(UITexts.SETTINGS_USE_LAST_NAME_TOOLTIP)
-        faces_layout.addWidget(self.body_use_last_name_check)
+        body_sub_layout.addWidget(self.body_use_last_name_check)
+        body_sub_layout.addStretch()
+        self.regions_sub_tabs.addTab(body_sub_tab, UITexts.TYPE_BODY)
 
-        # --- Object Section ---
-        faces_layout.addSpacing(10)
-        object_header = QLabel(UITexts.TYPE_OBJECT)
-        object_header.setFont(QFont("Sans", 10, QFont.Bold))
-        faces_layout.addWidget(object_header)
+        # --- Object Sub-tab ---
+        object_sub_tab = QWidget()
+        object_sub_layout = QVBoxLayout(object_sub_tab)
 
         object_tags_layout = QHBoxLayout()
         object_tags_label = QLabel(UITexts.SETTINGS_OBJECT_TAGS_LABEL)
@@ -744,7 +786,7 @@ class SettingsDialog(QDialog):
         object_tags_layout.addWidget(self.object_tags_edit)
         object_tags_label.setToolTip(UITexts.SETTINGS_OBJECT_TAGS_TOOLTIP)
         self.object_tags_edit.setToolTip(UITexts.SETTINGS_OBJECT_TAGS_TOOLTIP)
-        faces_layout.addLayout(object_tags_layout)
+        object_sub_layout.addLayout(object_tags_layout)
 
         # object_engine_layout = QHBoxLayout()
         # object_engine_label = QLabel(UITexts.SETTINGS_OBJECT_ENGINE_LABEL)
@@ -763,7 +805,7 @@ class SettingsDialog(QDialog):
         object_color_layout.addWidget(self.object_color_btn)
         object_color_label.setToolTip(UITexts.SETTINGS_OBJECT_COLOR_TOOLTIP)
         self.object_color_btn.setToolTip(UITexts.SETTINGS_OBJECT_COLOR_TOOLTIP)
-        faces_layout.addLayout(object_color_layout)
+        object_sub_layout.addLayout(object_color_layout)
 
         object_history_layout = QHBoxLayout()
         self.object_history_spin = QSpinBox()
@@ -773,19 +815,19 @@ class SettingsDialog(QDialog):
         object_history_layout.addWidget(self.object_history_spin)
         object_hist_label.setToolTip(UITexts.SETTINGS_OBJECT_HISTORY_TOOLTIP)
         self.object_history_spin.setToolTip(UITexts.SETTINGS_OBJECT_HISTORY_TOOLTIP)
-        faces_layout.addLayout(object_history_layout)
+        object_sub_layout.addLayout(object_history_layout)
 
         self.object_use_last_name_check = QCheckBox(
             UITexts.SETTINGS_USE_LAST_NAME_LABEL)
         self.object_use_last_name_check.setToolTip(
             UITexts.SETTINGS_USE_LAST_NAME_TOOLTIP)
-        faces_layout.addWidget(self.object_use_last_name_check)
+        object_sub_layout.addWidget(self.object_use_last_name_check)
+        object_sub_layout.addStretch()
+        self.regions_sub_tabs.addTab(object_sub_tab, UITexts.TYPE_OBJECT)
 
-        # --- Landmark Section ---
-        faces_layout.addSpacing(10)
-        landmark_header = QLabel(UITexts.TYPE_LANDMARK)
-        landmark_header.setFont(QFont("Sans", 10, QFont.Bold))
-        faces_layout.addWidget(landmark_header)
+        # --- Landmark Sub-tab ---
+        landmark_sub_tab = QWidget()
+        landmark_sub_layout = QVBoxLayout(landmark_sub_tab)
 
         landmark_tags_layout = QHBoxLayout()
         landmark_tags_label = QLabel(UITexts.SETTINGS_LANDMARK_TAGS_LABEL)
@@ -796,7 +838,7 @@ class SettingsDialog(QDialog):
         landmark_tags_layout.addWidget(self.landmark_tags_edit)
         landmark_tags_label.setToolTip(UITexts.SETTINGS_LANDMARK_TAGS_TOOLTIP)
         self.landmark_tags_edit.setToolTip(UITexts.SETTINGS_LANDMARK_TAGS_TOOLTIP)
-        faces_layout.addLayout(landmark_tags_layout)
+        landmark_sub_layout.addLayout(landmark_tags_layout)
 
         # landmark_engine_layout = QHBoxLayout()
         # landmark_engine_label = QLabel(UITexts.SETTINGS_LANDMARK_ENGINE_LABEL)
@@ -815,7 +857,7 @@ class SettingsDialog(QDialog):
         landmark_color_layout.addWidget(self.landmark_color_btn)
         landmark_color_label.setToolTip(UITexts.SETTINGS_LANDMARK_COLOR_TOOLTIP)
         self.landmark_color_btn.setToolTip(UITexts.SETTINGS_LANDMARK_COLOR_TOOLTIP)
-        faces_layout.addLayout(landmark_color_layout)
+        landmark_sub_layout.addLayout(landmark_color_layout)
 
         landmark_history_layout = QHBoxLayout()
         self.landmark_history_spin = QSpinBox()
@@ -825,20 +867,24 @@ class SettingsDialog(QDialog):
         landmark_history_layout.addWidget(self.landmark_history_spin)
         landmark_hist_label.setToolTip(UITexts.SETTINGS_LANDMARK_HISTORY_TOOLTIP)
         self.landmark_history_spin.setToolTip(UITexts.SETTINGS_LANDMARK_HISTORY_TOOLTIP)
-        faces_layout.addLayout(landmark_history_layout)
-        faces_layout.addStretch()
+        landmark_sub_layout.addLayout(landmark_history_layout)
 
         self.landmark_use_last_name_check = QCheckBox(
             UITexts.SETTINGS_USE_LAST_NAME_LABEL)
         self.landmark_use_last_name_check.setToolTip(
             UITexts.SETTINGS_USE_LAST_NAME_TOOLTIP)
-        faces_layout.addWidget(self.landmark_use_last_name_check)
+        landmark_sub_layout.addWidget(self.landmark_use_last_name_check)
+        landmark_sub_layout.addStretch()
+        self.regions_sub_tabs.addTab(landmark_sub_tab, UITexts.TYPE_LANDMARK)
 
         # --- General Areas Settings ---
-        faces_layout.addSpacing(10)
+        interface_sub_tab = QWidget()
+        interface_sub_layout = QVBoxLayout(interface_sub_tab)
         self.areas_reset_to_face_check = QCheckBox(UITexts.SETTINGS_AREAS_RESET_TO_FACE_LABEL)
         self.areas_reset_to_face_check.setToolTip(UITexts.SETTINGS_AREAS_RESET_TO_FACE_TOOLTIP)
-        faces_layout.addWidget(self.areas_reset_to_face_check)
+        interface_sub_layout.addWidget(self.areas_reset_to_face_check)
+        interface_sub_layout.addStretch()
+        self.regions_sub_tabs.addTab(interface_sub_tab, "Interface")
 
         # --- Viewer Tab ---
         viewer_wheel_layout = QHBoxLayout()
@@ -878,7 +924,8 @@ class SettingsDialog(QDialog):
         # Add tabs in the new order
         tabs.addTab(thumbs_tab, UITexts.SETTINGS_GROUP_THUMBNAILS)
         tabs.addTab(viewer_tab, UITexts.SETTINGS_GROUP_VIEWER)
-        tabs.addTab(faces_tab, UITexts.SETTINGS_GROUP_AREAS)
+        tabs.addTab(quick_tags_tab, UITexts.VIEWER_MENU_TAGS)
+        tabs.addTab(regions_tab, UITexts.SETTINGS_GROUP_AREAS)
         tabs.addTab(scanner_tab, UITexts.SETTINGS_GROUP_SCANNER)
         tabs.addTab(duplicates_tab, UITexts.SETTINGS_GROUP_DUPLICATES)
 
@@ -1096,6 +1143,11 @@ class SettingsDialog(QDialog):
         self.filmstrip_pos_combo.setCurrentText(
             pos_map.get(filmstrip_position, UITexts.FILMSTRIP_BOTTOM))
         self.update_mediapipe_status()
+
+        mru_tags = APP_CONFIG.get("mru_tags", [])
+        self.quick_tags_list.clear()
+        for tag in mru_tags:
+            self.quick_tags_list.addItem(tag)
         self.update_duplicate_scan_count()
 
     def set_button_color(self, color_str):
@@ -1364,6 +1416,12 @@ class SettingsDialog(QDialog):
                     for i in range(self.duplicate_blacklist_list.count())]
         APP_CONFIG["duplicate_blacklist"] = ",".join(bl_paths)
 
+        qt_tags = [
+            self.quick_tags_list.item(i).text()
+            for i in range(self.quick_tags_list.count())
+        ]
+        APP_CONFIG["mru_tags"] = qt_tags
+
         APP_CONFIG["viewer_auto_resize_window"] = \
             self.viewer_auto_resize_check.isChecked()
         APP_CONFIG["face_detection_engine"] = self.face_engine_combo.currentText()
@@ -1424,6 +1482,26 @@ class SettingsDialog(QDialog):
             self.counter_thread.stop()
             self.counter_thread.wait()
         super().closeEvent(event)
+
+    def add_quick_tag(self):
+        """Opens a text input dialog to add a new quick tag."""
+        tag, ok = QInputDialog.getText(
+            self, UITexts.TAG_NEW_TAG_TITLE, UITexts.TAG_NEW_TAG_TEXT)
+        if ok and tag.strip():
+            t = tag.strip()
+            # Avoid duplicates
+            found = False
+            for i in range(self.quick_tags_list.count()):
+                if self.quick_tags_list.item(i).text() == t:
+                    found = True
+                    break
+            if not found:
+                self.quick_tags_list.addItem(t)
+
+    def remove_quick_tag(self):
+        """Removes the selected quick tags."""
+        for item in self.quick_tags_list.selectedItems():
+            self.quick_tags_list.takeItem(self.quick_tags_list.row(item))
 
     def _add_path_to_list(self, list_widget, path):
         """Adds a path to a QListWidget with existence validation."""
