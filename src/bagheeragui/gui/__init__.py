@@ -1,0 +1,3 @@
+"""
+Bagheera GUI Search Tool.
+"""

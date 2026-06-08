@@ -95,5 +95,15 @@ setup(
         'develop': CustomDevelop,
         'build_ext': CustomBuildExt,
         'build_py': CustomBuildPy,
-    }
+    },
+    data_files=[
+        ('share/applications', [
+            'src/bagheeragui/assets/bagheeragui.desktop',
+            'src/bagheeraview/assets/bagheeraview.desktop'
+        ]),
+        ('share/icons/hicolor/1024x1024/apps', [
+            'src/bagheeragui/assets/bagheeragui.png',
+            'src/bagheeraview/assets/bagheeraview.png'
+        ]),
+    ],
 )

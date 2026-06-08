@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Bagheera Search
+Name[es]=Bagheera Search
+Name[gl]=Bagheera Search
+Comment=Advanced search GUI for Baloo
+Comment[es]=Buscador avanzado para Baloo
+Comment[gl]=Buscador avanzado para Baloo
+Exec=bagheeragui
+Icon=bagheeragui
+Terminal=false
+Categories=System;FileTools;Utility;
+StartupWMClass=bagheeragui
+Keywords=search;find;baloo;files;

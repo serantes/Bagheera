@@ -44,6 +44,7 @@ test = ["pytest"]
 
 [project.scripts]
 bagheerasearch = "bagheerasearch.core.app:main"
+bagheeragui = "bagheeragui.gui.main:main"
 bagheeraview = "bagheeraview.core.app:main"
 
 [tool.setuptools]
@@ -52,7 +53,9 @@ zip-safe = false
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["bagheerasearch*", "bagheeraview*"]
+include = ["bagheerasearch*", "bagheeraview*", "bagheeragui*"]
 
 [tool.setuptools.package-data]
 "*" = ["libbaloo_wrapper.so"]
+"bagheeragui" = ["assets/*"]
+"bagheeraview" = ["assets/*"]
