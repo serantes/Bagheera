@@ -119,8 +119,8 @@ class ScannerWorker(QRunnable):
     Worker to process a single image in a thread pool.
     Handles thumbnail retrieval/generation and metadata loading.
     """
-    def __init__(self, cache, path, target_sizes=None, load_metadata=True,
-                 signal_emitter=None, semaphore=None):
+    def __init__(self, cache, path, target_sizes=None, load_metadata=True, # Line 102
+                 signal_emitter=None, semaphore=None, force_thumbnail_refresh=False):
         super().__init__()
         self.cache = cache
         self.path = path
@@ -128,6 +128,7 @@ class ScannerWorker(QRunnable):
         self.load_metadata_flag = load_metadata
         self.emitter = signal_emitter
         self.semaphore = semaphore
+        self.force_thumbnail_refresh = force_thumbnail_refresh
         self._is_cancelled = False
         # Result will be (path, thumb, mtime, tags, rating, inode, dev) or None
         self.result = None
@@ -175,7 +176,8 @@ class ScannerWorker(QRunnable):
                 # Check if a valid thumbnail for this size exists
                 res = self.cache.get_thumbnail(
                     self.path, size, curr_mtime=curr_mtime,
-                    inode=curr_inode, device_id=curr_dev)
+                    inode=curr_inode, device_id=curr_dev,
+                    force_refresh=self.force_thumbnail_refresh)
                 if not res.image or res.mtime != curr_mtime or res.tier != size:
                     # Use generation lock to prevent multiple threads generating
                     with self.cache.generation_lock(
@@ -201,7 +203,8 @@ class ScannerWorker(QRunnable):
                                 re_res = self.cache.get_thumbnail(
                                     self.path, size, curr_mtime=curr_mtime,
                                     inode=curr_inode, device_id=curr_dev,
-                                    async_load=False)
+                                    async_load=False,
+                                    force_refresh=self.force_thumbnail_refresh)
                                 smallest_thumb_for_signal = re_res.image
                 elif size == min_size:
                     # valid thumb exists, use it for signal
@@ -267,6 +270,7 @@ def generate_thumbnail(path, size, fd=None):
         reader.setAutoTransform(True)
         img = reader.read()
 
+        logger.debug(f"QImageReader.read() result for {path}: {img.isNull()}")
         # Fallback: If optimization failed (and it wasn't just a missing file),
         # try standard read
         if img.isNull():
@@ -279,6 +283,7 @@ def generate_thumbnail(path, size, fd=None):
             if error != QImageReader.ImageReaderError.FileNotFoundError:
                 reader = QImageReader(path)
                 reader.setAutoTransform(True)
+                logger.debug(f"Retrying QImageReader.read() for {path}")
                 img = reader.read()
 
         if img.isNull():
@@ -687,7 +692,7 @@ class ThumbnailCache(QObject):
                 val = txn.get(lmdb_key)
                 if val and len(val) >= 13:
                     stored_mtime = struct.unpack('d', val[:8])[0]
-                    if abs(stored_mtime - mtime) < 0.001:
+                    if abs(stored_mtime - mtime) < 0.001: # Epsilon check
                         rating = int(val[8])
                         path_len = struct.unpack('I', val[9:13])[0]
                         path = val[13:13+path_len].decode('utf-8')
@@ -986,7 +991,7 @@ class ThumbnailCache(QObject):
                 value_bytes = txn.get(inode_key, db=db)
                 if value_bytes and len(value_bytes) > 8:
                     stored_mtime = struct.unpack('d', value_bytes[:8])[0]
-                    if stored_mtime != mtime:
+                    if abs(stored_mtime - mtime) > 0.001: # Epsilon check
                         continue
 
                     payload = value_bytes[8:]
@@ -1033,7 +1038,8 @@ class ThumbnailCache(QObject):
         return 0
 
     def get_thumbnail(self, path, requested_size, curr_mtime=None,
-                      inode=None, device_id=None, async_load=False):
+                      inode=None, device_id=None, async_load=False,
+                      force_refresh=False):
         """
         Safely retrieve a thumbnail from cache, finding the best available size.
         Returns: ThumbnailResult object.
@@ -1049,6 +1055,20 @@ class ThumbnailCache(QObject):
         if mtime is None:
             return EMPTY_THUMBNAIL
 
+        # If force_refresh is True, invalidate existing cache entries for this path
+        # and force regeneration.
+        if force_refresh:
+            logger.debug(f"Forcing refresh for {path}: invalidating cache entries.")
+            with self._write_lock():
+                if path in self._thumbnail_cache:
+                    cached_sizes = self._thumbnail_cache.pop(path)
+                    for img, _ in cached_sizes.values():
+                        if img:
+                            self._cache_bytes_size -= img.sizeInBytes()
+                self._path_to_inode.pop(path, None) # Also remove from inode map
+            self._delete_from_lmdb(path, device_id=dev_id, inode_key=inode_key)
+            return EMPTY_THUMBNAIL # Signal that it's not in cache, forcing generation
+
         # Check if known to be broken
         broken_msg = self.get_broken_info(path, target_tier, mtime, inode, device_id)
         if broken_msg:
@@ -1063,7 +1083,7 @@ class ThumbnailCache(QObject):
                 for size in search_order:
                     if size in cached_sizes:
                         img, cached_mtime = cached_sizes[size]
-                        if img and not img.isNull() and cached_mtime == mtime:
+                        if img and not img.isNull() and abs(cached_mtime - mtime) < 0.001:
                             if size == target_tier:
                                 return ThumbnailResult(img, mtime, size)
                             if not best_img:
@@ -1429,12 +1449,14 @@ class ThumbnailCache(QObject):
                 return None
 
             if not img.save(buf, "PNG"):
+                logger.warning(f"Failed to save QImage to buffer for {img.size()} (first attempt). Retrying with ARGB32.")
                 # libpng errors (like "Incorrect data in iCCP") can cause save() topi
                 # fail.
                 # Converting to a standard format strips problematic metadata/profiles.
                 ba.clear()
                 buf.seek(0)
                 if not img.convertToFormat(QImage.Format_ARGB32).save(buf, "PNG"):
+                    logger.error(f"Failed to save QImage to buffer for {img.size()} (second attempt).")
                     logger.error("Failed to save image to buffer")
                     return None
             return ba.data()
@@ -1693,7 +1715,8 @@ class ImageScanner(QThread):
     more_files_available = Signal(int, int)  # Last loaded index, remainder
 
     def __init__(self, cache, paths, is_file_list=False, viewers=None,
-                 thread_pool_manager=None, target_sizes=None):
+                 thread_pool_manager=None, target_sizes=None,
+                 force_thumbnail_refresh=False): # Line 642
         if not paths or not isinstance(paths, (list, tuple)):
             logger.warning("ImageScanner initialized with empty or invalid paths")
             paths = []
@@ -1730,6 +1753,7 @@ class ImageScanner(QThread):
         self.pending_tasks = []
         self._priority_queue = collections.deque()
         self._processed_paths = set()
+        self.force_thumbnail_refresh = force_thumbnail_refresh
         self._current_workers = []
         self._current_workers_mutex = QMutex()
 
@@ -2097,7 +2121,8 @@ class ImageScanner(QThread):
 
             for f_path, _ in tasks:
                 r = ScannerWorker(
-                    self.cache, f_path, semaphore=sem, target_sizes=self.target_sizes)
+                    self.cache, f_path, semaphore=sem, target_sizes=self.target_sizes,
+                    force_thumbnail_refresh=self.force_thumbnail_refresh)
                 r.setAutoDelete(False)
                 runnables.append(r)
                 self._current_workers.append(r)

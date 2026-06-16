@@ -15,7 +15,7 @@ import shutil
 import urllib.request
 
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
-from PySide6.QtGui import QColor, QIcon, QFont
+from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
     QCheckBox, QColorDialog, QComboBox, QDialog, QDialogButtonBox,
     QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox,
@@ -175,9 +175,6 @@ class SettingsDialog(QDialog):
 
         quick_tags_tab = QWidget()
         quick_tags_layout = QVBoxLayout(quick_tags_tab)
-
-        faces_tab = QWidget()
-        faces_layout = QVBoxLayout(faces_tab)
 
         scanner_tab = QWidget()
         scanner_layout = QVBoxLayout(scanner_tab)

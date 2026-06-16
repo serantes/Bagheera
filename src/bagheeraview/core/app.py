@@ -318,17 +318,26 @@ class AppShortcutController(QObject):
         # Overwrite with loaded config if available
         if hasattr(self.main_win, 'loaded_global_shortcuts') \
            and self.main_win.loaded_global_shortcuts:
-            loaded_list = self.main_win.loaded_global_shortcuts
-            self._shortcuts.clear()
-            self.action_to_shortcut.clear()
-            for key_combo, val_list in loaded_list:
-                # Expecting [act, ignore, desc, cat]
+            user_shortcuts = {}
+            for key_combo, val_list in self.main_win.loaded_global_shortcuts:
                 if len(val_list) == 4:
                     k, m = key_combo
-                    act, ignore, desc, cat = val_list
-                    key_tuple = (k, Qt.KeyboardModifiers(m))
-                    self._shortcuts[key_tuple] = (act, ignore, desc, cat)
-                    self.action_to_shortcut[act] = key_tuple
+                    user_shortcuts[(k, Qt.KeyboardModifiers(m))] = tuple(val_list)
+
+            user_actions = {v[0] for v in user_shortcuts.values()}
+            user_keys = set(user_shortcuts.keys())
+
+            # Start with user config
+            final_shortcuts = user_shortcuts.copy()
+
+            # Add defaults for actions or keys not present in user config
+            for key, val in self._shortcuts.items():
+                action_name = val[0]
+                if action_name not in user_actions and key not in user_keys:
+                    final_shortcuts[key] = val
+
+            self._shortcuts = final_shortcuts
+            self.action_to_shortcut = {v[0]: k for k, v in self._shortcuts.items()}
         self.refresh_favorite_shortcuts()
 
     def refresh_favorite_shortcuts(self):
@@ -387,6 +396,7 @@ class AppShortcutController(QObject):
             "delete_permanently":
                 lambda: self.main_win.delete_current_image(permanent=True),
             "rename_image": self._rename_image,
+            "hard_refresh_content": self.main_win.hard_refresh_content,
             "refresh_content": self.main_win.refresh_content,
             "first_image": lambda: self._handle_home_end(Qt.Key_Home),
             "last_image": lambda: self._handle_home_end(Qt.Key_End),
@@ -630,7 +640,9 @@ class ThumbnailDelegate(QStyledItemDelegate):
         # Optimization: Use QPixmapCache to avoid expensive QImage->QPixmap
         # conversion on every paint event.
         actual_tier = self.main_win.cache.get_available_tier(path, thumb_size, mtime)
-        cache_key = f"thumb_{path}_{mtime}_{thumb_size}_{actual_tier}"
+        # Use int representation of mtime for a stable cache key
+        mtime_key = int(mtime * 1000) if mtime else 0
+        cache_key = f"thumb_{path}_{mtime_key}_{thumb_size}_{actual_tier}"
         source_pixmap = QPixmapCache.find(cache_key)
 
         if not source_pixmap or source_pixmap.isNull():
@@ -643,7 +655,9 @@ class ThumbnailDelegate(QStyledItemDelegate):
 
             if res.image and not res.image.isNull():
                 source_pixmap = QPixmap.fromImage(res.image)
-                QPixmapCache.insert(cache_key, source_pixmap)
+                # Use the tier actually returned for the key to avoid redundant conversions
+                tier_key = f"thumb_{path}_{mtime_key}_{thumb_size}_{res.tier}"
+                QPixmapCache.insert(tier_key, source_pixmap)
             else:
                 # Fallback: Check a separate cache key for the placeholder to avoid
                 # blocking the high-res update while still preventing repetitive
@@ -1127,6 +1141,7 @@ class MainWindow(QMainWindow):
         self._scan_all = False
         self._suppress_updates = False
         self._is_loading_all = False
+        self._force_thumbnail_refresh = False
 
         self._high_res_mode_active = False
         self._is_loading = False
@@ -2941,7 +2956,8 @@ class MainWindow(QMainWindow):
         self.is_cleaning = False
         self.scanner = ImageScanner(self.cache, paths, is_file_list=self._scan_all,
                                     thread_pool_manager=self.thread_pool_manager,
-                                    viewers=self.viewers,
+                                    viewers=self.viewers, # Line 1071
+                                    force_thumbnail_refresh=self._force_thumbnail_refresh,
                                     target_sizes=[self._current_thumb_tier])
         if self._is_loading_all:
             self.scanner.set_auto_load(True)
@@ -2960,6 +2976,7 @@ class MainWindow(QMainWindow):
             lambda n: self._on_scan_finished(n, select_paths))
         self.scanner.start()
         self._scan_all = False
+        self._force_thumbnail_refresh = False # Reset the flag after starting scan
 
     def _on_scan_finished(self, n, select_paths=None):
         """Slot for when the image scanner has finished."""
@@ -3057,10 +3074,8 @@ class MainWindow(QMainWindow):
             path = item[0]
             if path not in self._known_paths:
                 self._known_paths.add(path)
-                # Optimization: Do not store QImage in found_items_data to save memory.
-                # The delegate will retrieve thumbnails from cache.
-                unique_batch.append(
-                    (item[0], None, item[2], item[3], item[4], item[5], item[6]))
+                # Store the QImage provided by the scanner for the initial model update.
+                unique_batch.append(item)
 
                 # Update proxy filter cache incrementally as data arrives
                 self.proxy_model.add_to_cache(item[0], item[3])
@@ -3114,7 +3129,7 @@ class MainWindow(QMainWindow):
                 curr_inode = item_data[5] if len(item_data) > 5 else None
                 curr_dev = item_data[6] if len(item_data) > 6 else None
 
-                new_qi = None
+                new_qi = qi if qi is not None else item_data[1] # Preserve existing qi if not explicitly provided
                 new_mtime = mtime if mtime is not None else curr_mtime
                 new_tags = tags if tags is not None else curr_tags
                 new_rating = rating if rating is not None else curr_rating
@@ -3620,8 +3635,19 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(value)
 
     def on_thumbnail_loaded(self, _path, _size):
-        """Called when a thumbnail has been loaded asynchronously from DB."""
-        self.thumbnail_view.viewport().update()
+        """
+        Called when a thumbnail has been loaded/generated and added to the
+        in-memory cache.
+        """
+        # Once the thumbnail is in the in-memory cache, we can clear the QImage
+        # from IMAGE_DATA_ROLE to save memory.
+        if _path in self._path_to_model_index:
+            p_idx = self._path_to_model_index[_path]
+            if p_idx.isValid():
+                item = self.thumbnail_model.itemFromIndex(QModelIndex(p_idx))
+                if item and item.data(IMAGE_DATA_ROLE):
+                    item.setData(None, IMAGE_DATA_ROLE)
+        self.thumbnail_view.viewport().update() # Force repaint
 
     def on_tags_tab_changed(self, index):
         """Updates the content of the sidebar dock when the active tab changes."""
@@ -4332,6 +4358,23 @@ class MainWindow(QMainWindow):
                 self.start_scan([os.path.dirname(path)], select_paths=current_selection)
                 return
         self.process_term(term, select_paths=current_selection)
+
+    def hard_refresh_content(self):
+        """Invalidates directory cache and re-scans content."""
+        if not self.history:
+            return
+
+        term = self.history[0]
+        path = term[6:] if term.startswith("file:/") else term
+        # Don't invalidate for searches/layouts as they don't use directory cache
+        if not term.startswith(("search:/", "layout:/")):
+            abs_path = os.path.abspath(os.path.expanduser(path))
+            target_dir = abs_path if os.path.isdir(abs_path) else \
+                os.path.dirname(abs_path)
+            self.cache.invalidate_directory_cache(target_dir)
+
+        self._force_thumbnail_refresh = True
+        self.refresh_content()
 
     def process_term(self, term, select_paths=None):
         """Processes a search term, file path, or layout directive."""
