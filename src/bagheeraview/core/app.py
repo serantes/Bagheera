@@ -2956,7 +2956,7 @@ class MainWindow(QMainWindow):
         self.is_cleaning = False
         self.scanner = ImageScanner(self.cache, paths, is_file_list=self._scan_all,
                                     thread_pool_manager=self.thread_pool_manager,
-                                    viewers=self.viewers, # Line 1071
+                                    viewers=self.viewers,  # Line 1071
                                     force_thumbnail_refresh=self._force_thumbnail_refresh,
                                     target_sizes=[self._current_thumb_tier])
         if self._is_loading_all:
@@ -2976,7 +2976,7 @@ class MainWindow(QMainWindow):
             lambda n: self._on_scan_finished(n, select_paths))
         self.scanner.start()
         self._scan_all = False
-        self._force_thumbnail_refresh = False # Reset the flag after starting scan
+        self._force_thumbnail_refresh = False  # Reset the flag after starting scan
 
     def _on_scan_finished(self, n, select_paths=None):
         """Slot for when the image scanner has finished."""
@@ -3129,7 +3129,7 @@ class MainWindow(QMainWindow):
                 curr_inode = item_data[5] if len(item_data) > 5 else None
                 curr_dev = item_data[6] if len(item_data) > 6 else None
 
-                new_qi = qi if qi is not None else item_data[1] # Preserve existing qi if not explicitly provided
+                new_qi = qi if qi is not None else item_data[1]  # Preserve existing qi if not explicitly provided
                 new_mtime = mtime if mtime is not None else curr_mtime
                 new_tags = tags if tags is not None else curr_tags
                 new_rating = rating if rating is not None else curr_rating
@@ -3647,7 +3647,7 @@ class MainWindow(QMainWindow):
                 item = self.thumbnail_model.itemFromIndex(QModelIndex(p_idx))
                 if item and item.data(IMAGE_DATA_ROLE):
                     item.setData(None, IMAGE_DATA_ROLE)
-        self.thumbnail_view.viewport().update() # Force repaint
+        self.thumbnail_view.viewport().update()  # Force repaint
 
     def on_tags_tab_changed(self, index):
         """Updates the content of the sidebar dock when the active tab changes."""
@@ -5173,38 +5173,93 @@ class MainWindow(QMainWindow):
         if path in self._paths_being_modified_by_app:
             return
 
-        # External modification: check if it's metadata-only or content change
+        # External modification: refresh thumbnail, metadata, name
         try:
             new_stat = os.stat(path)
             new_mtime = new_stat.st_mtime
-            new_size = new_stat.st_size
 
-            # Find old data from internal list
-            old_item_data = next((item for item in self.found_items_data
-                                  if item[0] == path), None)
-            old_mtime = old_item_data[2] if old_item_data else 0
-            # Re-read size from disk for comparison
-            old_size = os.path.getsize(path) if old_item_data else 0
+            # Invalidate the cache to force thumbnail regeneration
+            self.cache.invalidate_path(path)
 
-            if new_size == old_size and new_mtime != old_mtime:
-                # Likely metadata-only change (size unchanged, mtime changed)
-                res = load_common_metadata(path)
-                self._update_internal_data(
-                    path, mtime=new_mtime, tags=res.tags, rating=res.rating,
-                    inode=new_stat.st_ino, dev=new_stat.st_dev)
-                self.proxy_model.add_to_cache(path, res.tags)
-                self.thumbnail_view.viewport().update()  # Force repaint
-                self.status_lbl.setText(f"Metadata updated: {os.path.basename(path)}")
+            # Re-read metadata from disk
+            res = load_common_metadata(path)
+
+            # Update our internal tracking list
+            self._update_internal_data(
+                path, mtime=new_mtime, tags=res.tags, rating=res.rating,
+                inode=new_stat.st_ino, dev=new_stat.st_dev)
+
+            # Update proxy filter cache
+            self.proxy_model.add_to_cache(path, res.tags)
+
+            # Create a ThumbnailGenerator to regenerate the thumbnail in the background
+            size = self._get_tier_for_size(self.current_thumb_size)
+            self.thumbnail_generator = ThumbnailGenerator(
+                self.cache, [path], size, self.thread_pool_manager)
+            self.thumbnail_generator.generation_complete.connect(
+                self.thumbnail_view.viewport().update)
+            self.thumbnail_generator.start()
+
+            # Update the standard item in the model directly
+            if path in self._path_to_model_index:
+                p_idx = self._path_to_model_index[path]
+                if p_idx.isValid():
+                    item = self.thumbnail_model.itemFromIndex(QModelIndex(p_idx))
+                    if item:
+                        # Refresh name in case it changed
+                        basename = os.path.basename(path)
+                        item.setText(basename)
+
+                        # Update metadata roles
+                        item.setData(new_mtime, MTIME_ROLE)
+                        item.setData(res.tags, TAGS_ROLE)
+                        item.setData(res.rating, RATING_ROLE)
+                        item.setData(new_stat.st_ino, INODE_ROLE)
+                        item.setData(new_stat.st_dev, DEVICE_ROLE)
+
+                        # Clear fallback scan thumbnail to force high-res reload
+                        item.setData(None, IMAGE_DATA_ROLE)
+
+                        # Update tooltip with new tags
+                        tooltip_text = f"{basename}\n{path}"
+                        if res.tags:
+                            display_tags = [t.split('/')[-1] for t in res.tags]
+                            tooltip_text += f"\n{UITexts.TAGS_TAB}: {', '.join(display_tags)}"
+                        item.setToolTip(tooltip_text)
+
+                        # Notify views that this item has changed
+                        source_index = QModelIndex(p_idx)
+                        self.thumbnail_model.dataChanged.emit(source_index, source_index)
+
+            # Handle grouped vs flat views
+            is_grouped = self.view_mode_combo.currentIndex() > 0
+            if is_grouped:
+                # Grouped views need a full rebuild to ensure correct group headers and order
+                self.rebuild_view(full_reset=True)
             else:
-                # Content or size changed, invalidate thumbnail and rebuild view
-                self.cache.invalidate_path(path)
-                res = load_common_metadata(path)  # Re-read metadata as well
-                self._update_internal_data(
-                    path, mtime=new_mtime, tags=res.tags, rating=res.rating,
-                    inode=new_stat.st_ino, dev=new_stat.st_dev)
-                self.proxy_model.add_to_cache(path, res.tags)
-                self.rebuild_view()
-                self.status_lbl.setText(f"File modified: {os.path.basename(path)}")
+                # Flat view: invalidate proxy model to update sorting and filtering on the item
+                self.proxy_model.invalidate()
+
+            # Update sidebar/status panel if this file is selected
+            selected_indexes = self.thumbnail_view.selectedIndexes()
+            selected_paths = [self.proxy_model.data(idx, PATH_ROLE) for idx in selected_indexes]
+            if path in selected_paths:
+                self.update_tag_edit_widget()
+                self.update_info_widget()
+
+            # Update other open viewers currently showing this file
+            for v in list(self.viewers):
+                try:
+                    if isinstance(v, ImageViewer) and v.isVisible():
+                        if v.controller.get_current_path() == path:
+                            v.update_view(resize_win=False)
+                            v.populate_filmstrip()
+                        elif path in v.controller.image_list:
+                            v.populate_filmstrip()
+                except RuntimeError:
+                    continue
+
+            self.status_lbl.setText(f"File modified: {os.path.basename(path)}")
         except Exception:
             # Fallback to full refresh if error occurs
             self.refresh_content()
