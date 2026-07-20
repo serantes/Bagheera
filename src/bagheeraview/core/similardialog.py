@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QIcon, QImage, QDesktopServices
 from PySide6.QtCore import Qt, QUrl
 from .constants import UITexts, APP_CONFIG
-from .duplicatecache import SimilarSearchWorker
+from .faiss_worker import FAISSSimilarSearchWorker
 from .imageviewer import ImagePane
 from .propertiesdialog import PropertiesDialog
 
@@ -43,7 +43,7 @@ class SimilarImagesDialog(QDialog):
         ctrl_layout.addWidget(QLabel(UITexts.SETTINGS_DUPLICATE_THRESHOLD_LABEL))
         self.threshold_spin = QSpinBox()
         self.threshold_spin.setRange(50, 100)
-        self.threshold_spin.setValue(APP_CONFIG.get("duplicate_threshold", 90))
+        self.threshold_spin.setValue(APP_CONFIG.get("similar_threshold", 75))
         self.threshold_spin.setSuffix("%")
         ctrl_layout.addWidget(self.threshold_spin)
 
@@ -127,8 +127,8 @@ class SimilarImagesDialog(QDialog):
         whitelist = APP_CONFIG.get("duplicate_whitelist", "")
         blacklist = APP_CONFIG.get("duplicate_blacklist", "")
 
-        self.worker = SimilarSearchWorker(
-            self.target_path, self.main_win.duplicate_cache,
+        self.worker = FAISSSimilarSearchWorker(
+            self.target_path,
             self.threshold_spin.value(), whitelist, blacklist)
 
         self.worker.progress_update.connect(self.on_progress)
@@ -140,6 +140,8 @@ class SimilarImagesDialog(QDialog):
         if total > 0:
             self.progress_bar.setRange(0, total)
             self.progress_bar.setValue(cur)
+        else:
+            self.progress_bar.setRange(0, 0)
         self.status_lbl.setText(msg)
 
     def on_results_found(self, results):

@@ -1716,7 +1716,8 @@ class ImageScanner(QThread):
 
     def __init__(self, cache, paths, is_file_list=False, viewers=None,
                  thread_pool_manager=None, target_sizes=None,
-                 force_thumbnail_refresh=False): # Line 642
+                 force_thumbnail_refresh=False,
+                 scan_max_level=None):
         if not paths or not isinstance(paths, (list, tuple)):
             logger.warning("ImageScanner initialized with empty or invalid paths")
             paths = []
@@ -1728,6 +1729,7 @@ class ImageScanner(QThread):
         self._viewers = viewers
         self._seen_files = set()
         self._is_file_list = is_file_list
+        self._scan_max_level = scan_max_level
         if self._is_file_list:
             self.paths = []
             for p in paths:
@@ -1866,8 +1868,11 @@ class ImageScanner(QThread):
         self._update_viewers(force=True)
 
     def _scan_directory(self, dir_path, current_depth):
-        max_level = APP_CONFIG.get(
-            "scan_max_level", SCANNER_SETTINGS_DEFAULTS["scan_max_level"])
+        if self._scan_max_level is None:
+            max_level = APP_CONFIG.get(
+                "scan_max_level", SCANNER_SETTINGS_DEFAULTS["scan_max_level"])
+        else:
+            max_level = self._scan_max_level
 
         if not self._is_running or current_depth > max_level:
             return

@@ -2911,7 +2911,7 @@ class MainWindow(QMainWindow):
                     w.load_and_fit_image()
 
     def start_scan(self, paths, sync_viewer=False, active_viewer=None,
-                   select_paths=None):
+                   select_paths=None, scan_max_level=None):
         """
         Starts a new background scan for images.
 
@@ -2920,6 +2920,7 @@ class MainWindow(QMainWindow):
             sync_viewer (bool): If True, avoids clearing the grid.
             active_viewer (ImageViewer): A viewer to sync with the scan results.
             select_paths (list): A list of paths to select automatically.
+            scan_max_level (Integer): Custom scan_max_level
         """
         self.is_cleaning = True
         self._suppress_updates = True
@@ -2958,7 +2959,8 @@ class MainWindow(QMainWindow):
                                     thread_pool_manager=self.thread_pool_manager,
                                     viewers=self.viewers,  # Line 1071
                                     force_thumbnail_refresh=self._force_thumbnail_refresh,
-                                    target_sizes=[self._current_thumb_tier])
+                                    target_sizes=[self._current_thumb_tier],
+                                    scan_max_level=scan_max_level)
         if self._is_loading_all:
             self.scanner.set_auto_load(True)
         self._is_loading = True
@@ -4427,7 +4429,8 @@ class MainWindow(QMainWindow):
                                                  initial_rating=0, parent=self,
                                                  persistent=True)
                 self.start_scan([os.path.dirname(path)],
-                                active_viewer=self.active_viewer)
+                                active_viewer=self.active_viewer,
+                                scan_max_level=0)
                 self._setup_viewer_sync(self.active_viewer)
                 self.viewers.append(self.active_viewer)
                 self.active_viewer.destroyed.connect(
@@ -4659,7 +4662,9 @@ class MainWindow(QMainWindow):
             # Scan the file's directory in the background for context
             self._scan_all = False
             self.start_scan([full_path, str(Path(full_path).parent)],
-                            sync_viewer=True, active_viewer=self.active_viewer)
+                            sync_viewer=True,
+                            active_viewer=self.active_viewer,
+                            scan_max_level=0)
         else:
             # If not a file, process as a generic term (path, search, or layout)
             term = path if path.startswith(("search:/", "file:/", "layout:/")) \
