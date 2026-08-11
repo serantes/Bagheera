@@ -6,6 +6,7 @@ import calendar
 import csv
 import json
 import os
+import subprocess
 from datetime import datetime
 
 from PySide6.QtCore import (
@@ -904,10 +905,20 @@ class BagheeraSearchWindow(QMainWindow):
         menu.exec(self.results_table.viewport().mapToGlobal(pos))
 
     def _open_location(self, path):
-        """Opens the directory containing the file."""
-        folder = os.path.dirname(path)
-        if os.path.isdir(folder):
-            QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
+        """Open the location of the file or directory.
+
+        If the path points to a file, open its parent directory in Dolphin
+        with the '--select' flag to highlight it. Otherwise, open the folder
+        using the default system file manager.
+        """
+        if os.path.isfile(path):
+            # Use Dolphin directly to select the specified file
+            subprocess.Popen(['dolphin', '--select', path])
+        else:
+            # Fallback for directories or general paths
+            folder = path if os.path.isdir(path) else os.path.dirname(path)
+            if os.path.isdir(folder):
+                QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
 
     def perform_search(self):
         """
