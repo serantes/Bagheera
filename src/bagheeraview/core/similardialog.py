@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QSpinBox, QSplitter, QWidget, QMenu, QApplication, QAbstractItemView,
     QMessageBox
 )
-from PySide6.QtGui import QIcon, QImage, QDesktopServices, QAction, QCursor
+from PySide6.QtGui import QIcon, QImage, QDesktopServices
 from PySide6.QtCore import Qt, QUrl
 from .constants import UITexts, APP_CONFIG, AVAILABLE_FACE_ENGINES, AVAILABLE_PET_ENGINES
 from .faiss_worker import FAISSSimilarSearchWorker
@@ -238,7 +238,7 @@ class SimilarImagesDialog(QDialog):
 
         # 3. Region management
         region_menu = menu.addMenu(QIcon.fromTheme("edit-image-face-recognize"), UITexts.VIEWER_MENU_DETECT_AREAS)
-        
+
         action_detect_faces = region_menu.addAction(UITexts.VIEWER_MENU_DETECT_FACES)
         action_detect_faces.setEnabled(bool(AVAILABLE_FACE_ENGINES))
         action_detect_faces.triggered.connect(lambda: self._run_region_detection("faces"))
@@ -268,10 +268,10 @@ class SimilarImagesDialog(QDialog):
 
         # 4. Clipboard
         clip_menu = menu.addMenu(QIcon.fromTheme("edit-copy"), UITexts.CONTEXT_MENU_CLIPBOARD)
-        
+
         action_copy_image = clip_menu.addAction(QIcon.fromTheme("image-x-generic"), UITexts.VIEWER_MENU_COPY_IMAGE)
         action_copy_image.triggered.connect(lambda: QApplication.clipboard().setImage(QImage(path)))
-        
+
         action_copy_path = clip_menu.addAction(QIcon.fromTheme("document-properties"), UITexts.VIEWER_MENU_COPY_PATH)
         action_copy_path.triggered.connect(lambda: QApplication.clipboard().setText(path))
 
@@ -415,7 +415,7 @@ class SimilarImagesDialog(QDialog):
             h = canvas.height() if canvas else 0
             if scroll_area:
                 scroll_area.ensureVisible(int(new_reg.get('x', 0) * w),
-                                         int(new_reg.get('y', 0) * h), 50, 50)
+                                          int(new_reg.get('y', 0) * h), 50, 50)
             QApplication.processEvents()
 
             history = self.main_win.face_names_history if self.main_win else []
