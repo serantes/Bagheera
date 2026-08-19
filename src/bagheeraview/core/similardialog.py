@@ -5,9 +5,9 @@ from PySide6.QtWidgets import (
     QSpinBox, QSplitter, QWidget, QMenu, QApplication, QAbstractItemView,
     QMessageBox
 )
-from PySide6.QtGui import QIcon, QImage, QDesktopServices
+from PySide6.QtGui import QIcon, QImage, QDesktopServices, QAction, QCursor
 from PySide6.QtCore import Qt, QUrl
-from .constants import UITexts, APP_CONFIG
+from .constants import UITexts, APP_CONFIG, AVAILABLE_FACE_ENGINES, AVAILABLE_PET_ENGINES
 from .faiss_worker import FAISSSimilarSearchWorker
 from .imageviewer import ImagePane
 from .propertiesdialog import PropertiesDialog
@@ -79,10 +79,9 @@ class SimilarImagesDialog(QDialog):
         self.right_pane_widget = self._create_preview_pane_widget()
         self.splitter.addWidget(self.right_pane_widget)
         self.preview_pane = self.right_pane_widget.pane
-
         self.splitter.setStretchFactor(0, 0)  # Left table doesn't stretch
         self.splitter.setStretchFactor(1, 1)  # Right image stretches
-
+        self._next_region_type = "Face"
         self.start_search()
 
     def _create_preview_pane_widget(self):
@@ -137,10 +136,13 @@ class SimilarImagesDialog(QDialog):
         self.worker.start()
 
     def on_progress(self, cur, total, msg):
+        self.status_lbl.show()
         if total > 0:
+            self.progress_bar.show()
             self.progress_bar.setRange(0, total)
             self.progress_bar.setValue(cur)
         else:
+            self.progress_bar.show()
             self.progress_bar.setRange(0, 0)
         self.status_lbl.setText(msg)
 
@@ -163,6 +165,8 @@ class SimilarImagesDialog(QDialog):
 
     def on_finished(self):
         self.progress_bar.hide()
+        self.status_lbl.setText("")
+        self.status_lbl.hide()
         self.btn_search.setEnabled(True)
 
     def _on_cell_changed(self, row, col, prev_row, prev_col):
@@ -216,26 +220,75 @@ class SimilarImagesDialog(QDialog):
 
         menu = QMenu(self)
 
-        # Submenú Abrir con...
+        # 1. Open Submenu
         open_menu = menu.addMenu(QIcon.fromTheme("document-open"), UITexts.CONTEXT_MENU_OPEN)
         self.main_win.populate_open_with_submenu(open_menu, path)
 
-        # Abrir ubicación
+        action_open_bagheeraview = menu.addAction(QIcon.fromTheme("system-run"), UITexts.CONTEXT_MENU_OPEN_BAGHEERAVIEW)
+        action_open_bagheeraview.triggered.connect(lambda: self._open_location_in_bagheeraview(path))
+
         action_open_default_app = menu.addAction(QIcon.fromTheme("system-run"), UITexts.CONTEXT_MENU_OPEN_DEFAULT_APP)
         action_open_default_app.triggered.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path))))
 
         menu.addSeparator()
 
-        # Portapapeles
-        clip_menu = menu.addMenu(QIcon.fromTheme("edit-copy"), UITexts.CONTEXT_MENU_CLIPBOARD)
-        action_copy_image = clip_menu.addAction(QIcon.fromTheme("image-x-generic"), UITexts.VIEWER_MENU_COPY_IMAGE)
-        action_copy_image.triggered.connect(lambda: QApplication.clipboard().setImage(QImage(path)))
-        action_copy_path = clip_menu.addAction(QIcon.fromTheme("document-properties"), UITexts.VIEWER_MENU_COPY_PATH)
-        action_copy_path.triggered.connect(lambda: QApplication.clipboard().setText(path))
+        # 2. Quick tags
+        action_fast_tag = menu.addAction(QIcon.fromTheme("document-properties"), UITexts.VIEWER_MENU_TAGS)
+        action_fast_tag.triggered.connect(self._show_fast_tags)
+
+        # 3. Region management
+        region_menu = menu.addMenu(QIcon.fromTheme("edit-image-face-recognize"), UITexts.VIEWER_MENU_DETECT_AREAS)
+        
+        action_detect_faces = region_menu.addAction(UITexts.VIEWER_MENU_DETECT_FACES)
+        action_detect_faces.setEnabled(bool(AVAILABLE_FACE_ENGINES))
+        action_detect_faces.triggered.connect(lambda: self._run_region_detection("faces"))
+
+        action_detect_pets = region_menu.addAction(UITexts.VIEWER_MENU_DETECT_PETS)
+        action_detect_pets.setEnabled(bool(AVAILABLE_PET_ENGINES))
+        action_detect_pets.triggered.connect(lambda: self._run_region_detection("pets"))
+
+        region_menu.addSeparator()
+
+        action_add_face = region_menu.addAction(QIcon.fromTheme("list-add"), UITexts.VIEWER_MENU_ADD_FACE)
+        action_add_face.triggered.connect(lambda: self.set_next_region_type("Face"))
+
+        action_add_pet = region_menu.addAction(QIcon.fromTheme("list-add"), UITexts.VIEWER_MENU_ADD_PET)
+        action_add_pet.triggered.connect(lambda: self.set_next_region_type("Pet"))
+
+        action_add_body = region_menu.addAction(QIcon.fromTheme("list-add"), UITexts.VIEWER_MENU_ADD_BODY)
+        action_add_body.triggered.connect(lambda: self.set_next_region_type("Body"))
+
+        action_add_object = region_menu.addAction(QIcon.fromTheme("list-add"), UITexts.VIEWER_MENU_ADD_OBJECT)
+        action_add_object.triggered.connect(lambda: self.set_next_region_type("Object"))
+
+        action_add_landmark = region_menu.addAction(QIcon.fromTheme("list-add"), UITexts.VIEWER_MENU_ADD_LANDMARK)
+        action_add_landmark.triggered.connect(lambda: self.set_next_region_type("Landmark"))
 
         menu.addSeparator()
 
-        # Papelera / Borrar
+        # 4. Clipboard
+        clip_menu = menu.addMenu(QIcon.fromTheme("edit-copy"), UITexts.CONTEXT_MENU_CLIPBOARD)
+        
+        action_copy_image = clip_menu.addAction(QIcon.fromTheme("image-x-generic"), UITexts.VIEWER_MENU_COPY_IMAGE)
+        action_copy_image.triggered.connect(lambda: QApplication.clipboard().setImage(QImage(path)))
+        
+        action_copy_path = clip_menu.addAction(QIcon.fromTheme("document-properties"), UITexts.VIEWER_MENU_COPY_PATH)
+        action_copy_path.triggered.connect(lambda: QApplication.clipboard().setText(path))
+
+        action_copy_dir = clip_menu.addAction(QIcon.fromTheme("folder"), UITexts.CONTEXT_MENU_COPY_DIR)
+        action_copy_dir.triggered.connect(lambda: QApplication.clipboard().setText(os.path.dirname(path)))
+
+        menu.addSeparator()
+
+        # 5. Show faces & other regions
+        action_show_faces = menu.addAction(QIcon.fromTheme("edit-image-face-show"), UITexts.SHOW_FACES)
+        action_show_faces.setCheckable(True)
+        action_show_faces.setChecked(self.preview_pane.controller.show_faces)
+        action_show_faces.triggered.connect(self.toggle_faces)
+
+        menu.addSeparator()
+
+        # 6. Trash & Delete
         action_trash = menu.addAction(QIcon.fromTheme("user-trash"), UITexts.CONTEXT_MENU_TRASH)
         action_trash.triggered.connect(lambda: self._handle_deletion(path, permanent=False))
 
@@ -244,7 +297,7 @@ class SimilarImagesDialog(QDialog):
 
         menu.addSeparator()
 
-        # Propiedades
+        # 7. Properties
         action_props = menu.addAction(QIcon.fromTheme("document-properties"), UITexts.CONTEXT_MENU_PROPERTIES)
         action_props.triggered.connect(lambda: self._show_properties(path))
 
@@ -294,6 +347,124 @@ class SimilarImagesDialog(QDialog):
         dlg = PropertiesDialog(path, initial_tags=tags, initial_rating=rating, parent=self)
         dlg.exec()
 
+    def set_next_region_type(self, region_type):
+        self._next_region_type = region_type
+        if not self.preview_pane.controller.show_faces:
+            self.preview_pane.controller.show_faces = True
+            self.preview_pane.canvas.update()
+
+    def toggle_faces(self):
+        self.preview_pane.controller.show_faces = not self.preview_pane.controller.show_faces
+        self.preview_pane.canvas.update()
+
+    def _show_fast_tags(self):
+        from .imageviewer import FastTagManager
+        if not hasattr(self.preview_pane, "update_status_bar"):
+            self.preview_pane.update_status_bar = lambda: None
+        manager = FastTagManager(self.preview_pane)
+        manager.show_menu()
+
+    def _open_location_in_bagheeraview(self, path):
+        folder_path = os.path.dirname(path)
+        self.main_win.start_scan([folder_path])
+        self.main_win.show()
+        self.main_win.raise_()
+        self.main_win.activateWindow()
+
+    def _run_region_detection(self, detect_type):
+        from .imageviewer import FaceNameDialog
+        controller = self.preview_pane.controller
+        canvas = self.preview_pane.canvas
+        scroll_area = self.preview_pane.scroll_area
+
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            if detect_type == "faces":
+                new_regions = controller.detect_faces()
+            elif detect_type == "pets":
+                new_regions = controller.detect_pets()
+            else:
+                new_regions = []
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        if not new_regions:
+            return
+
+        IOU_THRESHOLD = 0.7
+        added_count = 0
+        for new_reg in new_regions:
+            is_duplicate = False
+            for existing_reg in controller.faces:
+                iou = self._calculate_iou(new_reg, existing_reg)
+                if iou > IOU_THRESHOLD:
+                    is_duplicate = True
+                    break
+
+            if is_duplicate:
+                continue
+
+            if not controller.show_faces:
+                controller.show_faces = True
+                canvas.update()
+
+            controller.faces.append(new_reg)
+            canvas.update()
+
+            w = canvas.width() if canvas else 0
+            h = canvas.height() if canvas else 0
+            if scroll_area:
+                scroll_area.ensureVisible(int(new_reg.get('x', 0) * w),
+                                         int(new_reg.get('y', 0) * h), 50, 50)
+            QApplication.processEvents()
+
+            history = self.main_win.face_names_history if self.main_win else []
+            suggested = history[0] if history and APP_CONFIG.get(
+                "face_use_last_name", False) else ""
+
+            full_tag, updated_history, ok = FaceNameDialog.get_name(
+                self, history, current_name=suggested, main_win=self.main_win)
+
+            if ok and full_tag:
+                new_reg['name'] = full_tag
+                controller.toggle_tag(full_tag, True)
+                if self.main_win:
+                    self.main_win.face_names_history = updated_history
+                added_count += 1
+            else:
+                controller.faces.pop()
+                canvas.update()
+
+        if added_count > 0:
+            try:
+                controller.save_faces()
+            except Exception as e:
+                QMessageBox.critical(self, UITexts.ERROR, str(e))
+
+    def _calculate_iou(self, boxA, boxB):
+        boxA_x1 = boxA['x'] - boxA['w'] / 2
+        boxA_y1 = boxA['y'] - boxA['h'] / 2
+        boxA_x2 = boxA['x'] + boxA['w'] / 2
+        boxA_y2 = boxA['y'] + boxA['h'] / 2
+
+        boxB_x1 = boxB['x'] - boxB['w'] / 2
+        boxB_y1 = boxB['y'] - boxB['h'] / 2
+        boxB_x2 = boxB['x'] + boxB['w'] / 2
+        boxB_y2 = boxB['y'] + boxB['h'] / 2
+
+        xA = max(boxA_x1, boxB_x1)
+        yA = max(boxA_y1, boxB_y1)
+        xB = min(boxA_x2, boxB_x2)
+        yB = min(boxA_y2, boxB_y2)
+
+        interArea = max(0, xB - xA) * max(0, yB - yA)
+        boxAArea = boxA['w'] * boxA['h']
+        boxBArea = boxB['w'] * boxB['h']
+
+        denominator = float(boxAArea + boxBArea - interArea)
+        iou = interArea / denominator if denominator > 0 else 0
+        return iou
+
     # Implementation of API required for ImagePane
     def set_active_pane(self, pane):
         pass
@@ -327,6 +498,40 @@ class SimilarImagesDialog(QDialog):
 
     def toggle_fullscreen(self):
         pass
+
+    def wheelEvent(self, event):
+        """Handles mouse wheel events for zooming the preview image."""
+        if event.modifiers() & Qt.ControlModifier and self.preview_pane:
+            focus_pos = self.preview_pane.mapFromGlobal(event.globalPosition().toPoint())
+            if event.angleDelta().y() > 0:
+                self.preview_pane.zoom_manager.zoom(1.1, focus_point=focus_pos)
+            else:
+                self.preview_pane.zoom_manager.zoom(0.9, focus_point=focus_pos)
+            event.accept()
+        else:
+            super().wheelEvent(event)
+
+    def keyPressEvent(self, event):
+        """Handles keyboard shortcuts for zooming."""
+        key = event.key()
+        if key in (Qt.Key_Plus, Qt.Key_Equal):
+            if self.preview_pane:
+                self.preview_pane.zoom_manager.zoom(1.1)
+            event.accept()
+        elif key == Qt.Key_Minus:
+            if self.preview_pane:
+                self.preview_pane.zoom_manager.zoom(0.9)
+            event.accept()
+        elif key == Qt.Key_0:
+            if self.preview_pane:
+                self.preview_pane.zoom_manager.zoom(1.0, reset=True)
+            event.accept()
+        elif key == Qt.Key_Z:
+            if self.preview_pane:
+                self.preview_pane.zoom_manager.toggle_fit_to_screen()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
     def done(self, r):
         if self.worker and self.worker.isRunning():
