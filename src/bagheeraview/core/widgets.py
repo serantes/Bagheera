@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QApplication, QWidget,  QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QMessageBox, QSizePolicy, QInputDialog, QTableWidget, QTableWidgetItem,
     QMenu, QHeaderView, QAbstractItemView, QTreeView, QLabel, QTextEdit,
-    QComboBox, QCompleter, QToolBar, QDialog
+    QComboBox, QCompleter, QToolBar, QDialog, QProgressBar
 )
 from PySide6.QtGui import (
     QIcon, QStandardItemModel, QStandardItem, QColor, QPainter, QPen,
@@ -33,6 +33,11 @@ from PySide6.QtCore import (
 )
 
 from .metadatamanager import XattrManager
+from .xmpmanager import XmpManager
+try:
+    from bagheerasearch.core.search_lib.search import BagheeraSearcher
+except ImportError:
+    BagheeraSearcher = None
 from .constants import (
     LAYOUTS_DIR, RATING_XATTR_NAME, XATTR_COMMENT_NAME, XATTR_NAME, UITexts,
     FACES_MENU_MAX_ITEMS_DEFAULT, APP_CONFIG, FAVORITES_PATH
@@ -51,6 +56,7 @@ class TagTreeView(QTreeView):
     search_requested = Signal(object)
     add_and_requested = Signal(object)
     add_or_requested = Signal(object)
+    rename_requested = Signal(object)
 
     def mousePressEvent(self, event):
         """Handles mouse press events to implement Ctrl+Click toggling.
@@ -96,6 +102,8 @@ class TagTreeView(QTreeView):
                     QIcon.fromTheme("system-search"), UITexts.SEARCH_BY_TAG)
                 add_and_action = menu.addAction(UITexts.SEARCH_ADD_AND)
                 add_or_action = menu.addAction(UITexts.SEARCH_ADD_OR)
+                rename_action = menu.addAction(
+                    QIcon.fromTheme("edit-rename"), UITexts.RENAME)
 
                 action = menu.exec(event.globalPos())
                 if action == search_action:
@@ -104,7 +112,189 @@ class TagTreeView(QTreeView):
                     self.add_and_requested.emit(index)
                 elif action == add_or_action:
                     self.add_or_requested.emit(index)
+                elif action == rename_action:
+                    self.rename_requested.emit(index)
         super().contextMenuEvent(event)
+
+
+class TagRenameDialog(QDialog):
+    """Dialog for renaming a tag, updating matching files and regions with progress tracking."""
+
+    def __init__(self, tag_path: str, tag_edit_widget=None, parent=None):
+        super().__init__(parent)
+        self.tag_path = tag_path
+        self.tag_edit_widget = tag_edit_widget
+        self.found_files = []
+
+        self.setWindowTitle(UITexts.RENAME_TAG_TITLE)
+        self.setMinimumWidth(450)
+
+        layout = QVBoxLayout(self)
+
+        lbl_path = QLabel(UITexts.RENAME_TAG_LABEL, self)
+        self.edit_path = QLineEdit(self.tag_path, self)
+        self.edit_path.setClearButtonEnabled(True)
+
+        layout.addWidget(lbl_path)
+        layout.addWidget(self.edit_path)
+
+        self.lbl_count = QLabel(UITexts.RENAME_TAG_ITEMS_COUNT.format(0), self)
+        layout.addWidget(self.lbl_count)
+
+        self.progress_bar = QProgressBar(self)
+        self.progress_bar.setValue(0)
+        layout.addWidget(self.progress_bar)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+
+        self.btn_accept = QPushButton(UITexts.ACCEPT, self)
+        self.btn_cancel = QPushButton(UITexts.CANCEL, self)
+
+        btn_layout.addWidget(self.btn_accept)
+        btn_layout.addWidget(self.btn_cancel)
+        layout.addLayout(btn_layout)
+
+        self.btn_accept.clicked.connect(self.accept_rename)
+        self.btn_cancel.clicked.connect(self.reject)
+
+        self.load_matching_files()
+
+    def load_matching_files(self):
+        """Searches for all files containing the target tag."""
+        words = self.tag_path.replace('/', ' ').split()
+        search_terms = [f"tags='{word}'" for word in words if word not in ('-')]
+        search_string = " ".join(search_terms)
+
+        files = []
+        if BagheeraSearcher and search_string:
+            try:
+                searcher = BagheeraSearcher()
+                main_opts = {}
+                other_opts = {
+                    "having": None, "id": False, "konsole": False,
+                    "limit": 99999999999, "offset": 0, "subquery": None,
+                    "subquery_indent": "", "subquery_having": None,
+                    "sort": None, "type": None, "verbose": False
+                }
+                for item in searcher.search(search_string, main_opts, other_opts):
+                    p = item.get("path")
+                    if p:
+                        p = p.strip()
+                        if p and os.path.exists(os.path.expanduser(p)) and p not in files:
+                            files.append(p)
+            except Exception as e:
+                logger.error(f"Error searching files with BagheeraSearcher: {e}")
+
+        if self.tag_edit_widget and hasattr(self.tag_edit_widget, 'original_tags_per_file'):
+            for path, tags in self.tag_edit_widget.original_tags_per_file.items():
+                if any(t == self.tag_path or t.startswith(self.tag_path + "/") for t in tags):
+                    if path not in files and os.path.exists(path):
+                        files.append(path)
+
+        self.found_files = files
+        self.lbl_count.setText(UITexts.RENAME_TAG_ITEMS_COUNT.format(len(self.found_files)))
+        self.progress_bar.setRange(0, max(len(self.found_files), 1))
+        self.progress_bar.setValue(0)
+
+    def get_matched_region_types(self, tag_path: str) -> set:
+        """Determines which region types correspond to the given tag path based on APP_CONFIG."""
+        matched = set()
+        mappings = [
+            ("person_tags", "Person", "Face"),
+            ("pet_tags", "Pet", "Pet"),
+            ("body_tags", "Body", "Body"),
+            ("object_tags", "Object", "Object"),
+            ("landmark_tags", "Landmark", "Landmark"),
+        ]
+        for config_key, default_val, region_type in mappings:
+            config_val = APP_CONFIG.get(config_key, default_val)
+            if not config_val or not config_val.strip():
+                config_val = default_val
+            prefixes = [p.strip() for p in config_val.split(',') if p.strip()]
+            for prefix in prefixes:
+                if tag_path == prefix or tag_path.startswith(prefix + "/"):
+                    matched.add(region_type)
+                    if region_type == "Face":
+                        matched.add("Person")
+                    break
+        return matched
+
+    def accept_rename(self):
+        """Performs the tag and region renaming process across all matching files."""
+        new_tag = self.edit_path.text().strip()
+        old_tag = self.tag_path
+
+        if not new_tag:
+            QMessageBox.warning(self, UITexts.WARNING, "Tag path cannot be empty.")
+            return
+
+        if new_tag == old_tag:
+            self.accept()
+            return
+
+        self.btn_accept.setEnabled(False)
+        self.btn_cancel.setEnabled(False)
+        self.edit_path.setEnabled(False)
+
+        old_last_term = old_tag.split('/')[-1]
+        new_last_term = new_tag.split('/')[-1]
+        matched_region_types = self.get_matched_region_types(old_tag)
+
+        total_files = len(self.found_files)
+        self.progress_bar.setRange(0, max(total_files, 1))
+
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            for idx, file_path in enumerate(self.found_files):
+                self.progress_bar.setValue(idx)
+                QApplication.processEvents()
+
+                try:
+                    raw_tags = XattrManager.get_attribute(file_path, XATTR_NAME)
+                    if raw_tags:
+                        file_tags = [t.strip() for t in raw_tags.split(',') if t.strip()]
+                    else:
+                        file_tags = []
+
+                    updated_tags = []
+                    tag_changed = False
+                    for t in file_tags:
+                        if t == old_tag:
+                            updated_tags.append(new_tag)
+                            tag_changed = True
+                        elif t.startswith(old_tag + "/"):
+                            new_child_tag = new_tag + t[len(old_tag):]
+                            updated_tags.append(new_child_tag)
+                            tag_changed = True
+                        else:
+                            updated_tags.append(t)
+
+                    if tag_changed:
+                        final_tags = sorted(list(set(updated_tags)))
+                        tags_str = ",".join(final_tags) if final_tags else None
+                        XattrManager.set_attribute(file_path, XATTR_NAME, tags_str)
+
+                    if matched_region_types and old_last_term != new_last_term:
+                        faces = XmpManager.load_faces(file_path)
+                        if faces:
+                            region_changed = False
+                            for face in faces:
+                                r_type = face.get('type', 'Face')
+                                if r_type in matched_region_types and face.get('name') == old_last_term:
+                                    face['name'] = new_last_term
+                                    region_changed = True
+                            if region_changed:
+                                XmpManager.save_faces(file_path, faces)
+                except Exception as e:
+                    logger.error(f"Error updating file {file_path} during tag rename: {e}")
+
+            self.progress_bar.setValue(total_files)
+            QApplication.processEvents()
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        self.accept()
 
 
 class TagEditWidget(QWidget):
@@ -178,6 +368,7 @@ class TagEditWidget(QWidget):
         self.tree_view.search_requested.connect(self.on_search_requested)
         self.tree_view.add_and_requested.connect(self.on_add_and_requested)
         self.tree_view.add_or_requested.connect(self.on_add_or_requested)
+        self.tree_view.rename_requested.connect(self.on_rename_requested)
 
     def set_files_data(self, files_data):
         """Sets the files whose tags are to be edited.
@@ -514,6 +705,70 @@ class TagEditWidget(QWidget):
             final_query = new_term
 
         self.main_win.process_term(f"search:/{final_query}")
+
+    @Slot(object)
+    def on_rename_requested(self, proxy_index):
+        """Handles request to rename a tag from the context menu."""
+        source_index = self.proxy_model.mapToSource(proxy_index)
+        item = self.source_model.itemFromIndex(source_index)
+        if not item:
+            return
+        full_path = self.reconstruct_path(item)
+        if not full_path:
+            return
+
+        dialog = TagRenameDialog(full_path, tag_edit_widget=self, parent=self)
+        if dialog.exec() == QDialog.Accepted:
+            new_tag = dialog.edit_path.text().strip()
+            old_tag = full_path
+
+            # 1. Update internal available_tags list to replace old tag & child tags
+            if new_tag and new_tag != old_tag:
+                updated_available = []
+                for t in self.available_tags:
+                    if t == old_tag:
+                        updated_available.append(new_tag)
+                    elif t.startswith(old_tag + "/"):
+                        updated_available.append(new_tag + t[len(old_tag):])
+                    else:
+                        updated_available.append(t)
+                self.available_tags = sorted(list(set(updated_available)))
+
+            # 2. Refresh tags from xattrs for all currently loaded files
+            for path in list(self.original_tags_per_file.keys()):
+                raw_tags = XattrManager.get_attribute(path, XATTR_NAME)
+                if raw_tags:
+                    self.original_tags_per_file[path] = set(
+                        t.strip() for t in raw_tags.split(',') if t.strip()
+                    )
+                else:
+                    self.original_tags_per_file[path] = set()
+
+            # 3. Refresh available tags and rebuild TagTreeView
+            self.refresh_available_tags()
+
+            # 4. Notify main window components if available
+            if self.main_win:
+                if hasattr(self.main_win, 'on_tags_edited'):
+                    try:
+                        self.main_win.on_tags_edited()
+                    except Exception:
+                        pass
+                if hasattr(self.main_win, 'update_tag_list'):
+                    try:
+                        self.main_win.update_tag_list()
+                    except Exception:
+                        pass
+                if hasattr(self.main_win, 'update_tag_edit_widget'):
+                    try:
+                        self.main_win.update_tag_edit_widget()
+                    except Exception:
+                        pass
+                if hasattr(self.main_win, 'refresh_current_view'):
+                    try:
+                        self.main_win.refresh_current_view()
+                    except Exception:
+                        pass
 
     def save_changes(self):
         """Applies the tracked tag changes to the selected files' xattrs."""
