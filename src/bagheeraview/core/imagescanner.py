@@ -119,7 +119,7 @@ class ScannerWorker(QRunnable):
     Worker to process a single image in a thread pool.
     Handles thumbnail retrieval/generation and metadata loading.
     """
-    def __init__(self, cache, path, target_sizes=None, load_metadata=True, # Line 102
+    def __init__(self, cache, path, target_sizes=None, load_metadata=True,  # Line 102
                  signal_emitter=None, semaphore=None, force_thumbnail_refresh=False):
         super().__init__()
         self.cache = cache
@@ -692,7 +692,7 @@ class ThumbnailCache(QObject):
                 val = txn.get(lmdb_key)
                 if val and len(val) >= 13:
                     stored_mtime = struct.unpack('d', val[:8])[0]
-                    if abs(stored_mtime - mtime) < 0.001: # Epsilon check
+                    if abs(stored_mtime - mtime) < 0.001:  # Epsilon check
                         rating = int(val[8])
                         path_len = struct.unpack('I', val[9:13])[0]
                         path = val[13:13+path_len].decode('utf-8')
@@ -991,7 +991,7 @@ class ThumbnailCache(QObject):
                 value_bytes = txn.get(inode_key, db=db)
                 if value_bytes and len(value_bytes) > 8:
                     stored_mtime = struct.unpack('d', value_bytes[:8])[0]
-                    if abs(stored_mtime - mtime) > 0.001: # Epsilon check
+                    if abs(stored_mtime - mtime) > 0.001:  # Epsilon check
                         continue
 
                     payload = value_bytes[8:]
@@ -1065,9 +1065,9 @@ class ThumbnailCache(QObject):
                     for img, _ in cached_sizes.values():
                         if img:
                             self._cache_bytes_size -= img.sizeInBytes()
-                self._path_to_inode.pop(path, None) # Also remove from inode map
+                self._path_to_inode.pop(path, None)  # Also remove from inode map
             self._delete_from_lmdb(path, device_id=dev_id, inode_key=inode_key)
-            return EMPTY_THUMBNAIL # Signal that it's not in cache, forcing generation
+            return EMPTY_THUMBNAIL  # Signal that it's not in cache, forcing generation
 
         # Check if known to be broken
         broken_msg = self.get_broken_info(path, target_tier, mtime, inode, device_id)
