@@ -52,7 +52,7 @@ For example 'type' can be used to filter for files based on their general type:
   type:Audio OR type:Document
 
 The following comparison operators are supported, but note that 'not equal' (!=) operator is not available in Baloo search engine.
-  · :   - contains (only for text comparison)
+  · :   - contains (only for text comparison) or begin with (for tags)
   · =   - equal
   · >   - greater than
   · >=  - greater than or equal to
@@ -273,7 +273,7 @@ Por ejemplo, 'type' puede usarse para filtrar archivos según su tipo general:
   type:Audio OR type:Document
 
 Se admiten los siguientes operadores de comparación, pero tenga en cuenta que el operador 'no es igual' (!=) no está disponible en el motor de búsqueda de Baloo.
-  · :   - contiene (solo para comparación de texto)
+  · :   - contiene (solo para comparación de texto) o empieza con (para etiquetas)
   · =   - igual
   · >   - mayor que
   · >=  - mayor que o igual a
@@ -494,7 +494,7 @@ Por exemplo, 'type' pode usarse para filtrar ficheiros segundo o seu tipo xeral:
   type:Audio OR type:Document
 
 Admítense os seguintes operadores de comparación, pero teña en conta que o operador 'non é igual' (!=) non está dispoñible no motor de busca de Baloo.
-  · :   - contén (só para comparación de texto)
+  · :   - contén (só para comparación de texto) ou empieza con (para etiquetas)
   · =   - igual
   · >   - maior que
   · >=  - maior que ou igual a
