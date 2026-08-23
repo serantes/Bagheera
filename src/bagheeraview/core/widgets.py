@@ -56,7 +56,8 @@ class TagTreeView(QTreeView):
     search_requested = Signal(object)
     add_and_requested = Signal(object)
     add_or_requested = Signal(object)
-    rename_requested = Signal(object)
+    rename_all_requested = Signal(object)
+    rename_viewed_requested = Signal(object)
 
     def mousePressEvent(self, event):
         """Handles mouse press events to implement Ctrl+Click toggling.
@@ -102,8 +103,13 @@ class TagTreeView(QTreeView):
                     QIcon.fromTheme("system-search"), UITexts.SEARCH_BY_TAG)
                 add_and_action = menu.addAction(UITexts.SEARCH_ADD_AND)
                 add_or_action = menu.addAction(UITexts.SEARCH_ADD_OR)
-                rename_action = menu.addAction(
-                    QIcon.fromTheme("edit-rename"), UITexts.RENAME)
+
+                menu.addSeparator()
+
+                rename_all_action = menu.addAction(
+                    QIcon.fromTheme("edit-rename"), UITexts.RENAME_TAGS_ALL)
+                rename_viewed_action = menu.addAction(
+                    QIcon.fromTheme("edit-rename"), UITexts.RENAME_TAGS_VIEWED)
 
                 action = menu.exec(event.globalPos())
                 if action == search_action:
@@ -112,18 +118,22 @@ class TagTreeView(QTreeView):
                     self.add_and_requested.emit(index)
                 elif action == add_or_action:
                     self.add_or_requested.emit(index)
-                elif action == rename_action:
-                    self.rename_requested.emit(index)
+                elif action == rename_all_action:
+                    self.rename_all_requested.emit(index)
+                elif action == rename_viewed_action:
+                    self.rename_viewed_requested.emit(index)
         super().contextMenuEvent(event)
 
 
 class TagRenameDialog(QDialog):
     """Dialog for renaming a tag, updating matching files and regions with progress tracking."""
 
-    def __init__(self, tag_path: str, tag_edit_widget=None, parent=None):
+    def __init__(self, tag_path: str, main_win=None, tag_edit_widget=None, parent=None, all_files: bool = True):
         super().__init__(parent)
+        self.main_win = main_win
         self.tag_path = tag_path
         self.tag_edit_widget = tag_edit_widget
+        self.all_files = all_files
         self.found_files = []
 
         self.setWindowTitle(UITexts.RENAME_TAG_TITLE)
@@ -167,24 +177,41 @@ class TagRenameDialog(QDialog):
         search_string = " ".join(search_terms)
 
         files = []
-        if BagheeraSearcher and search_string:
-            try:
-                searcher = BagheeraSearcher()
-                main_opts = {}
-                other_opts = {
-                    "having": None, "id": False, "konsole": False,
-                    "limit": 99999999999, "offset": 0, "subquery": None,
-                    "subquery_indent": "", "subquery_having": None,
-                    "sort": None, "type": None, "verbose": False
-                }
-                for item in searcher.search(search_string, main_opts, other_opts):
-                    p = item.get("path")
-                    if p:
-                        p = p.strip()
-                        if p and os.path.exists(os.path.expanduser(p)) and p not in files:
-                            files.append(p)
-            except Exception as e:
-                logger.error(f"Error searching files with BagheeraSearcher: {e}")
+        if self.all_files:
+            if BagheeraSearcher and search_string:
+                try:
+                    searcher = BagheeraSearcher()
+                    main_opts = {}
+                    other_opts = {
+                        "having": None, "id": False, "konsole": False,
+                        "limit": 99999999999, "offset": 0, "subquery": None,
+                        "subquery_indent": "", "subquery_having": None,
+                        "sort": None, "type": None, "verbose": False
+                    }
+                    for item in searcher.search(search_string, main_opts, other_opts):
+                        p = item.get("path")
+                        if p:
+                            p = p.strip()
+                            if p and os.path.exists(os.path.expanduser(p)) and p not in files:
+                                files.append(p)
+                except Exception as e:
+                    logger.error(f"Error searching files with BagheeraSearcher: {e}")
+
+        else:
+            model = self.main_win.proxy_model
+            if model and hasattr(model, '_name_filter_active'):
+                if model._name_filter_active:
+                    for path in model._name_matching_paths if hasattr(model, '_al_name_matching_pathsl_paths') else []:
+                        files.append(path)
+
+            if model and hasattr(model, '_tag_filter_active'):
+                if model._tag_filter_active:
+                    for path in model._tag_matching_paths if hasattr(model, '_name_matching_paths') else []:
+                        files.append(path)
+
+            if len(files) == 0:
+                for path in model._all_paths if hasattr(model, '_all_paths') else []:
+                    files.append(path)
 
         if self.tag_edit_widget and hasattr(self.tag_edit_widget, 'original_tags_per_file'):
             for path, tags in self.tag_edit_widget.original_tags_per_file.items():
@@ -368,7 +395,8 @@ class TagEditWidget(QWidget):
         self.tree_view.search_requested.connect(self.on_search_requested)
         self.tree_view.add_and_requested.connect(self.on_add_and_requested)
         self.tree_view.add_or_requested.connect(self.on_add_or_requested)
-        self.tree_view.rename_requested.connect(self.on_rename_requested)
+        self.tree_view.rename_all_requested.connect(self.on_rename_all_requested)
+        self.tree_view.rename_viewed_requested.connect(self.on_rename_viewed_requested)
 
     def set_files_data(self, files_data):
         """Sets the files whose tags are to be edited.
@@ -706,8 +734,7 @@ class TagEditWidget(QWidget):
 
         self.main_win.process_term(f"search:/{final_query}")
 
-    @Slot(object)
-    def on_rename_requested(self, proxy_index):
+    def on_rename_requested(self, proxy_index, all_files: bool = True):
         """Handles request to rename a tag from the context menu."""
         source_index = self.proxy_model.mapToSource(proxy_index)
         item = self.source_model.itemFromIndex(source_index)
@@ -717,7 +744,7 @@ class TagEditWidget(QWidget):
         if not full_path:
             return
 
-        dialog = TagRenameDialog(full_path, tag_edit_widget=self, parent=self)
+        dialog = TagRenameDialog(full_path, self.main_win, tag_edit_widget=self, parent=self, all_files=all_files)
         if dialog.exec() == QDialog.Accepted:
             new_tag = dialog.edit_path.text().strip()
             old_tag = full_path
@@ -769,6 +796,14 @@ class TagEditWidget(QWidget):
                         self.main_win.refresh_current_view()
                     except Exception:
                         pass
+
+    @Slot(object)
+    def on_rename_all_requested(self, proxy_index):
+        self.on_rename_requested(proxy_index, all_files=True)
+
+    @Slot(object)
+    def on_rename_viewed_requested(self, proxy_index):
+        self.on_rename_requested(proxy_index, all_files=False)
 
     def save_changes(self):
         """Applies the tracked tag changes to the selected files' xattrs."""
