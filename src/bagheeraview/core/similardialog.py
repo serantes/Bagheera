@@ -1,4 +1,5 @@
 import os
+import subprocess
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView,
@@ -43,7 +44,7 @@ class SimilarImagesDialog(QDialog):
         ctrl_layout.addWidget(QLabel(UITexts.SETTINGS_DUPLICATE_THRESHOLD_LABEL))
         self.threshold_spin = QSpinBox()
         self.threshold_spin.setRange(50, 100)
-        self.threshold_spin.setValue(APP_CONFIG.get("similar_threshold", 75))
+        self.threshold_spin.setValue(APP_CONFIG.get("similar_threshold", 65))
         self.threshold_spin.setSuffix("%")
         ctrl_layout.addWidget(self.threshold_spin)
 
@@ -228,7 +229,16 @@ class SimilarImagesDialog(QDialog):
         action_open_bagheeraview.triggered.connect(lambda: self._open_location_in_bagheeraview(path))
 
         action_open_default_app = menu.addAction(QIcon.fromTheme("system-run"), UITexts.CONTEXT_MENU_OPEN_DEFAULT_APP)
-        action_open_default_app.triggered.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path))))
+        # action_open_default_app.triggered.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path))))
+        action_open_default_app.triggered.connect(
+            lambda: subprocess.Popen(['dolphin', '--select', path])
+            if os.path.isfile(path)
+            else QDesktopServices.openUrl(
+                QUrl.fromLocalFile(
+                    path if os.path.isdir(path) else os.path.dirname(path)
+                )
+            )
+        )
 
         menu.addSeparator()
 
