@@ -10,6 +10,7 @@ Classes:
     DuplicateManagerDialog: A dialog to review and manage duplicate image pairs.
 """
 import os
+import subprocess
 from datetime import datetime
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
@@ -735,8 +736,17 @@ class DuplicateManagerDialog(QDialog):
         action_open_default_app = menu.addAction(
             QIcon.fromTheme("system-run"),
             UITexts.CONTEXT_MENU_OPEN_DEFAULT_APP)
+        # action_open_default_app.triggered.connect(
+        #     lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path))))
         action_open_default_app.triggered.connect(
-            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path))))
+            lambda: subprocess.Popen(['dolphin', '--select', path])
+            if os.path.isfile(path)
+            else QDesktopServices.openUrl(
+                QUrl.fromLocalFile(
+                    path if os.path.isdir(path) else os.path.dirname(path)
+                )
+            )
+        )
 
         menu.addSeparator()
 
