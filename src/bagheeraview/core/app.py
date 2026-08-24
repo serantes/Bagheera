@@ -5010,6 +5010,7 @@ class MainWindow(QMainWindow):
         paths = self.get_selected_paths()
         if not paths:
             return
+        paths = [f"'{p}'" for p in paths]
         QApplication.clipboard().setText("\n".join(paths))
 
     def copy_dir_path(self):
@@ -5018,6 +5019,7 @@ class MainWindow(QMainWindow):
         if not paths:
             return
         dir_paths = sorted(list(set(os.path.dirname(p) for p in paths)))
+        dir_paths = [f"'{p}'" for p in dir_paths]
         QApplication.clipboard().setText("\n".join(dir_paths))
 
     def show_properties(self):

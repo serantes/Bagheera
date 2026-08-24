@@ -391,6 +391,7 @@ class FilmStripWidget(QListWidget):
         """Copies the file path(s) of the selected image(s) to the clipboard."""
         paths = self._get_selected_paths()
         if paths:
+            paths = [f"'{p}'" for p in paths]
             QApplication.clipboard().setText("\n".join(paths))
 
     def _copy_dir_to_clipboard(self):
@@ -398,6 +399,7 @@ class FilmStripWidget(QListWidget):
         paths = self._get_selected_paths()
         if paths:
             dir_paths = sorted(list(set(os.path.dirname(p) for p in paths)))
+            dir_paths = [f"'{p}'" for p in dir_paths]
             QApplication.clipboard().setText("\n".join(dir_paths))
 
 
@@ -2609,14 +2611,14 @@ class ImageViewer(QWidget):
         if self.controller:
             path = self.controller.get_current_path()
             if path:
-                QApplication.clipboard().setText(path)
+                QApplication.clipboard().setText(f"'{path}'")
 
     def copy_dir_path_to_clipboard(self):
         """Copies the directory path of the current image to the system clipboard."""
         if self.controller:
             path = self.controller.get_current_path()
             if path:
-                QApplication.clipboard().setText(os.path.dirname(path))
+                QApplication.clipboard().setText(f"'{os.path.dirname(path)}'")
 
     def _populate_open_with_menu(self, menu):
         """Populates the 'Open With' submenu."""

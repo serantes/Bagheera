@@ -283,10 +283,10 @@ class SimilarImagesDialog(QDialog):
         action_copy_image.triggered.connect(lambda: QApplication.clipboard().setImage(QImage(path)))
 
         action_copy_path = clip_menu.addAction(QIcon.fromTheme("document-properties"), UITexts.VIEWER_MENU_COPY_PATH)
-        action_copy_path.triggered.connect(lambda: QApplication.clipboard().setText(path))
+        action_copy_path.triggered.connect(lambda: QApplication.clipboard().setText(f"'{path}'"))
 
         action_copy_dir = clip_menu.addAction(QIcon.fromTheme("folder"), UITexts.CONTEXT_MENU_COPY_DIR)
-        action_copy_dir.triggered.connect(lambda: QApplication.clipboard().setText(os.path.dirname(path)))
+        action_copy_dir.triggered.connect(lambda: QApplication.clipboard().setText(f"'{os.path.dirname(path)}'"))
 
         menu.addSeparator()
 
