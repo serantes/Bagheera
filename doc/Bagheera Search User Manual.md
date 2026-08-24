@@ -104,12 +104,12 @@ One of **Bagheera's** standout features is its **English Natural Language Date P
 
 Tags are stored with a path-like structure (e.g., `Person/Julia`).
 
-- **Searching**: Use `tags:Julia` to find anything tagged with "John" regardless of the parent category.
+- **Searching**: Use `tags:Julia` to find anything tagged with "Julia" regardless of the parent category.
 - **Explicit Matching**: Use `tags="Person/Julia"` for exact path matches.
 
 ### Known Behaviors & Tips
 
-- **Space Handling**: To search for tags containing spaces (e.g., "María Callas"), ou must search for the individual parts: `tags:Maria AND tags:Callas`. This is because the **Baloo engine** does not support quoted strings within the tag search.
+- **Space Handling**: To search for tags containing spaces (e.g., "María Callas"), you must search for the individual parts: `tags:Maria AND tags:Callas`. This is because the **Baloo engine** does not support quoted strings within the tag search.
 - **Normalization**:  Both **Baloo** and **Bagheera** automatically handle accents and diacritics. Searching for `tags:vacacion` will match "Vacación".
 
 ---
