@@ -143,7 +143,8 @@ class SettingsDialog(QDialog):
 
         super().__init__(parent)
         self.setWindowTitle(UITexts.MENU_SETTINGS)
-        self.setMinimumWidth(500)
+        self.setMinimumHeight(820)
+        self.setMinimumWidth(670)
         self.scan_max_level_min = 0
         self.scan_max_level_max = 10
 

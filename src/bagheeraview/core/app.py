@@ -1869,11 +1869,6 @@ class MainWindow(QMainWindow):
                                                   UITexts.MENU_CLEAN_CACHE)
         clean_cache_action.triggered.connect(self.clean_thumbnail_cache)
 
-        clear_cache_action = cache_menu.addAction(
-            QIcon.fromTheme("user-trash-full"),
-            UITexts.MENU_CLEAR_CACHE.format(count, size_mb, disk_cache_size_mb))
-        clear_cache_action.triggered.connect(self.clear_thumbnail_cache)
-
         clean_metadata_action = cache_menu.addAction(
             QIcon.fromTheme("edit-clear"), UITexts.MENU_CLEAN_METADATA_CACHE)
         clean_metadata_action.triggered.connect(self.clean_stale_metadata_cache)
@@ -1881,6 +1876,13 @@ class MainWindow(QMainWindow):
         clean_directory_action = cache_menu.addAction(
             QIcon.fromTheme("edit-clear"), UITexts.MENU_CLEAN_DIRECTORY_CACHE)
         clean_directory_action.triggered.connect(self.clean_stale_directory_cache)
+
+        cache_menu.addSeparator()
+
+        clear_cache_action = cache_menu.addAction(
+            QIcon.fromTheme("user-trash-full"),
+            UITexts.MENU_CLEAR_CACHE.format(count, size_mb, disk_cache_size_mb))
+        clear_cache_action.triggered.connect(self.clear_thumbnail_cache)
 
         menu.addSeparator()
 
@@ -1904,8 +1906,14 @@ class MainWindow(QMainWindow):
         force_full_all_action.triggered.connect(
             lambda: self.detect_all_duplicates(force_full=True))
 
+        duplicates_menu.addSeparator()
+
         review_ignored_action = duplicates_menu.addAction(UITexts.MENU_REVIEW_IGNORED)
         review_ignored_action.triggered.connect(self.review_ignored_duplicates)
+
+        clear_exceptions_action = duplicates_menu.addAction(
+            UITexts.MENU_CLEAR_EXCEPTIONS)
+        clear_exceptions_action.triggered.connect(self.clear_ignored_duplicates)
 
         duplicates_menu.addSeparator()
 
@@ -1915,10 +1923,6 @@ class MainWindow(QMainWindow):
 
         repair_index_action = duplicates_menu.addAction(UITexts.MENU_REPAIR_DATABASE)
         repair_index_action.triggered.connect(self.repair_duplicate_index)
-
-        clear_exceptions_action = duplicates_menu.addAction(
-            UITexts.MENU_CLEAR_EXCEPTIONS)
-        clear_exceptions_action.triggered.connect(self.clear_ignored_duplicates)
 
         if self.duplicate_cache:
             count, size_bytes = self.duplicate_cache.get_hash_stats()
