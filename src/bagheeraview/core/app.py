@@ -1891,28 +1891,31 @@ class MainWindow(QMainWindow):
         duplicates_menu.setEnabled(HAVE_IMAGEHASH)
 
         detect_current_action = duplicates_menu.addAction(
-            UITexts.MENU_DETECT_CURRENT_SEARCH)
+            QIcon.fromTheme("document-duplicate"), UITexts.MENU_DETECT_CURRENT_SEARCH)
         detect_current_action.triggered.connect(self.start_duplicate_detection)
 
-        force_full_action = duplicates_menu.addAction(UITexts.MENU_FORCE_FULL_ANALYSIS)
+        force_full_action = duplicates_menu.addAction(
+            QIcon.fromTheme("document-duplicate"), UITexts.MENU_FORCE_FULL_ANALYSIS)
         force_full_action.triggered.connect(
             lambda: self.start_duplicate_detection(force_full=True))
 
-        detect_all_action = duplicates_menu.addAction(UITexts.MENU_DETECT_ALL)
+        detect_all_action = duplicates_menu.addAction(
+            QIcon.fromTheme("search"), UITexts.MENU_DETECT_ALL)
         detect_all_action.triggered.connect(self.detect_all_duplicates)
 
         force_full_all_action = duplicates_menu.addAction(
-            UITexts.MENU_FORCE_FULL_ALL_ANALYSIS)
+            QIcon.fromTheme("search"), UITexts.MENU_FORCE_FULL_ALL_ANALYSIS)
         force_full_all_action.triggered.connect(
             lambda: self.detect_all_duplicates(force_full=True))
 
         duplicates_menu.addSeparator()
 
-        review_ignored_action = duplicates_menu.addAction(UITexts.MENU_REVIEW_IGNORED)
+        review_ignored_action = duplicates_menu.addAction(
+            QIcon.fromTheme("edit-image"), UITexts.MENU_REVIEW_IGNORED)
         review_ignored_action.triggered.connect(self.review_ignored_duplicates)
 
         clear_exceptions_action = duplicates_menu.addAction(
-            UITexts.MENU_CLEAR_EXCEPTIONS)
+            QIcon.fromTheme("user-trash-full"), UITexts.MENU_CLEAR_EXCEPTIONS)
         clear_exceptions_action.triggered.connect(self.clear_ignored_duplicates)
 
         duplicates_menu.addSeparator()
@@ -1921,7 +1924,8 @@ class MainWindow(QMainWindow):
             QIcon.fromTheme("edit-clear-all"), UITexts.MENU_CLEAN_UP_HASHES)
         clean_hashes_action.triggered.connect(self.clean_duplicate_hashes)
 
-        repair_index_action = duplicates_menu.addAction(UITexts.MENU_REPAIR_DATABASE)
+        repair_index_action = duplicates_menu.addAction(
+            QIcon.fromTheme("run-clean"), UITexts.MENU_REPAIR_DATABASE)
         repair_index_action.triggered.connect(self.repair_duplicate_index)
 
         if self.duplicate_cache:

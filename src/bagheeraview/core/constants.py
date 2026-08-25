@@ -561,8 +561,8 @@ _UI_TEXTS = {
         "MENU_REVIEW_IGNORED": "Review ignored",
         "MENU_CLEAN_UP_HASHES": "Clean up",
         "MENU_REPAIR_DATABASE": "Repair index",
-        "MENU_CLEAR_EXCEPTIONS": "Clear ignored pairs",
-        "CONFIRM_CLEAR_EXCEPTIONS_TITLE": "Confirm Clear Ignored Pairs",
+        "MENU_CLEAR_EXCEPTIONS": "Delete ignored pairs",
+        "CONFIRM_CLEAR_EXCEPTIONS_TITLE": "Confirm delete ignored pairs",
         "CONFIRM_CLEAR_EXCEPTIONS_TEXT": "Are you sure you want to clear all "
         "ignored duplicate pairs? They will be detected again in the next scan.",
         "REPAIRING_DATABASE": "Repairing duplicate index...",
@@ -1135,8 +1135,8 @@ _UI_TEXTS = {
         "MENU_REVIEW_IGNORED": "Revisar ignorados",
         "MENU_CLEAN_UP_HASHES": "Limpiar",
         "MENU_REPAIR_DATABASE": "Reparar índice",
-        "MENU_CLEAR_EXCEPTIONS": "Limpiar parejas ignoradas",
-        "CONFIRM_CLEAR_EXCEPTIONS_TITLE": "Confirmar Limpieza de Ignorados",
+        "MENU_CLEAR_EXCEPTIONS": "Borrar parejas ignoradas",
+        "CONFIRM_CLEAR_EXCEPTIONS_TITLE": "Confirmar borrado de parejas ignoradas",
         "CONFIRM_CLEAR_EXCEPTIONS_TEXT": "¿Seguro que quieres borrar todas las parejas "
         "de duplicados ignoradas? Se volverán a detectar en el próximo escaneo.",
         "REPAIRING_DATABASE": "Reparando índice de duplicados...",
@@ -1720,8 +1720,8 @@ _UI_TEXTS = {
         "MENU_REVIEW_IGNORED": "Revisar ignorados",
         "MENU_CLEAN_UP_HASHES": "Limpar",
         "MENU_REPAIR_DATABASE": "Reparar índice",
-        "MENU_CLEAR_EXCEPTIONS": "Limpar parellas ignoradas",
-        "CONFIRM_CLEAR_EXCEPTIONS_TITLE": "Confirmar Limpeza de Ignorados",
+        "MENU_CLEAR_EXCEPTIONS": "Borrar parellas ignoradas",
+        "CONFIRM_CLEAR_EXCEPTIONS_TITLE": "Confirmar borrado de parellas ignoradas",
         "CONFIRM_CLEAR_EXCEPTIONS_TEXT": "Seguro que queres borrar todas as parellas "
         "de duplicados ignoradas? Volveranse detectar no vindeiro escaneo.",
         "REPAIRING_DATABASE": "Reparando índice de duplicados...",
