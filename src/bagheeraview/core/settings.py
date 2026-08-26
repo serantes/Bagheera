@@ -465,6 +465,26 @@ class SettingsDialog(QDialog):
         self.duplicate_threshold_slider.valueChanged.connect(
             lambda v: self.duplicate_threshold_value_label.setText(f"{v}%"))
 
+        threshold_similar_layout = QHBoxLayout()
+        threshold_similar_label = QLabel(UITexts.SETTINGS_SIMILAR_THRESHOLD_LABEL)
+        self.similar_threshold_slider = QSlider(Qt.Horizontal)
+        self.similar_threshold_slider.setRange(50, 100)
+        self.similar_threshold_value_label = QLabel("0%")
+
+        self.similar_threshold_slider.setEnabled(HAVE_IMAGEHASH)
+        self.similar_threshold_value_label.setFixedWidth(40)
+
+        threshold_similar_layout.addWidget(threshold_similar_label)
+        threshold_similar_layout.addWidget(self.similar_threshold_slider)
+        threshold_similar_layout.addWidget(self.similar_threshold_value_label)
+
+        threshold_similar_label.setToolTip(UITexts.SETTINGS_SIMILAR_THRESHOLD_TOOLTIP)
+        self.similar_threshold_slider.setToolTip(
+            UITexts.SETTINGS_SIMILAR_THRESHOLD_TOOLTIP)
+
+        self.similar_threshold_slider.valueChanged.connect(
+            lambda v: self.similar_threshold_value_label.setText(f"{v}%"))
+
         def create_path_list_ui(label_text, tooltip):
             container = QWidget()
             v_layout = QVBoxLayout(container)
@@ -548,6 +568,8 @@ class SettingsDialog(QDialog):
         self.duplicate_confirm_delete_checkbox.setToolTip(
             UITexts.SETTINGS_DUPLICATE_CONFIRM_DELETE_TOOLTIP)
         duplicates_layout.addWidget(self.duplicate_confirm_delete_checkbox)
+
+        duplicates_layout.addLayout(threshold_similar_layout)
 
         duplicates_layout.addStretch()
 
@@ -1035,6 +1057,11 @@ class SettingsDialog(QDialog):
         self.duplicate_threshold_slider.setValue(duplicate_threshold)
         self.duplicate_threshold_value_label.setText(f"{duplicate_threshold}%")
 
+        similar_threshold = APP_CONFIG.get(
+            "similar_threshold", SCANNER_SETTINGS_DEFAULTS["similar_threshold"])
+        self.similar_threshold_slider.setValue(similar_threshold)
+        self.similar_threshold_value_label.setText(f"{similar_threshold}%")
+
         default_delete_to_trash = APP_CONFIG.get("default_delete_to_trash", True)
         self.default_delete_to_trash_checkbox.setChecked(default_delete_to_trash)
 
@@ -1403,6 +1430,7 @@ class SettingsDialog(QDialog):
         APP_CONFIG["viewer_wheel_speed"] = self.viewer_wheel_spin.value()
         APP_CONFIG["duplicate_method"] = self.duplicate_method_combo.currentData()
         APP_CONFIG["duplicate_threshold"] = self.duplicate_threshold_slider.value()
+        APP_CONFIG["similar_threshold"] = self.similar_threshold_slider.value()
         APP_CONFIG["default_delete_to_trash"] = \
             self.default_delete_to_trash_checkbox.isChecked()
         APP_CONFIG["duplicate_confirm_delete"] = \

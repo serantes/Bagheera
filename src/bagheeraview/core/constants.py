@@ -158,7 +158,8 @@ SCANNER_SETTINGS_DEFAULTS = {
     "default_delete_to_trash": True,
     "duplicate_whitelist": "",
     "duplicate_blacklist": "",
-    "areas_reset_to_face": False
+    "areas_reset_to_face": False,
+    "similar_threshold": 65,  # Similarity percentage (50-100)
 }
 
 # --- IMAGE VIEWER DEFAULTS ---
@@ -592,10 +593,14 @@ _UI_TEXTS = {
         "key will move files to trash. If unchecked, it will permanently delete them.",
         "SETTINGS_DUPLICATE_CONFIRM_DELETE_TOOLTIP": "Show a confirmation dialog "
         "before moving a duplicate image to the trash.",
-        "SETTINGS_DUPLICATE_THRESHOLD_LABEL": "Similarity Threshold:",
-        "SETTINGS_DUPLICATE_THRESHOLD_TOOLTIP": "Set the similarity threshold 2 "
+        "SETTINGS_DUPLICATE_THRESHOLD_LABEL": "Duplicates Similarity Threshold:",
+        "SETTINGS_DUPLICATE_THRESHOLD_TOOLTIP": "Set the duplicates similarity threshold "
         "(50-100%). Higher values mean images must be more similar to be considered "
         "duplicates.",
+        "SETTINGS_SIMILAR_THRESHOLD_LABEL": "Similarity Threshold:",
+        "SETTINGS_SIMILAR_THRESHOLD_TOOLTIP": "Set the similarity threshold "
+        "(50-100%). Higher values mean images must be more similar to be considered "
+        "similar images.",
         "SETTINGS_DUPLICATE_MISSING_LIBS": "The 'imagehash' library is required for "
         "duplicate detection but was not found. This feature is disabled.",
         "MENU_DETECT_DUPLICATES": "Detect Duplicates",
@@ -1169,10 +1174,14 @@ _UI_TEXTS = {
         "permanentemente.",
         "SETTINGS_DUPLICATE_CONFIRM_DELETE_TOOLTIP": "Muestra un diálogo de "
         "confirmación antes de mover una imagen duplicada a la papelera.",
-        "SETTINGS_DUPLICATE_THRESHOLD_LABEL": "Umbral de Similitud:",
+        "SETTINGS_DUPLICATE_THRESHOLD_LABEL": "Umbral de similitud de imágenes duplicadas:",
         "SETTINGS_DUPLICATE_THRESHOLD_TOOLTIP": "Establece el umbral de similitud "
         "(50-100%). Valores más altos significan que las imágenes deben ser más "
         "parecidas para considerarse duplicadas.",
+        "SETTINGS_SIMILAR_THRESHOLD_LABEL": "Umbral de similitud de imágenes similares:",
+        "SETTINGS_SIMILAR_THRESHOLD_TOOLTIP": "Establece el umbral de similitud "
+        "(50-100%). Valores más altos significan que las imágenes deben ser más "
+        "parecidas para considerarse similares.",
         "SETTINGS_DUPLICATE_MISSING_LIBS": "La librería 'imagehash' es necesaria "
         "para la detección de duplicados pero no se ha encontrado. Esta función "
         "está desactivada.",
@@ -1754,10 +1763,14 @@ _UI_TEXTS = {
         "permanentemente.",
         "SETTINGS_DUPLICATE_CONFIRM_DELETE_TOOLTIP": "Amosa un diálogo de confirmación "
         "antes de mover unha imaxe duplicada á papeleira.",
-        "SETTINGS_DUPLICATE_THRESHOLD_LABEL": "Umbral de Similitude:",
+        "SETTINGS_DUPLICATE_THRESHOLD_LABEL": "Umbral de similitude de duplicados:",
         "SETTINGS_DUPLICATE_THRESHOLD_TOOLTIP": "Establece o umbral de similitude "
         "(50-100%). Valores máis altos significan que as imaxes deben ser máis "
         "parecidas para considerarse duplicadas.",
+        "SETTINGS_SIMILAR_THRESHOLD_LABEL": "Umbral de similitude de imaxes similares:",
+        "SETTINGS_SIMILAR_THRESHOLD_TOOLTIP": "Establece o umbral de similitude "
+        "(50-100%). Valores máis altos significan que as imaxes deben ser máis "
+        "parecidas para considerarse similares.",
         "SETTINGS_DUPLICATE_MISSING_LIBS": "A librería 'imagehash' é necesaria para a "
         "detección de duplicados pero non se atopou. Esta función está desactivada.",
         "MENU_DETECT_DUPLICATES": "Detectar Duplicados",
