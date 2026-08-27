@@ -167,9 +167,10 @@ class EvaluateExpression:
             if not l_val:
                 return self._compare_single(None, op, r_val)
             # Pre-compute r_val_lower once outside the any() loop
-            r_val_lower = str(r_val).lower() if isinstance(r_val, str) else r_val
+            # r_val_lower = str(r_val).lower() if isinstance(r_val, str) else r_val
             return any(
-                self._compare_single(item, op, r_val_lower)
+                # self._compare_single(item, op, r_val_lower)
+                self._compare_single(item, op, r_val)
                 for item in l_val
             )
 
