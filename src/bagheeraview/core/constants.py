@@ -599,7 +599,7 @@ _UI_TEXTS = {
         "duplicates.",
         "SETTINGS_SIMILAR_THRESHOLD_LABEL": "Similarity Threshold:",
         "SETTINGS_SIMILAR_THRESHOLD_TOOLTIP": "Set the similarity threshold "
-        "(50-100%). Higher values mean images must be more similar to be considered "
+        "(40-100%). Higher values mean images must be more similar to be considered "
         "similar images.",
         "SETTINGS_DUPLICATE_MISSING_LIBS": "The 'imagehash' library is required for "
         "duplicate detection but was not found. This feature is disabled.",
@@ -1180,7 +1180,7 @@ _UI_TEXTS = {
         "parecidas para considerarse duplicadas.",
         "SETTINGS_SIMILAR_THRESHOLD_LABEL": "Umbral de similitud de imágenes similares:",
         "SETTINGS_SIMILAR_THRESHOLD_TOOLTIP": "Establece el umbral de similitud "
-        "(50-100%). Valores más altos significan que las imágenes deben ser más "
+        "(40-100%). Valores más altos significan que las imágenes deben ser más "
         "parecidas para considerarse similares.",
         "SETTINGS_DUPLICATE_MISSING_LIBS": "La librería 'imagehash' es necesaria "
         "para la detección de duplicados pero no se ha encontrado. Esta función "
@@ -1769,7 +1769,7 @@ _UI_TEXTS = {
         "parecidas para considerarse duplicadas.",
         "SETTINGS_SIMILAR_THRESHOLD_LABEL": "Umbral de similitude de imaxes similares:",
         "SETTINGS_SIMILAR_THRESHOLD_TOOLTIP": "Establece o umbral de similitude "
-        "(50-100%). Valores máis altos significan que as imaxes deben ser máis "
+        "(40-100%). Valores máis altos significan que as imaxes deben ser máis "
         "parecidas para considerarse similares.",
         "SETTINGS_DUPLICATE_MISSING_LIBS": "A librería 'imagehash' é necesaria para a "
         "detección de duplicados pero non se atopou. Esta función está desactivada.",

@@ -3221,9 +3221,9 @@ class MainWindow(QMainWindow):
             if mode == 'D':
                 sk = dn = dt.strftime("%Y-%m-%d")
             elif mode == 'W':
-                sk = dt.strftime("%Y-%W")
+                sk = dt.strftime("%Y-%V")
                 dn = UITexts.GROUP_BY_WEEK_FORMAT.format(
-                    year=dt.strftime("%Y"), week=dt.strftime("%W"))
+                    year=dt.strftime("%Y"), week=dt.strftime("%V"))
             elif mode == 'M':
                 sk = dt.strftime("%Y-%m")
                 dn = dt.strftime("%B %Y").capitalize()

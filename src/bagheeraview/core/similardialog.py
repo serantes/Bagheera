@@ -43,7 +43,7 @@ class SimilarImagesDialog(QDialog):
         ctrl_layout = QHBoxLayout()
         ctrl_layout.addWidget(QLabel(UITexts.SETTINGS_SIMILAR_THRESHOLD_LABEL))
         self.threshold_spin = QSpinBox()
-        self.threshold_spin.setRange(50, 100)
+        self.threshold_spin.setRange(40, 100)
         self.threshold_spin.setValue(APP_CONFIG.get("similar_threshold", 65))
         self.threshold_spin.setSuffix("%")
         ctrl_layout.addWidget(self.threshold_spin)

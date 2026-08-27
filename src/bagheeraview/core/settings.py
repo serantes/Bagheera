@@ -468,7 +468,7 @@ class SettingsDialog(QDialog):
         threshold_similar_layout = QHBoxLayout()
         threshold_similar_label = QLabel(UITexts.SETTINGS_SIMILAR_THRESHOLD_LABEL)
         self.similar_threshold_slider = QSlider(Qt.Horizontal)
-        self.similar_threshold_slider.setRange(50, 100)
+        self.similar_threshold_slider.setRange(40, 100)
         self.similar_threshold_value_label = QLabel("0%")
 
         self.similar_threshold_slider.setEnabled(HAVE_IMAGEHASH)
