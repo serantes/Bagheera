@@ -16,13 +16,13 @@ from typing import List, Optional, Tuple
 
 
 INTERNAL_PROPERTY_MAP = {
-    'content': b'',
-    'filename': b'F',
-    'mimetype': b'M',
-    'rating': b'R',
-    'tag': b'TAG-',
-    'tags': b'TA',
-    'usercomment': b'C'
+    'content': '',
+    'filename': 'F',
+    'mimetype': 'M',
+    'rating': 'R',
+    'tag': 'TAG-',
+    'tags': 'TA',
+    'usercomment': 'C'
 }
 
 MIME_TYPE_MAP = {
@@ -586,25 +586,25 @@ class BalooTools:
         rating = 0
         user_comment = []
 
-        fields = value.split(b'\x00')
-        for field in fields:
-            if not field:
-                continue
+        text = value.decode('utf-8', errors='replace')
+        text = re.sub(r'\x00(?![T])', '', text)
+        parts = re.split(r'[\x00\x01]', text)
 
-            if field.startswith(INTERNAL_PROPERTY_MAP['tag']):
-                tag = field.removeprefix(INTERNAL_PROPERTY_MAP['tag'])
-                tags.append(tag.decode("utf-8", errors="ignore"))
-            elif field.startswith(INTERNAL_PROPERTY_MAP['usercomment']):
-                comment = field.removeprefix(
-                    INTERNAL_PROPERTY_MAP['usercomment'])
-                user_comment.append(
-                    comment.decode("utf-8", errors="ignore"))
-            elif field.startswith(INTERNAL_PROPERTY_MAP['rating']):
-                rating_str = field.removeprefix(
-                    INTERNAL_PROPERTY_MAP['rating'])
+        tags = []
+        # 'TA' elements are tags normalized to lowercase and stripped of
+        # accents/diacritics, while 'TAG' elements are the original tags as
+        # they were added by the user. We only add original tags (TAG- prefix).
+        for p in parts:
+            p = p.strip()
+            if p and p.startswith(INTERNAL_PROPERTY_MAP['tag']):
+                tags.append(p.removeprefix(INTERNAL_PROPERTY_MAP['tag']))
+            elif p and p.startswith(INTERNAL_PROPERTY_MAP['usercomment']):
+                comment = p.removeprefix(INTERNAL_PROPERTY_MAP['usercomment'])
+                user_comment.append(comment)
+            elif p and p.startswith(INTERNAL_PROPERTY_MAP['rating']):
+                rating_str = p.removeprefix(INTERNAL_PROPERTY_MAP['rating'])
                 try:
-                    rating = int(
-                        rating_str.decode("utf-8", errors="ignore"))
+                    rating = int(rating_str)
                 except ValueError:
                     rating = 0
 
