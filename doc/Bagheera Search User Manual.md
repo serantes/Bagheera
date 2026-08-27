@@ -45,7 +45,7 @@ Combine multiple criteria using uppercase logical operators:
 - `NOT`: Inverts the following condition (only available within `having` options).
 - `(...)`: Use parentheses to group expressions and define the order of evaluation.
 
-**Example:** `bagheerasearch type=images AND modified>2025-01-01 --having "(vacaciones OR summer) AND NOT (work OR trabajo)"`
+**Example:** `bagheerasearch type=images AND "modified>2025-01-01" --having "(vacaciones OR summer) AND NOT (work OR trabajo)"`
 
 ### Property Filters
 
@@ -71,14 +71,14 @@ A full list of available properties is provided in Chapter 7.
 - `==`: Strict equality (case-sensitive), available only with `having` options.
 - `!=`: Not equal, available only with `having` options.
 - `>` / `<`/ `>=`/ `<=`: Greater than, less than, greater than or equal to, less than or equal to (for numeric values and dates).
-- `:`:  Contains or flexible match (case-insensitive).
+- `:`:  Contains or starts with (case-insensitive).
 - `!:`: Does not contain, available only with `having` options.
 
 **Examples:**
 
-- **Find large images**: `bagheerasearch width > 1920 AND height > 1080`
+- **Find large images**: `bagheerasearch "width > 1920" AND "height > 1080"`
 - **Find specific ratings**: `bagheerasearch rating = 5`
-- **Property-to-Property comparison**: `bagheerasearch --having width > height` (finds landscape images).
+- **Property-to-Property comparison**: `bagheerasearch --having "width > height"` (finds landscape images).
 
 ---
 
@@ -104,7 +104,7 @@ One of **Bagheera's** standout features is its **English Natural Language Date P
 
 Tags are stored with a path-like structure (e.g., `Person/Julia`).
 
-- **Searching**: Use `tags:Julia` to find anything tagged with "Julia" regardless of the parent category.
+- **Searching**: Use `tags=Julia` to find anything tagged with "Julia" regardless of the parent category.
 - **Explicit Matching**: Use `tags="Person/Julia"` for exact path matches.
 
 ### Known Behaviors & Tips
@@ -282,10 +282,10 @@ bagheerasearch Project –subquery MODIFIED LAST WEEK
 Here are some practical examples of how to use **Bagheera Search** effectively:
 
 ```bash
-# JPEG images taken today.
+# Images taken today.
 bagheerasearch --type image MODIFIED TODAY
 
-# Landscape photos not tagged as "Work".
+# Landscape i not tagged as "Work".
 bagheerasearch --type image --having "width > height AND NOT tags:Work"
 
 # Find high-rated files from last year.
@@ -314,4 +314,4 @@ Ensure **Baloo** is enabled and has finished indexing (`balooctl6 status`). Bagh
 
 ### Dependency Issues
 
-Bagheera requires the compiled C++ wrapper `libbaloo_wrapper.so`. If the tool fails to start, ensure you have the `KF6Baloo` and `Qt6Core` development headers installed and reinstall the package to trigger the `setup.py` compilation.
+Bagheera requires the compiled C++ wrapper `libbaloo_wrapper.so`. If the tool fails to start, ensure you have the `KF6Baloo` and `Qt6Core` development headers installed and reinstall the package to trigger the `setup.py` compilation.   
