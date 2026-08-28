@@ -224,6 +224,7 @@ Important Remarks:
 · Empty Values: You can check for the presence or absence of values using empty quotes. For example, 'tags!=""' matches any file with at least one tag, while 'tags=""' matches files with no tags.
 · Tag Levels: Comparisons are performed against the full tag path and each individual level. A file tagged 'Person/Maria Callas' matches 'Maria', 'Callas', 'Person', and the full string.
 · Character Limit: Unlike Baloo, the 3-character minimum limit for string values is not enforced within 'having' options.
+· Unicode Characters: If the query contains Unicode characters double quotes are required. For example, if your tag is 富士山, you must write --having 'tags="富士山"' or the query will not return any results.
 
 Having exclusion example:
 Get files tagget as "Science" ignoring "Science Fiction" tag.
@@ -445,6 +446,7 @@ Observaciones importantes:
 · Valores vacíos: Puede verificar la presencia o ausencia de valores usando comillas vacías. Por ejemplo, 'tags!=""' coincide con cualquier archivo con al menos una etiqueta, mientras que 'tags=""' coincide con archivos sin etiquetas.
 · Niveles de etiquetas: Las comparaciones se realizan contra la ruta completa de la etiqueta y cada nivel individual. Un archivo etiquetado como 'Persona/Maria Callas' coincide con 'Maria', 'Callas', 'Persona' y la cadena completa.
 · Límite de caracteres: A diferencia de Baloo, el límite mínimo de 3 caracteres para valores de cadena no se aplica dentro de las opciones 'having'.
+· Caracteres Unicode: Si la consulta contiene caracteres Unicode es obligatorio usar comillas dobles. Por ejemplo, si la etiqueta es 富士山, debe escribir --having 'tags="富士山"' o la consulta no devolverá ningún resultado.
 
 Ejemplo de exclusión con Having:
 Obtener archivos etiquetados como "Ciencia" ignorando la etiqueta "Ciencia Ficción".
@@ -494,7 +496,7 @@ Por exemplo, 'type' pode usarse para filtrar ficheiros segundo o seu tipo xeral:
   type:Audio OR type:Document
 
 Admítense os seguintes operadores de comparación, pero teña en conta que o operador 'non é igual' (!=) non está dispoñible no motor de busca de Baloo.
-  · :   - contén (só para comparación de texto) ou empieza con (para etiquetas)
+  · :   - contén (só para comparación de texto) ou empeza con (para etiquetas)
   · =   - igual
   · >   - maior que
   · >=  - maior que ou igual a
@@ -666,6 +668,7 @@ Observacións importantes:
 · Valores baleiros: Pode verificar a presenza ou ausencia de valores usando comiñas baleiras. Por exemplo, 'tags!=""' coincide con calquera ficheiro con polo menos unha etiqueta, mentres que 'tags=""' coincide con ficheiros sen etiquetas.
 · Niveis de etiquetas: As comparacións realízanse contra a ruta completa da etiqueta e cada nivel individual. Un ficheiro etiquetado como 'Persoa/Maria Callas' coincide con 'Maria', 'Callas', 'Persoa' e a cadea completa.
 · Límite de caracteres: A diferenza de Baloo, o límite mínimo de 3 caracteres para valores de cadea non se aplica dentro das opcións 'having'.
+· Caracteres Unicode: Se a consulta contén caracteres Unicode e obrigatorio usar comiñas dobres. Por exemplo, se a etiqueta é 富士山, debe escribir --having 'tags="富士山"' ou a consulta non devolverá ningún resultado.
 
 Exemplo de exclusión con Having:
 Obter ficheiros etiquetados como "Ciencia" ignorando a etiqueta "Ciencia Ficción".

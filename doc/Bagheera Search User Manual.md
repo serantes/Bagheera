@@ -260,6 +260,7 @@ Additionally, you can use:
 - **Empty Values**: You can check for the presence or absence of values using empty quotes. For example, `tags!=""` matches any file with at least one tag, while `tags=""` matches files with no tags.
 - **Tag Levels**: Comparisons are performed against the full tag path and each individual level. A file tagged `Person/Maria Callas` matches `Maria`, `Callas`, `Person`, and the full string.
 - **Character Limit**: Unlike **Baloo**, the 3-character minimum limit for string values is not enforced within `having` options.
+- **Unicode characters**: If the query contains Unicode characters, double quotes are required. For example, if your tag is 富士山, you must write --having 'tags="富士山"' or the query will not return any results.
 
 ---
 
@@ -314,4 +315,4 @@ Ensure **Baloo** is enabled and has finished indexing (`balooctl6 status`). Bagh
 
 ### Dependency Issues
 
-Bagheera requires the compiled C++ wrapper `libbaloo_wrapper.so`. If the tool fails to start, ensure you have the `KF6Baloo` and `Qt6Core` development headers installed and reinstall the package to trigger the `setup.py` compilation.   
+Bagheera requires the compiled C++ wrapper `libbaloo_wrapper.so`. If the tool fails to start, ensure you have the `KF6Baloo` and `Qt6Core` development headers installed and reinstall the package to trigger the `setup.py` compilation.
