@@ -583,9 +583,9 @@ class TagEditWidget(QWidget):
             if not found:
                 # Create new node if it doesn't exist
                 node = QStandardItem(part)
+                node.setCheckable(True)  # All nodes are checkable, but only the final node's state is relevant.
                 if c_path == full_path:
                     # This is the final node in the path, make it checkable
-                    node.setCheckable(True)
                     node.setCheckState(Qt.Checked if checked else Qt.Unchecked)
                     self._style_node(node, full_path, checked, italic)
                     if full_path not in self.item_mapping:
