@@ -68,7 +68,7 @@ A full list of available properties is provided in Chapter 7.
 **Bagheera** supports various ways to compare values:
 
 - `=`: Equals.
-- `==`: Strict equality (case-sensitive), available only with `having` options.
+- `==`: Strict equality (case-sensitive), available only with `having` options or equal comparison on date properties to avoid hour/minute/second comparison.
 - `!=`: Not equal, available only with `having` options.
 - `>` / `<`/ `>=`/ `<=`: Greater than, less than, greater than or equal to, less than or equal to (for numeric values and dates).
 - `:`:  Contains or starts with (case-insensitive).
@@ -137,7 +137,7 @@ Properties are grouped by file type for easier reference..
 ### All Files
 * filename
 * mimetype (Note: You cannot search for full strings like `"text/plain"`. Search for individual words: `mimetype:text AND mimetype:plain`)
-* modified (Formatted as yyyy-MM-dd)
+* modified (Formatted as yyyy-MM-dd. Note: use always '==' instead of '=' to avoid hour/minute/seconds comparison)
 * rating
 * tags
 * type
@@ -161,7 +161,7 @@ Properties are grouped by file type for easier reference..
 ### Documents
 * Author
 * Copyright
-* CreationDate (Formatted as yyyy-MM-dd)
+* CreationDate (Formatted as yyyy-MM-dd. Note: inconsistent in **Baloo** with '==' comparison; use in `having` options for reliability).
 * Generator
 * Keywords
 * Language
@@ -179,7 +179,7 @@ Properties are grouped by file type for easier reference..
 * Width
 
 ### Images
-* ImageDateTime (Formatted as yyyy-MM-dd. Note: Currently inconsistent in **Baloo**; use in `having` options for reliability).
+* ImageDateTime (Formatted as yyyy-MM-dd. Note: inconsistent in **Baloo** with '==' comparison; use in `having` options for reliability).
 * ImageMake
 * ImageModel
 * ImageOrientation
@@ -248,7 +248,7 @@ The `--having` option allows you to filter the results returned by **Baloo**. It
 
 Additionally, you can use:
 
-- `==` (case-sensitive equal)
+- `==` (case-sensitive equal, , behaviour is not the same as '==' in Baloo)
 - `!=` (not equal)
 - `!:` (does not contains)
 - Property-to-property comparison (e.g., `width > height`).

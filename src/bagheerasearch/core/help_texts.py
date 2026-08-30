@@ -54,6 +54,7 @@ For example 'type' can be used to filter for files based on their general type:
 The following comparison operators are supported, but note that 'not equal' (!=) operator is not available in Baloo search engine.
   · :   - contains (only for text comparison) or begin with (for tags)
   · =   - equal
+  · ==  - equal for date properties to avoid hour/minute/second comparison
   · >   - greater than
   · >=  - greater than or equal to
   · <   - less than
@@ -103,7 +104,7 @@ Audio
 Documents
   · Author
   · Copyright
-  · CreationDate (Formatted as yyyy-MM-dd)
+  · CreationDate (Formatted as yyyy-MM-dd. Note: inconsistent in **Baloo** with '==' comparison; use in 'having' options for reliability).)
   · Generator
   · Keywords
   · Language
@@ -121,7 +122,7 @@ Media
   · Width
 
 Images
-  · ImageDateTime (Formatted as yyyy-MM-dd. Note: Currently inconsistent in Baloo; use in 'having' options for reliability).
+  · ImageDateTime (Formatted as yyyy-MM-dd. Note: inconsistent in **Baloo** with '==' comparison; use in 'having' options for reliability).
   · ImageMake
   · ImageModel
   · ImageOrientation
@@ -213,7 +214,7 @@ The '--having' and '--subquery-having' options allow you to filter the results r
 
 Additionally, you can use:
 
-- '==' (case-sensitive equal)
+- '==' (case-sensitive equal with strings), behaviour is not the same as '==' in Baloo)
 - '!=' (not equal)
 - '!:' (does not contains)
 - Property-to-property comparison (e.g., 'width > height').
@@ -276,6 +277,7 @@ Por ejemplo, 'type' puede usarse para filtrar archivos según su tipo general:
 Se admiten los siguientes operadores de comparación, pero tenga en cuenta que el operador 'no es igual' (!=) no está disponible en el motor de búsqueda de Baloo.
   · :   - contiene (solo para comparación de texto) o empieza con (para etiquetas)
   · =   - igual
+  · ==  - igual en propiedades de fechas para evitar la comparación de hora/minuto/segundo
   · >   - mayor que
   · >=  - mayor que o igual a
   · <   - menor que
@@ -325,7 +327,7 @@ Audio
 Documentos
   · Author
   · Copyright
-  · CreationDate (Formateado como aaaa-MM-dd)
+  · CreationDate (Formateado como aaaa-MM-dd. Nota: inconsistente en **Baloo** usando el comparador '==', pero se puede usar con las opciones 'having')
   · Generator
   · Keywords
   · Language
@@ -343,7 +345,7 @@ Media
   · Width
 
 Imágenes
-  · ImageDateTime (Formateado como aaaa-MM-dd. Nota: Actualmente inconsistente en Baloo, pero se puede usar con las opciones 'having').
+  · ImageDateTime (Formateado como aaaa-MM-dd. Nota: inconsistente en **Baloo** usando el comparador '==', pero se puede usar con las opciones 'having')
   · ImageMake
   · ImageModel
   · ImageOrientation
@@ -435,7 +437,7 @@ Las opciones '--having' y '--subquery-having' le permiten filtrar los resultados
 
 Aparte, puede usar para comparar los siguientes operadores:
 
-- '==' (igual sensible a mayúsculas/minúsculas)
+- '==' (igual sensible a mayúsculas/minúsculas, el comportamiento no es el mismo que '==' en Baloo)
 - '!=' (no es igual)
 - '!:' (no contiene)
 - Comparación de propiedad a propiedad (p. ej., 'width > height').
@@ -498,6 +500,7 @@ Por exemplo, 'type' pode usarse para filtrar ficheiros segundo o seu tipo xeral:
 Admítense os seguintes operadores de comparación, pero teña en conta que o operador 'non é igual' (!=) non está dispoñible no motor de busca de Baloo.
   · :   - contén (só para comparación de texto) ou empeza con (para etiquetas)
   · =   - igual
+  · ==  - igual en propiedades de datas para evitar a comparación de hora/minuto/segundo
   · >   - maior que
   · >=  - maior que ou igual a
   · <   - menor que
@@ -547,7 +550,7 @@ Audio
 Documentos
   · Author
   · Copyright
-  · CreationDate (Formatado como aaaa-MM-dd)
+  · CreationDate (Formatado como aaaa-MM-dd. Nota: inconsistente en **Baloo** usando o comparador '==', pero pódese usar coas opcións 'having')
   · Generator
   · Keywords
   · Language
@@ -565,7 +568,7 @@ Media
   · Width
 
 Imaxes
-  · ImageDateTime (Formatado como aaaa-MM-dd. Nota: Actualmente inconsistente en Baloo, pero pódese usar coas opcións 'having').
+  · ImageDateTime (Formatado como aaaa-MM-dd. Nota: inconsistente en **Baloo** usando o comparador '==', pero pódese usar coas opcións 'having').
   · ImageMake
   · ImageModel
   · ImageOrientation
@@ -657,7 +660,7 @@ As opcións '--having' e '--subquery-having' permítenlle filtrar os resultados 
 
 Aparte, pode usar para comparar os seguintes operadores:
 
-- '==' (igual sensible a maiúsculas/minúsculas)
+- '==' (igual sensible a maiúsculas/minúsculas, o comportamento non é o mesmo que '==' en Baloo)
 - '!=' (non é igual)
 - '!:' (non contén)
 - Comparación de propiedade a propiedade (p. ex., 'width > height').
