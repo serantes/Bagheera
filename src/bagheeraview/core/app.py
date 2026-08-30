@@ -3195,7 +3195,7 @@ class MainWindow(QMainWindow):
                 crit = (dt.year, dt.month, dt.day)
                 mode = 'D'
             elif self.proxy_model.group_by_week:
-                crit = (dt.year, int(dt.strftime("%W")))
+                crit = (dt.isocalendar().year, int(dt.strftime("%G%V")))
                 mode = 'W'
             elif self.proxy_model.group_by_month:
                 crit = (dt.year, dt.month)
@@ -3221,9 +3221,9 @@ class MainWindow(QMainWindow):
             if mode == 'D':
                 sk = dn = dt.strftime("%Y-%m-%d")
             elif mode == 'W':
-                sk = dt.strftime("%Y-%V")
+                sk = dt.strftime("%G-%V")
                 dn = UITexts.GROUP_BY_WEEK_FORMAT.format(
-                    year=dt.strftime("%Y"), week=dt.strftime("%V"))
+                    year=dt.strftime("%G"), week=dt.strftime("%V"))
             elif mode == 'M':
                 sk = dt.strftime("%Y-%m")
                 dn = dt.strftime("%B %Y").capitalize()
