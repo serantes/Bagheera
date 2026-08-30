@@ -65,12 +65,22 @@ def is_baloo_available() -> bool:
         bus
     )
 
-    if dbus_service.isValid():
-        # Synchronously call NameHasOwner to see if Baloo is alive
-        reply = dbus_service.call("NameHasOwner", "org.kde.baloo")
-        if reply.isValid():
-            # QDBusReply parses the variant directly into a Python boolean
-            return bool(reply.arguments()[0])
+    # if dbus_service.isValid():
+    #     # Synchronously call NameHasOwner to see if Baloo is alive
+    #     reply = dbus_service.call("NameHasOwner", "org.kde.baloo")
+    #     if reply.isValid():
+    #         # QDBusReply parses the variant directly into a Python boolean
+    #         return bool(reply.arguments()[0])
+    # else:
+    #     print("Error D-Bus:", dbus_service.lastError().message())
+
+    # Synchronously call NameHasOwner to see if Baloo is alive
+    reply = dbus_service.call("NameHasOwner", "org.kde.baloo")
+    if reply.type() == QDBusMessage.MessageType.ReplyMessage:
+        # QDBusReply parses the variant directly into a Python boolean
+        return bool(reply.arguments()[0])
+    else:
+        print("Error D-Bus:", reply.errorMessage())
 
     return False
 

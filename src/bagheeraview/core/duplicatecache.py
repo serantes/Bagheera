@@ -163,6 +163,42 @@ class DuplicateCache(QObject):
         logger.info("Duplicate exceptions database cleared.")
         return True
 
+    def clear_pending(self):
+        """Clears all entries from the pending duplicates search database."""
+        if not self._lmdb_env or self._pending_db is None:
+            return False
+        with QMutexLocker(self._db_lock):
+            with self._lmdb_env.begin(write=True) as txn:
+                # Clear the DB but keep the handle valid
+                txn.drop(self._pending_db, delete=False)
+        logger.info("Duplicate pending search cache cleared.")
+        return True
+
+    def set_pending_scan_metadata(self, threshold):
+        """Stores scan completion metadata for pending duplicates database."""
+        if not self._lmdb_env or self._pending_db is None:
+            return False
+        with QMutexLocker(self._db_lock):
+            with self._lmdb_env.begin(write=True) as txn:
+                txn.put(b"__scan_completed_threshold__", str(threshold).encode('utf-8'), db=self._pending_db)
+        logger.info(f"Duplicate scan metadata saved for threshold {threshold}.")
+        return True
+
+    def is_pending_scan_completed(self, threshold):
+        """Checks if a pending scan was previously completed for the given threshold."""
+        if not self._lmdb_env or self._pending_db is None:
+            return False
+        with QMutexLocker(self._db_lock):
+            with self._lmdb_env.begin(write=False) as txn:
+                val = txn.get(b"__scan_completed_threshold__", db=self._pending_db)
+                if val is not None:
+                    try:
+                        saved_thresh = int(val.decode('utf-8'))
+                        return saved_thresh == int(threshold)
+                    except Exception:
+                        return False
+        return False
+
     def __del__(self):
         self.lmdb_close()
 
@@ -274,6 +310,50 @@ class DuplicateCache(QObject):
         with QWriteLocker(self._hash_cache_lock):
             self._hash_cache[(dev_id, inode_key_bytes)] = (hash_value, mtime, path)
         return True
+
+    def add_hashes_batch(self, items, progress_callback=None):
+        """
+        Batches multiple hash additions into a single LMDB transaction.
+        items is a list of tuples: (path, hash_value, mtime, dev_id, inode_key_bytes)
+        """
+        if not items or not self._lmdb_env:
+            return
+
+        with QMutexLocker(self._db_lock):
+            with self._lmdb_env.begin(write=True) as txn:
+                for idx, item in enumerate(items):
+                    p, hash_value, mtime, dev_id, inode_key_bytes = item
+                    if dev_id is None or inode_key_bytes is None:
+                        dev_id, inode_key_bytes = self._get_inode_info(p)
+                    if not inode_key_bytes:
+                        continue
+
+                    hash_bytes = self._hash_str_to_bytes(hash_value)
+                    file_id_bytes = f"{dev_id}-{inode_key_bytes.hex()}".encode('utf-8')
+                    norm_p = os.path.abspath(os.path.normpath(p))
+                    value_str = f"{hash_value}|{mtime}|{norm_p}"
+
+                    lmdb_key = self._get_lmdb_key(dev_id, inode_key_bytes)
+                    old_val = txn.get(lmdb_key, db=self._hash_db)
+                    if old_val:
+                        old_parts = old_val.decode('utf-8').split('|')
+                        if old_parts[0] != hash_value:
+                            old_h_bytes = self._hash_str_to_bytes(old_parts[0])
+                            txn.delete(old_h_bytes, file_id_bytes, db=self._hash_to_files_db)
+
+                    txn.put(lmdb_key, value_str.encode('utf-8'), db=self._hash_db)
+                    txn.put(hash_bytes, file_id_bytes, db=self._hash_to_files_db)
+                    self._persistent_bktree_add(txn, hash_bytes)
+
+                    if progress_callback:
+                        progress_callback(idx + 1, len(items), norm_p)
+
+        with QWriteLocker(self._hash_cache_lock):
+            for item in items:
+                p, hash_value, mtime, dev_id, inode_key_bytes = item
+                if dev_id and inode_key_bytes:
+                    norm_p = os.path.abspath(os.path.normpath(p))
+                    self._hash_cache[(dev_id, inode_key_bytes)] = (hash_value, mtime, norm_p)
 
     def _persistent_bktree_add(self, txn, hash_bytes):
         root_hash = txn.get(b'__root__', db=self._bktree_db)
@@ -669,6 +749,8 @@ class DuplicateCache(QObject):
 
                 cursor = txn.cursor(db=self._pending_db)
                 for key, value_bytes in cursor:
+                    if key.startswith(b"__"):
+                        continue
                     try:
                         parts = value_bytes.decode('utf-8').split('|')
                         p1 = os.path.abspath(os.path.normpath(parts[0]))  # noqa: E501
@@ -1015,8 +1097,7 @@ class DuplicateDetector(QThread):
                         path, mtime, dev, inode)
                 )
 
-                if cached_h:  # noqa: E501
-
+                if cached_h:
                     if cached_path == path:
                         path_to_hash[path] = (cached_h, dev, inode)
                     else:
@@ -1029,13 +1110,16 @@ class DuplicateDetector(QThread):
                     dirty_paths.add(path)
                     paths_to_hash_parallel.append((path, mtime, dev, inode))
 
-                if time_module.perf_counter() - last_ui_update_time > 0.05:
-                    # Scale this part to 0-50% of the total progress bar
-                    progress = int((processed_initial / total_unique) * total_files)
+                current_time = time_module.perf_counter()
+                if (current_time - last_ui_update_time > 0.03 or
+                        i == 0 or i == total_unique - 1):
+                    # Scale Part A to initial 0-10% range of the status bar (0 to 0.2 * total_files)
+                    progress = int((processed_initial / total_unique) * (0.2 * total_files))
+                    fname = os.path.basename(path)
                     self.progress_update.emit(
                         progress, total_files * 2,
-                        UITexts.DUPLICATE_MSG_HASHING.format(filename="..."))
-                    last_ui_update_time = time_module.perf_counter()
+                        UITexts.DUPLICATE_MSG_HASHING.format(filename=fname))
+                    last_ui_update_time = current_time
 
             except OSError:
                 continue
@@ -1046,10 +1130,13 @@ class DuplicateDetector(QThread):
             new_hashes = {}
             sem = QSemaphore(0)
 
-            # Phase 1 part B: Parallel hashing for new/changed files
-            processed_hashing = total_files - len(paths_to_hash_parallel)
+            # Phase 1 part B: Parallel hashing for new/changed files (10% to 50% range)
+            num_to_hash = len(paths_to_hash_parallel)
+            base_progress = int(0.2 * total_files)
+            remaining_progress_span = total_files - base_progress
+            processed_hashing = 0
 
-            for i in range(0, len(paths_to_hash_parallel), batch_size):
+            for i in range(0, num_to_hash, batch_size):
                 if not self._is_running:
                     break
                 current_batch = paths_to_hash_parallel[i: i + batch_size]
@@ -1064,22 +1151,70 @@ class DuplicateDetector(QThread):
                     if not self._is_running:
                         break
                     processed_hashing += 1
-                    if time_module.perf_counter() - last_ui_update_time > 0.03:
+                    current_time = time_module.perf_counter()
+                    if (current_time - last_ui_update_time > 0.03 or
+                            processed_hashing == num_to_hash):
+                        progress = base_progress + int(
+                            (processed_hashing / num_to_hash) * remaining_progress_span)
+                        fname = os.path.basename(current_batch[j][0])
                         self.progress_update.emit(
-                            processed_hashing, total_files * 2,
-                            UITexts.DUPLICATE_MSG_HASHING.format(filename="..."))
-                        last_ui_update_time = time_module.perf_counter()
+                            progress, total_files * 2,
+                            UITexts.DUPLICATE_MSG_HASHING.format(filename=fname))
+                        last_ui_update_time = current_time
 
+            hashes_to_batch = []
             for p, mtime, dev, inode in paths_to_hash_parallel:
                 h = new_hashes.get(p)
                 if h:
                     path_to_hash[p] = (h, dev, inode)
-                    self.duplicate_cache.add_hash_for_path(p, h, mtime, dev, inode)
+                    hashes_to_batch.append((p, h, mtime, dev, inode))
+
+            if hashes_to_batch:
+                total_batch = len(hashes_to_batch)
+                base_batch_progress = int(0.4 * (total_files * 2))
+                span_batch_progress = total_files - base_batch_progress
+
+                def batch_progress_cb(current, total, current_path):
+                    nonlocal last_ui_update_time
+                    current_time = time_module.perf_counter()
+                    if (current_time - last_ui_update_time > 0.03 or
+                            current == 1 or current == total):
+                        prog = base_batch_progress + int((current / total) * span_batch_progress)
+                        fname = os.path.basename(current_path)
+                        self.progress_update.emit(
+                            prog, total_files * 2,
+                            UITexts.DUPLICATE_MSG_HASHING.format(filename=fname))
+                        last_ui_update_time = current_time
+
+                self.duplicate_cache.add_hashes_batch(hashes_to_batch, progress_callback=batch_progress_cb)
+        elif self._is_running:
+            # All files were cached in Phase 1 Part A, advance progress to 50%
+            fname = os.path.basename(unique_paths_to_scan[-1]) if unique_paths_to_scan else "..."
+            self.progress_update.emit(
+                total_files, total_files * 2,
+                UITexts.DUPLICATE_MSG_HASHING.format(filename=fname))
+            last_ui_update_time = time_module.perf_counter()
 
         # Load existing pending duplicates (unless force_full)
         if not self.force_full:
             pending = self.duplicate_cache.get_all_pending_duplicates()
-            for p in pending:
+            total_pending = len(pending)
+            for idx, p in enumerate(pending):
+                if not self._is_running:
+                    break
+
+                # Progress update during pending duplicate loading (50% to 60% range)
+                current_time = time_module.perf_counter()
+                if (current_time - last_ui_update_time > 0.03 or
+                        idx == 0 or idx == total_pending - 1):
+                    progress = total_files + int((idx / total_pending) * (0.2 * total_files)) \
+                        if total_pending > 0 else total_files
+                    fname = os.path.basename(p.path1)
+                    self.progress_update.emit(
+                        progress, total_files * 2,
+                        UITexts.DUPLICATE_MSG_ANALYZING.format(filename=fname))
+                    last_ui_update_time = current_time
+
                 # Normalize database paths to ensure match with scan set
                 np1, np2 = (os.path.abspath(os.path.normpath(p.path1)),
                             os.path.abspath(os.path.normpath(p.path2)))
@@ -1090,19 +1225,20 @@ class DuplicateDetector(QThread):
                     if np1 in dirty_paths or np2 in dirty_paths:
                         continue
 
+                    # Fast inode lookup from in-memory path_to_hash when possible
+                    h1_tuple = path_to_hash.get(np1)
+                    dev1, ino1 = (h1_tuple[1], h1_tuple[2]) if h1_tuple else self.duplicate_cache._get_inode_info(np1)
+                    h2_tuple = path_to_hash.get(np2)
+                    dev2, ino2 = (h2_tuple[1], h2_tuple[2]) if h2_tuple else self.duplicate_cache._get_inode_info(np2)
+
                     # Skip physical identities (links)
-                    try:
-                        if np1 == np2 or os.path.samefile(np1, np2):
-                            self.duplicate_cache.mark_as_exception(
-                                np1, np2, True, similarity=100)
-                            self.duplicate_cache.mark_as_pending(np1, np2, False)
-                            continue
-                    except OSError:
+                    if dev1 and dev2 and (dev1, ino1) == (dev2, ino2):
+                        self.duplicate_cache.mark_as_exception(
+                            np1, np2, True, similarity=100)
+                        self.duplicate_cache.mark_as_pending(np1, np2, False)
                         continue
 
                     # Check if already marked as exception
-                    dev1, ino1 = self.duplicate_cache._get_inode_info(np1)
-                    dev2, ino2 = self.duplicate_cache._get_inode_info(np2)
                     if ino1 and ino2:
                         id1, id2 = f"{dev1}-{ino1.hex()}", f"{dev2}-{ino2.hex()}"
                         if frozenset((id1, id2)) in exceptions_set:
@@ -1110,8 +1246,7 @@ class DuplicateDetector(QThread):
                             self.duplicate_cache.mark_as_pending(np1, np2, False)
                             continue
 
-                    if p.similarity is None or p.similarity >= self.threshold:  # noqa: E501
-
+                    if p.similarity is None or p.similarity >= self.threshold:
                         # Use normalized paths in the result
                         res = p._replace(path1=np1, path2=np2)
                         found_duplicates.append(res)
@@ -1123,10 +1258,13 @@ class DuplicateDetector(QThread):
             self.detection_finished.emit()
             return
 
+        # Determine if we can rely on existing pending cache for this threshold
+        has_pending_cache = (not self.force_full and self.duplicate_cache.is_pending_scan_completed(self.threshold))
+
         # --- KEY OPTIMIZATION: EARLY EXIT ---
-        # If there are no new or modified files and no full analysis was forced,
+        # If there are no new or modified files AND we have a valid completed pending scan for this threshold,
         # return results already present in the pending database.
-        if not dirty_paths and not self.force_full:
+        if not dirty_paths and has_pending_cache:
             self.progress_update.emit(
                 total_files * 2, total_files * 2,
                 UITexts.DUPLICATE_FINISHED)
@@ -1135,94 +1273,125 @@ class DuplicateDetector(QThread):
             return
 
         # 3. Phase 2: Incremental Comparison using Persistent BK-Tree
-        paths_to_query = list(dirty_paths) if not self.force_full \
+        paths_to_query = list(dirty_paths) if has_pending_cache \
             else unique_paths_to_scan
 
         total_queries = len(paths_to_query)
         results_to_save = []
+        start_p2_progress = total_files + int(0.2 * total_files)
+        span_p2_progress = max(1, (total_files * 2) - start_p2_progress)
 
-        for i, p1 in enumerate(paths_to_query):
-            if not self._is_running:
-                break
+        if total_queries > 0 and self._is_running:
+            last_ui_update_time = 0  # Force immediate UI update on start of Phase 2
+            step_interval = max(1, total_queries // 100)
 
-            h1_data = path_to_hash.get(p1)
-            if not h1_data:
-                continue
-            h1_str, dev1, ino1 = h1_data
+            for i, p1 in enumerate(paths_to_query):
+                if not self._is_running:
+                    break
 
-            if time_module.perf_counter() - last_ui_update_time > 0.05:
-                # Scale Analysis progress to 50% - 100% range of the status bar
-                progress = total_files + int((i / total_queries) * total_files)
-                self.progress_update.emit(
-                    progress, total_files * 2,
-                    UITexts.DUPLICATE_MSG_ANALYZING.format(
-                        filename=os.path.basename(p1)))
-                last_ui_update_time = time_module.perf_counter()
+                current_time = time_module.perf_counter()
+                if (current_time - last_ui_update_time > 0.03 or
+                        i == 0 or
+                        i == total_queries - 1 or
+                        i % step_interval == 0):
+                    progress = start_p2_progress + int(((i + 1) / total_queries) * span_p2_progress)
+                    fname = os.path.basename(p1)
+                    self.progress_update.emit(
+                        progress, total_files * 2,
+                        UITexts.DUPLICATE_MSG_ANALYZING.format(filename=fname))
+                    last_ui_update_time = current_time
 
-            # Query the persistent tree for similar hashes (direct from disk)
-            similar_hashes = self.duplicate_cache.persistent_bktree_query(
-                h1_str, distance_threshold)
+                h1_data = path_to_hash.get(p1)
+                if not h1_data:
+                    continue
+                h1_str, dev1, ino1 = h1_data
 
-            for h2_bytes, distance in similar_hashes:
-                # Find all files sharing this similar hash (reverse index)
-                matches = self.duplicate_cache.get_files_for_hash(h2_bytes)
+                # Query the persistent tree for similar hashes (direct from disk)
+                similar_hashes = self.duplicate_cache.persistent_bktree_query(
+                    h1_str, distance_threshold)
 
-                for p2, dev2, ino2 in matches:
-                    if not self._is_running:
-                        break
+                for h2_bytes, distance in similar_hashes:
+                    # Find all files sharing this similar hash (reverse index)
+                    matches = self.duplicate_cache.get_files_for_hash(h2_bytes)
 
-                    # Check if p2 is within the current scan scope to avoid
-                    # results outside the folders the user is currently browsing.
-                    if p2 not in scan_paths_set:
-                        continue
+                    for p2, dev2, ino2 in matches:
+                        if not self._is_running:
+                            break
 
-                    # 1. Check if it's exactly the same path (already normalized)
-                    if p1 == p2:
-                        continue
+                        # Keep progress responsive inside inner matching loop as well
+                        current_time = time_module.perf_counter()
+                        if current_time - last_ui_update_time > 0.03:
+                            progress = start_p2_progress + int(((i + 1) / total_queries) * span_p2_progress)
+                            fname = os.path.basename(p1)
+                            self.progress_update.emit(
+                                progress, total_files * 2,
+                                UITexts.DUPLICATE_MSG_ANALYZING.format(filename=fname))
+                            last_ui_update_time = current_time
 
-                    # 2. Check memory caches for physical identity (Inodes)
-                    id1, id2 = f"{dev1}-{ino1.hex()}", f"{dev2}-{ino2.hex()}"
-                    inode_pair = frozenset((id1, id2))
-
-                    if inode_pair in unique_inode_pairs or inode_pair in exceptions_set:
-                        continue
-
-                    # 3. Absolute physical identity (pointers to the same object)
-                    try:
-                        if (dev1, ino1) == (dev2, ino2) or os.path.samefile(p1, p2):
-                            # Silent identity (symlinks): mark and skip
-                            self.duplicate_cache.mark_as_exception(
-                                p1, p2, True, similarity=100)
-                            exceptions_set.add(inode_pair)
-                            unique_inode_pairs.add(inode_pair)
+                        # Check if p2 is within the current scan scope to avoid
+                        # results outside the folders the user is currently browsing.
+                        if p2 not in scan_paths_set:
                             continue
-                    except OSError:
-                        pass
 
-                    # 4. Avoid duplicating pairs already processed in this session
-                    if inode_pair in unique_inode_pairs:
-                        continue
+                        # 1. Check if it's exactly the same path (already normalized)
+                        if p1 == p2:
+                            continue
 
-                    # 5. Calculate actual similarity
-                    sim = int((1.0 - (distance / MAX_DHASH_DISTANCE)) * 100)
-                    if sim < self.threshold:
-                        continue
+                        # 2. Check memory caches for physical identity (Inodes)
+                        id1, id2 = f"{dev1}-{ino1.hex()}", f"{dev2}-{ino2.hex()}"
+                        inode_pair = frozenset((id1, id2))
 
-                    ts = int(time_module.time())
-                    res = DuplicateResult(p1, p2, h1_str, False, sim, ts)
-                    found_duplicates.append(res)
-                    unique_inode_pairs.add(inode_pair)
-                    results_to_save.append((p1, p2, sim, ts))
+                        if inode_pair in unique_inode_pairs or inode_pair in exceptions_set:
+                            continue
 
-            # Periodically flush pending updates to DB
-            if len(results_to_save) >= 50:
-                self.duplicate_cache.mark_as_pending_batch(results_to_save)
-                results_to_save = []
+                        # 3. Absolute physical identity (pointers to the same object)
+                        try:
+                            if (dev1, ino1) == (dev2, ino2) or os.path.samefile(p1, p2):
+                                # Silent identity (symlinks): mark and skip
+                                self.duplicate_cache.mark_as_exception(
+                                    p1, p2, True, similarity=100)
+                                exceptions_set.add(inode_pair)
+                                unique_inode_pairs.add(inode_pair)
+                                continue
+                        except OSError:
+                            pass
+
+                        # 4. Avoid duplicating pairs already processed in this session
+                        if inode_pair in unique_inode_pairs:
+                            continue
+
+                        # 5. Calculate actual similarity
+                        sim = int((1.0 - (distance / MAX_DHASH_DISTANCE)) * 100)
+                        if sim < self.threshold:
+                            continue
+
+                        ts = int(time_module.time())
+                        res = DuplicateResult(p1, p2, h1_str, False, sim, ts)
+                        found_duplicates.append(res)
+                        unique_inode_pairs.add(inode_pair)
+                        results_to_save.append((p1, p2, sim, ts))
+
+                # Periodically flush pending updates to DB
+                if len(results_to_save) >= 50:
+                    self.duplicate_cache.mark_as_pending_batch(results_to_save)
+                    results_to_save = []
 
         # Final flush of remaining updates
         if results_to_save:
             self.duplicate_cache.mark_as_pending_batch(results_to_save)
 
+        # Emit 100% analyzing status update before finishing
+        fname = os.path.basename(paths_to_query[-1]) if paths_to_query else "..."
+        self.progress_update.emit(
+            total_files * 2, total_files * 2,
+            UITexts.DUPLICATE_MSG_ANALYZING.format(filename=fname))
+
+        # Mark scan as completed for this threshold
+        self.duplicate_cache.set_pending_scan_metadata(self.threshold)
+
+        self.progress_update.emit(
+            total_files * 2, total_files * 2,
+            UITexts.DUPLICATE_FINISHED)
         self.duplicates_found.emit(found_duplicates)
         self.detection_finished.emit()
 

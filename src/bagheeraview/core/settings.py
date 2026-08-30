@@ -38,7 +38,8 @@ from .constants import (
     THUMBNAILS_TOOLTIP_FG_COLOR_DEFAULT, THUMBNAILS_FILENAME_FONT_SIZE_DEFAULT,
     THUMBNAILS_TAGS_LINES_DEFAULT, THUMBNAILS_TAGS_FONT_SIZE_DEFAULT,
     VIEWER_AUTO_RESIZE_WINDOW_DEFAULT, VIEWER_WHEEL_SPEED_DEFAULT,
-    UITexts, save_app_config, HAVE_DUPLICATE_RESNET_LIBS, HAVE_IMAGEHASH
+    UITexts, save_app_config, HAVE_DUPLICATE_RESNET_LIBS, HAVE_IMAGEHASH,
+    DUPLICATE_CACHE_PATH, DUPLICATE_PENDING_DB_NAME
 )
 
 
@@ -161,6 +162,12 @@ class SettingsDialog(QDialog):
         self.current_thumbs_tooltip_fg_color = THUMBNAILS_TOOLTIP_FG_COLOR_DEFAULT
         self.downloader_thread = None
         self.counter_thread = None
+
+        self._initial_duplicate_threshold = None
+        self._last_confirmed_duplicate_threshold = None
+        self._is_slider_down = False
+        self._is_updating_threshold = False
+        self._clear_search_cache_on_save = False
 
         layout = QVBoxLayout(self)
 
@@ -462,8 +469,12 @@ class SettingsDialog(QDialog):
         self.duplicate_threshold_slider.setToolTip(
             UITexts.SETTINGS_DUPLICATE_THRESHOLD_TOOLTIP)
 
+        self.duplicate_threshold_slider.sliderPressed.connect(
+            self._on_duplicate_threshold_pressed)
+        self.duplicate_threshold_slider.sliderReleased.connect(
+            self._on_duplicate_threshold_released)
         self.duplicate_threshold_slider.valueChanged.connect(
-            lambda v: self.duplicate_threshold_value_label.setText(f"{v}%"))
+            self._on_duplicate_threshold_value_changed)
 
         threshold_similar_layout = QHBoxLayout()
         threshold_similar_label = QLabel(UITexts.SETTINGS_SIMILAR_THRESHOLD_LABEL)
@@ -900,9 +911,9 @@ class SettingsDialog(QDialog):
         # --- General Areas Settings ---
         interface_sub_tab = QWidget()
         interface_sub_layout = QVBoxLayout(interface_sub_tab)
-        self.areas_reset_to_face_check = QCheckBox(UITexts.SETTINGS_AREAS_RESET_TO_FACE_LABEL)
-        self.areas_reset_to_face_check.setToolTip(UITexts.SETTINGS_AREAS_RESET_TO_FACE_TOOLTIP)
-        interface_sub_layout.addWidget(self.areas_reset_to_face_check)
+        self.regions_reset_to_face_check = QCheckBox(UITexts.SETTINGS_REGIONS_RESET_TO_FACE_LABEL)
+        self.regions_reset_to_face_check.setToolTip(UITexts.SETTINGS_REGIONS_RESET_TO_FACE_TOOLTIP)
+        interface_sub_layout.addWidget(self.regions_reset_to_face_check)
         interface_sub_layout.addStretch()
         self.regions_sub_tabs.addTab(interface_sub_tab, "Interface")
 
@@ -1013,7 +1024,7 @@ class SettingsDialog(QDialog):
         body_use_last_name = APP_CONFIG.get("body_use_last_name", False)
         object_use_last_name = APP_CONFIG.get("object_use_last_name", False)
         landmark_use_last_name = APP_CONFIG.get("landmark_use_last_name", False)
-        areas_reset_to_face = APP_CONFIG.get("areas_reset_to_face", False)
+        regions_reset_to_face = APP_CONFIG.get("regions_reset_to_face", False)
 
         thumbs_refresh_interval = APP_CONFIG.get(
             "thumbnails_refresh_interval", THUMBNAILS_REFRESH_INTERVAL_DEFAULT)
@@ -1052,10 +1063,15 @@ class SettingsDialog(QDialog):
         if method_idx != -1:
             self.duplicate_method_combo.setCurrentIndex(method_idx)
 
+        self._is_updating_threshold = True
         duplicate_threshold = APP_CONFIG.get(
             "duplicate_threshold", SCANNER_SETTINGS_DEFAULTS["duplicate_threshold"])
         self.duplicate_threshold_slider.setValue(duplicate_threshold)
         self.duplicate_threshold_value_label.setText(f"{duplicate_threshold}%")
+        self._initial_duplicate_threshold = duplicate_threshold
+        self._last_confirmed_duplicate_threshold = duplicate_threshold
+        self._clear_search_cache_on_save = False
+        self._is_updating_threshold = False
 
         similar_threshold = APP_CONFIG.get(
             "similar_threshold", SCANNER_SETTINGS_DEFAULTS["similar_threshold"])
@@ -1140,7 +1156,7 @@ class SettingsDialog(QDialog):
         self.body_use_last_name_check.setChecked(body_use_last_name)
         self.object_use_last_name_check.setChecked(object_use_last_name)
         self.landmark_use_last_name_check.setChecked(landmark_use_last_name)
-        self.areas_reset_to_face_check.setChecked(areas_reset_to_face)
+        self.regions_reset_to_face_check.setChecked(regions_reset_to_face)
 
         self.thumbs_refresh_spin.setValue(thumbs_refresh_interval)
         self.set_thumbs_bg_button_color(thumbs_bg_color)
@@ -1407,8 +1423,8 @@ class SettingsDialog(QDialog):
         APP_CONFIG["pet_use_last_name"] = self.pet_use_last_name_check.isChecked()
         APP_CONFIG["body_use_last_name"] = self.body_use_last_name_check.isChecked()
         APP_CONFIG["object_use_last_name"] = self.object_use_last_name_check.isChecked()
-        APP_CONFIG["landmark_use_last_name"] = \
-            self.landmark_use_last_name_check.isChecked()
+        APP_CONFIG["landmark_use_last_name"] = self.landmark_use_last_name_check.isChecked()
+        APP_CONFIG["regions_reset_to_face"] = self.regions_reset_to_face_check.isChecked()
 
         APP_CONFIG["thumbnails_bg_color"] = self.current_thumbs_bg_color
         APP_CONFIG["thumbnails_filename_color"] = self.current_thumbs_filename_color
@@ -1471,7 +1487,66 @@ class SettingsDialog(QDialog):
         APP_CONFIG["filmstrip_position"] = pos_map_inv.get(selected_text, 'bottom')
 
         save_app_config()
+
+        if getattr(self, "_clear_search_cache_on_save", False):
+            cleared = False
+            parent = self.parent()
+            if parent and hasattr(parent, "duplicate_cache") and parent.duplicate_cache:
+                cleared = parent.duplicate_cache.clear_pending()
+            if not cleared and os.path.exists(DUPLICATE_CACHE_PATH):
+                try:
+                    import lmdb
+                    env = lmdb.open(DUPLICATE_CACHE_PATH, map_size=10 * 1024 * 1024 * 1024, max_dbs=5)
+                    db = env.open_db(DUPLICATE_PENDING_DB_NAME)
+                    with env.begin(write=True) as txn:
+                        txn.drop(db, delete=False)
+                    env.close()
+                except Exception:
+                    pass
         super().accept()
+
+    def _on_duplicate_threshold_pressed(self):
+        """Track slider mouse press."""
+        self._is_slider_down = True
+
+    def _on_duplicate_threshold_released(self):
+        """Track slider mouse release and check for threshold change."""
+        self._is_slider_down = False
+        self._check_duplicate_threshold_change()
+
+    def _on_duplicate_threshold_value_changed(self, value):
+        """Update label and handle non-drag value changes."""
+        self.duplicate_threshold_value_label.setText(f"{value}%")
+        if not self._is_slider_down and not getattr(self, "_is_updating_threshold", False):
+            self._check_duplicate_threshold_change()
+
+    def _check_duplicate_threshold_change(self):
+        """Checks if duplicate threshold changed, asks for confirmation, and reverts if cancelled."""
+        if getattr(self, "_is_updating_threshold", False):
+            return
+        current_val = self.duplicate_threshold_slider.value()
+        if (self._last_confirmed_duplicate_threshold is not None and
+                current_val != self._last_confirmed_duplicate_threshold):
+            confirm = QMessageBox(self)
+            confirm.setIcon(QMessageBox.Warning)
+            confirm.setWindowTitle(UITexts.CONFIRM_DUPLICATE_THRESHOLD_TITLE)
+            confirm.setText(UITexts.CONFIRM_DUPLICATE_THRESHOLD_TEXT)
+            confirm.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            confirm.setDefaultButton(QMessageBox.No)
+
+            if confirm.exec() == QMessageBox.Yes:
+                self._last_confirmed_duplicate_threshold = current_val
+                if current_val != self._initial_duplicate_threshold:
+                    self._clear_search_cache_on_save = True
+                else:
+                    self._clear_search_cache_on_save = False
+            else:
+                self._is_updating_threshold = True
+                self.duplicate_threshold_slider.setValue(
+                    self._last_confirmed_duplicate_threshold)
+                self.duplicate_threshold_value_label.setText(
+                    f"{self._last_confirmed_duplicate_threshold}%")
+                self._is_updating_threshold = False
 
     def on_download_finished(self, success, message):
         """Handles the result of the model download thread."""
@@ -1495,18 +1570,25 @@ class SettingsDialog(QDialog):
             self.downloader_thread.wait()
             self.downloader_thread = None
 
-    def done(self, r):
-        self._stop_downloader_thread()  # Ensure downloader thread stops and waits.
+    def _stop_counter_thread(self):
         if self.counter_thread and self.counter_thread.isRunning():
+            try:
+                self.counter_thread.count_updated.disconnect()
+                self.counter_thread.finished.disconnect()
+            except Exception:
+                pass
             self.counter_thread.stop()
             self.counter_thread.wait()
+            self.counter_thread = None
+
+    def done(self, r):
+        self._stop_downloader_thread()
+        self._stop_counter_thread()
         super().done(r)
 
     def closeEvent(self, event):
-        self._stop_downloader_thread()  # Ensure downloader thread stops and waits.
-        if self.counter_thread and self.counter_thread.isRunning():
-            self.counter_thread.stop()
-            self.counter_thread.wait()
+        self._stop_downloader_thread()
+        self._stop_counter_thread()
         super().closeEvent(event)
 
     def add_quick_tag(self):
@@ -1585,11 +1667,8 @@ class SettingsDialog(QDialog):
                 self.duplicate_blacklist_list.row(item))
 
     def update_duplicate_scan_count(self):
-        """Calculates and updates the count of images in whitelist/blacklist
-        using a background thread."""
-        if self.counter_thread and self.counter_thread.isRunning():
-            self.counter_thread.stop()
-            self.counter_thread.wait()
+        """Calculates and updates the count of images for 'Detect all' scan."""
+        self._stop_counter_thread()
 
         whitelist_paths = [self.duplicate_whitelist_list.item(i).text()
                            for i in range(self.duplicate_whitelist_list.count())]
@@ -1610,9 +1689,19 @@ class SettingsDialog(QDialog):
         self.duplicate_scan_progress.show()
         self.counter_thread = DuplicateFileCounter(
             whitelist, blacklist, IMAGE_EXTENSIONS)
-        self.counter_thread.count_updated.connect(
-            lambda c: self.duplicate_scan_count_label.setText(
-                UITexts.SETTINGS_DUPLICATE_SCAN_COUNT_LABEL.format(c)))
-        self.counter_thread.finished.connect(
-            lambda: self.duplicate_scan_progress.hide())
+        self.counter_thread.count_updated.connect(self._on_counter_updated)
+        self.counter_thread.finished.connect(self._on_counter_finished)
         self.counter_thread.start()
+
+    def _on_counter_updated(self, c):
+        try:
+            self.duplicate_scan_count_label.setText(
+                UITexts.SETTINGS_DUPLICATE_SCAN_COUNT_LABEL.format(c))
+        except RuntimeError:
+            pass
+
+    def _on_counter_finished(self):
+        try:
+            self.duplicate_scan_progress.hide()
+        except RuntimeError:
+            pass

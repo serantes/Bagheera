@@ -1,4 +1,3 @@
-
 """Image Viewer Module for Bagheera.
 
 This module implements the main image viewing window (ImageViewer) and its
@@ -1021,8 +1020,7 @@ class FaceCanvas(QLabel):
                     else:
                         history_list = self.viewer.main_win.face_names_history
 
-                history = history_list \
-                    if self.viewer.main_win else []
+                history = history_list if self.viewer.main_win else []
 
                 setting_key = f"{region_type.lower()}_use_last_name"
                 suggested = history[0] if history and APP_CONFIG.get(
@@ -1056,8 +1054,10 @@ class FaceCanvas(QLabel):
                         full_tag, center_x, center_y, norm_w, norm_h,
                         region_type=region_type)
 
-                    if region_type != "Face" and APP_CONFIG.get("areas_reset_to_face", False):
+                    if region_type != "Face" and APP_CONFIG.get("regions_reset_to_face", False):
                         self.viewer.viewer.set_next_region_type("Face")
+                    else:
+                        self.viewer.viewer.set_next_region_type(region_type)
 
                     self.controller.toggle_tag(full_tag, True)
                     self.update()  # Repaint to show the new face with its name
@@ -1521,7 +1521,7 @@ class ImageViewer(QWidget):
         self.main_win = parent
         self.cache = cache
         self.set_window_icon()
-        self._next_region_type = "Face"
+        self._next_region_type = APP_CONFIG.get("next_region_type", "Face")
         self.setAttribute(Qt.WA_DeleteOnClose)
         # Standard window buttons
         self.setWindowFlags(self.windowFlags() | Qt.WindowMaximizeButtonHint |
@@ -3135,8 +3135,10 @@ class ImageViewer(QWidget):
         self.update_view(resize_win=False)
 
     def set_next_region_type(self, region_type):
-        self._next_region_type = region_type
-        self.update_status_bar()
+        if self._next_region_type != region_type:
+            self._next_region_type = region_type
+            APP_CONFIG["next_region_type"] = region_type
+            self.update_status_bar()
         if not self.controller.show_faces:
             self.toggle_faces()
 

@@ -99,7 +99,12 @@ def load_app_config():
         return {}
     try:
         with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            loaded_config = json.load(f)
+
+            # Default values for session properties must be restored.
+            loaded_config["next_region_type"] = "Face"
+
+            return loaded_config
     except (json.JSONDecodeError, OSError):
         # In case of error, return empty config to avoid crash
         return {}
@@ -158,7 +163,8 @@ SCANNER_SETTINGS_DEFAULTS = {
     "default_delete_to_trash": True,
     "duplicate_whitelist": "",
     "duplicate_blacklist": "",
-    "areas_reset_to_face": False,
+    "regions_reset_to_face": False,
+    "next_region_type": "Face",
     "similar_threshold": 65,  # Similarity percentage (50-100)
 }
 
@@ -597,6 +603,9 @@ _UI_TEXTS = {
         "SETTINGS_DUPLICATE_THRESHOLD_TOOLTIP": "Set the duplicates similarity threshold "
         "(50-100%). Higher values mean images must be more similar to be considered "
         "duplicates.",
+        "CONFIRM_DUPLICATE_THRESHOLD_TITLE": "Confirm Similarity Threshold Change",
+        "CONFIRM_DUPLICATE_THRESHOLD_TEXT": "Changing the duplicates similarity threshold "
+        "will delete existing search caches when configuration is saved.\n\nDo you want to continue?",
         "SETTINGS_SIMILAR_THRESHOLD_LABEL": "Similarity Threshold:",
         "SETTINGS_SIMILAR_THRESHOLD_TOOLTIP": "Set the similarity threshold "
         "(40-100%). Higher values mean images must be more similar to be considered "
@@ -691,8 +700,8 @@ _UI_TEXTS = {
         "SETTINGS_USE_LAST_NAME_LABEL": "Use last name by default",
         "SETTINGS_USE_LAST_NAME_TOOLTIP": "Automatically fill the assignment window "
         "with the last used name.",
-        "SETTINGS_AREAS_RESET_TO_FACE_LABEL": "Reset to 'Face' after selection",
-        "SETTINGS_AREAS_RESET_TO_FACE_TOOLTIP": "Automatically switch back to 'Face' "
+        "SETTINGS_REGIONS_RESET_TO_FACE_LABEL": "Reset to 'Face' after selection",
+        "SETTINGS_REGIONS_RESET_TO_FACE_TOOLTIP": "Automatically switch back to 'Face' "
         "mode after adding a different region type (Pet, Body, etc.).",
         "SETTINGS_FACE_HISTORY_COUNT_LABEL": "Max face history:",
         "SETTINGS_THUMBS_REFRESH_LABEL": "Thumbs refresh interval (ms):",
@@ -1178,6 +1187,9 @@ _UI_TEXTS = {
         "SETTINGS_DUPLICATE_THRESHOLD_TOOLTIP": "Establece el umbral de similitud "
         "(50-100%). Valores más altos significan que las imágenes deben ser más "
         "parecidas para considerarse duplicadas.",
+        "CONFIRM_DUPLICATE_THRESHOLD_TITLE": "Confirmar cambio de umbral de similitud",
+        "CONFIRM_DUPLICATE_THRESHOLD_TEXT": "Al cambiar el valor del umbral de similitud de "
+        "duplicados se borrarán las cachés de búsqueda existentes al grabar la configuración.\n\n¿Desea continuar?",
         "SETTINGS_SIMILAR_THRESHOLD_LABEL": "Umbral de similitud de imágenes similares:",
         "SETTINGS_SIMILAR_THRESHOLD_TOOLTIP": "Establece el umbral de similitud "
         "(40-100%). Valores más altos significan que las imágenes deben ser más "
@@ -1767,6 +1779,9 @@ _UI_TEXTS = {
         "SETTINGS_DUPLICATE_THRESHOLD_TOOLTIP": "Establece o umbral de similitude "
         "(50-100%). Valores máis altos significan que as imaxes deben ser máis "
         "parecidas para considerarse duplicadas.",
+        "CONFIRM_DUPLICATE_THRESHOLD_TITLE": "Confirmar cambio do umbral de similitude",
+        "CONFIRM_DUPLICATE_THRESHOLD_TEXT": "Ao cambiar o valor do umbral de similitude "
+        "de duplicados borraranse as cachés de busca existentes ao gardar a configuración.\n\nDesexa continuar?",
         "SETTINGS_SIMILAR_THRESHOLD_LABEL": "Umbral de similitude de imaxes similares:",
         "SETTINGS_SIMILAR_THRESHOLD_TOOLTIP": "Establece o umbral de similitude "
         "(40-100%). Valores máis altos significan que as imaxes deben ser máis "
