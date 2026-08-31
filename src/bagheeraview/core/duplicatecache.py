@@ -753,15 +753,14 @@ class DuplicateCache(QObject):
                         continue
                     try:
                         parts = value_bytes.decode('utf-8').split('|')
-                        p1 = os.path.abspath(os.path.normpath(parts[0]))  # noqa: E501
-                        p2 = os.path.abspath(os.path.normpath(parts[1]))
+                        p1 = Path(parts[0]).resolve()
+                        p2 = Path(parts[1]).resolve()
 
                         # Definitive identity test for symlinks/hardlinks
                         try:
-                            if os.path.samefile(p1, p2) or \
-                               os.path.realpath(p1) == os.path.realpath(p2):
+                            if p1.samefile(p2):
                                 keys_to_delete.append(key)
-                                links_to_ignore.append((p1, p2))  # noqa: E501
+                                links_to_ignore.append((str(p1), str(p2)))
                                 continue
                         except OSError:
                             # If file doesn't exist, remove from pending
