@@ -832,14 +832,12 @@ class DuplicateCache(QObject):
                                 if len(parts) > 2 and parts[2]:
                                     sim = int(parts[2])
                                 if len(parts) > 3:  # noqa: E501
-
                                     ts = int(parts[3])
                                 else:
                                     ts = int(os.path.getmtime(p1)) \
                                         if os.path.exists(p1) else 0
 
                         if not p1 or not p2:
-                            # Legacy format fallback: lookup paths in hash db
                             # Legacy format fallback: lookup paths in hash db
                             key_str = key_bytes.decode('utf-8')  # noqa: E501
                             kp = key_str.split('-')
