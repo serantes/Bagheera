@@ -15,6 +15,7 @@ import shutil
 import json
 import lmdb
 import logging
+import subprocess
 from datetime import datetime
 from collections import deque
 
@@ -40,7 +41,7 @@ except ImportError:
     BagheeraSearcher = None
 from .constants import (
     LAYOUTS_DIR, RATING_XATTR_NAME, XATTR_COMMENT_NAME, XATTR_NAME, UITexts,
-    FACES_MENU_MAX_ITEMS_DEFAULT, APP_CONFIG, FAVORITES_PATH
+    FACES_MENU_MAX_ITEMS_DEFAULT, APP_CONFIG, FAVORITES_PATH, PROG_FILE_NAME
 )
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,7 @@ class TagTreeView(QTreeView):
     """
 
     search_requested = Signal(object)
+    search_on_new_session_requested = Signal(object)
     add_and_requested = Signal(object)
     add_or_requested = Signal(object)
     rename_all_requested = Signal(object)
@@ -101,8 +103,15 @@ class TagTreeView(QTreeView):
                 menu = QMenu(self)
                 search_action = menu.addAction(
                     QIcon.fromTheme("system-search"), UITexts.SEARCH_BY_TAG)
-                add_and_action = menu.addAction(UITexts.SEARCH_ADD_AND)
-                add_or_action = menu.addAction(UITexts.SEARCH_ADD_OR)
+                add_and_action = menu.addAction(
+                    QIcon.fromTheme("add"), UITexts.SEARCH_ADD_AND)
+                add_or_action = menu.addAction(
+                    QIcon.fromTheme("add"), UITexts.SEARCH_ADD_OR)
+
+                menu.addSeparator()
+
+                search_on_new_session_action = menu.addAction(
+                    QIcon.fromTheme("system-search"), UITexts.SEARCH_BY_TAG_ON_NEW_SESSION)
 
                 menu.addSeparator()
 
@@ -114,6 +123,8 @@ class TagTreeView(QTreeView):
                 action = menu.exec(event.globalPos())
                 if action == search_action:
                     self.search_requested.emit(index)
+                elif action == search_on_new_session_action:
+                    self.search_on_new_session_requested.emit(index)
                 elif action == add_and_action:
                     self.add_and_requested.emit(index)
                 elif action == add_or_action:
@@ -393,6 +404,7 @@ class TagEditWidget(QWidget):
         self.search_bar.textChanged.connect(self.handle_search)
         self.source_model.itemChanged.connect(self.sync_tags)
         self.tree_view.search_requested.connect(self.on_search_requested)
+        self.tree_view.search_on_new_session_requested.connect(self.on_search_on_new_session_requested)
         self.tree_view.add_and_requested.connect(self.on_add_and_requested)
         self.tree_view.add_or_requested.connect(self.on_add_or_requested)
         self.tree_view.rename_all_requested.connect(self.on_rename_all_requested)
@@ -697,6 +709,14 @@ class TagEditWidget(QWidget):
 
         if search_string:
             self.main_win.process_term(f"search:/{search_string}")
+
+    @Slot(object)
+    def on_search_on_new_session_requested(self, proxy_index):
+        """Handles the request to search for a tag in a new session."""
+        search_string = self._get_tag_search_string(proxy_index)
+
+        if search_string:
+            subprocess.Popen([PROG_FILE_NAME, f"search:/{search_string}"])
 
     @Slot(object)
     def on_add_and_requested(self, proxy_index):

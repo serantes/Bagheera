@@ -31,6 +31,7 @@ PROG_NAME = "Bagheera Image Viewer"
 PROG_ID = "bagheeraview"
 PROG_VERSION = "1.0.0"
 PROG_AUTHOR = "Ignacio Serantes"
+PROG_FILE_NAME = "bagheeraview"  # Executable name for launching new instances
 
 # --- CACHE SETTINGS ---
 # Maximum number of paths to track in the in-memory cache.
@@ -881,6 +882,7 @@ _UI_TEXTS = {
         "TAG_ALL_TAGS": "📂 ALL TAGS",
         "TAG_NEW_TAG_TITLE": "New Tag",
         "SEARCH_BY_TAG": "Search by this tag",
+        "SEARCH_BY_TAG_ON_NEW_SESSION": "Search by this tag on a new session",
         "TAG_ADD_TOOLTIP": "Create a new tag",
         "TAG_REFRESH_TOOLTIP": "Refresh available tags from Baloo database",
         "TAG_NEW_TAG_TEXT": "Enter tag name (use / for hierarchy):",
@@ -1469,6 +1471,7 @@ _UI_TEXTS = {
         "TAG_ALL_TAGS": "📂 TODAS LAS ETIQUETAS",
         "TAG_NEW_TAG_TITLE": "Nueva Etiqueta",
         "SEARCH_BY_TAG": "Buscar por esta etiqueta",
+        "SEARCH_BY_TAG_ON_NEW_SESSION": "Buscar por esta etiqueta en una nueva sesión",
         "TAG_ADD_TOOLTIP": "Crear una nueva etiqueta",
         "TAG_REFRESH_TOOLTIP": "Refrescar etiquetas disponibles desde el base de datos "
         "de Baloo",
@@ -2059,6 +2062,7 @@ _UI_TEXTS = {
         "TAG_ALL_TAGS": "📂 TÓDALAS ETIQUETAS",
         "TAG_NEW_TAG_TITLE": "Nova Etiqueta",
         "SEARCH_BY_TAG": "Buscar por esta etiqueta",
+        "SEARCH_BY_TAG_ON_NEW_SESSION": "Buscar por esta etiqueta en unha nova sesión",
         "TAG_ADD_TOOLTIP": "Crear unha nova etiqueta",
         "TAG_REFRESH_TOOLTIP": "Refrescar etiquetas dispoñibles dende a base de datos "
         "de Baloo",
