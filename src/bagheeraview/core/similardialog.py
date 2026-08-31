@@ -23,6 +23,8 @@ class SimilarImagesDialog(QDialog):
         self.worker = None
         self.results = []
 
+        self.active_pane = None
+
         title = UITexts.SIMILAR_SEARCH_TITLE.format(
             os.path.basename(target_path))
         self.setWindowTitle(title)
