@@ -120,7 +120,7 @@ ICON_THEME_VIEWER = "bagheeraview"
 ICON_THEME_VIEWER_FALLBACK = "image"
 
 # --- FILE HANDLING ---
-IMAGE_EXTENSIONS = {'.bmp', '.gif', '.jpeg', '.jpg', '.png', '.tiff', '.webp'}
+IMAGE_EXTENSIONS = {'.bmp', '.gif', '.jpeg', '.jpg', '.nef', '.png', '.tiff', '.webp'}
 IMAGE_MIME_TYPES = "Image files (*" + ' *'.join(IMAGE_EXTENSIONS) + ")"
 
 # Path to KDE's screen configuration file. Used for more accurate screen
@@ -550,6 +550,7 @@ _UI_TEXTS = {
         "FAVORITES_SEARCH_PLACEHOLDER": "Search favorites...",
         "FAVORITES_TABLE_HEADER": ["Comment", "Query", "Shortcut"],
         "ADD_FAVORITE_TOOLTIP": "Add current search to favorites",
+        "EDIT_FAVORITE_TOOLTIP": "Edit favorite name",
         "EDIT_COMMENT_TITLE": "Edit Comment",
         "EDIT_COMMENT_TEXT": "Comment for '{}':",
         "EDIT_SHORTCUT_TITLE": "Assign Shortcut",
@@ -1132,6 +1133,7 @@ _UI_TEXTS = {
         "FAVORITES_SEARCH_PLACEHOLDER": "Buscar favoritos...",
         "FAVORITES_TABLE_HEADER": ["Comentario", "Consulta", "Atajo"],
         "ADD_FAVORITE_TOOLTIP": "Añadir búsqueda actual a favoritos",
+        "EDIT_FAVORITE_TOOLTIP": "Editar el nombre del favorito",
         "EDIT_COMMENT_TITLE": "Editar Comentario",
         "EDIT_COMMENT_TEXT": "Comentario para '{}':",
         "EDIT_SHORTCUT_TITLE": "Asignar Atajo",
@@ -1725,6 +1727,7 @@ _UI_TEXTS = {
         "FAVORITES_SEARCH_PLACEHOLDER": "Buscar favoritos...",
         "FAVORITES_TABLE_HEADER": ["Comentario", "Consulta", "Atallo"],
         "ADD_FAVORITE_TOOLTIP": "Engadir busca actual a favoritos",
+        "EDIT_FAVORITE_TOOLTIP": "Editar o nome do favorito",
         "EDIT_COMMENT_TITLE": "Editar Comentario",
         "EDIT_COMMENT_TEXT": "Comentario para '{}':",
         "EDIT_SHORTCUT_TITLE": "Asignar Atallo",

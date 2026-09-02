@@ -1316,6 +1316,7 @@ class FavoritesWidget(QWidget):
         toolbar.addAction(add_action)
 
         edit_action = QAction(QIcon.fromTheme("edit-rename"), UITexts.RENAME, self)
+        edit_action.setToolTip(UITexts.EDIT_FAVORITE_TOOLTIP)
         edit_action.triggered.connect(self.edit_comment)
         toolbar.addAction(edit_action)
 
