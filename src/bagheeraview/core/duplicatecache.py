@@ -870,16 +870,19 @@ class DuplicateCache(QObject):
         with QMutexLocker(self._db_lock):
             with self._lmdb_env.begin(write=False) as txn:
                 cursor = txn.cursor(db=self._hash_db)
+                lexists = os.path.lexists
+                delete_key = keys_to_delete.append
                 for key, value_bytes in cursor:
                     try:
                         # value_bytes is "hash|mtime|path|last_dist"
-                        parts = value_bytes.decode('utf-8').split('|')
+                        # Split directly on bytes, limiting to 3 splits max
+                        parts = value_bytes.split(b'|', 3)
                         if len(parts) >= 3:
-                            path = parts[2]
-                            if not os.path.exists(path):
-                                keys_to_delete.append(key)
+                            # lexists checks the symlink itself, not its target
+                            if not lexists(parts[2]):
+                                delete_key(key)
                     except Exception:
-                        keys_to_delete.append(key)  # Corrupted entry
+                        delete_key(key)  # Corrupted entry
                         continue
 
             if keys_to_delete:
