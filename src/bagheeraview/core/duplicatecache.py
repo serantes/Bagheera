@@ -93,7 +93,7 @@ class DuplicateCache(QObject):
         try:
             self._lmdb_env = lmdb.open(
                 DUPLICATE_CACHE_PATH,
-                map_size=10 * 1024 * 1024 * 1024,  # 10GB default
+                map_size=50 * 1024 * 1024 * 1024,  # 50GB default
                 # Hashes, exceptions, pending, bktree, hash_to_files
                 max_dbs=5,
                 readonly=False,
@@ -594,6 +594,9 @@ class DuplicateCache(QObject):
         dev2, inode2 = self._get_inode_info(path2)
         if not inode1 or not inode2:
             return False
+        # If are the same file (hardlink/symlink), no need to mark as exception
+        if inode1 == inode2 and dev1 == dev2:
+            return True
 
         exception_key = self._get_pair_lmdb_key_from_ids(
             dev1, inode1, dev2, inode2)
@@ -1058,7 +1061,6 @@ class DuplicateDetector(QThread):
                     canonical_paths[rp] = p
                     unique_paths_to_scan.append(p)
                 else:  # noqa: E501
-
                     # It's a symlink or hardlink to something already in the list.
                     # We mark it as an exception (similarity 100) so it doesn't show up.
                     self.duplicate_cache.mark_as_exception(

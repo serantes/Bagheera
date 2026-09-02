@@ -1900,7 +1900,7 @@ class ImageScanner(QThread):
                                 self._scan_directory(item, current_depth + 1)
                     except (PermissionError, OSError):
                         pass
-                return
+                return  # FIX: There is a severe problem here because new files not cached are not found
         except OSError:
             pass
 
