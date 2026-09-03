@@ -275,7 +275,7 @@ class ImageController(QObject):
         tag paths.
         """
         path = self.get_current_path()
-        faces_from_xmp = XmpManager.load_faces(path)
+        faces_from_xmp = XmpManager.load_regions(path)
 
         if not faces_from_xmp:
             self.faces = []
@@ -345,7 +345,7 @@ class ImageController(QObject):
 
             faces_to_save.append(face_copy)
 
-        return XmpManager.save_faces(path, faces_to_save)
+        return XmpManager.save_regions(path, faces_to_save)
 
     def add_face(self, name, x, y, w, h, region_type="Face"):
         """Adds a new face. The full tag path should be passed as 'name'."""

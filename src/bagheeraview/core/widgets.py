@@ -314,7 +314,7 @@ class TagRenameDialog(QDialog):
                         XattrManager.set_attribute(file_path, XATTR_NAME, tags_str)
 
                     if matched_region_types and old_last_term != new_last_term:
-                        faces = XmpManager.load_faces(file_path)
+                        faces = XmpManager.load_regions(file_path)
                         if faces:
                             region_changed = False
                             for face in faces:
@@ -323,7 +323,7 @@ class TagRenameDialog(QDialog):
                                     face['name'] = new_last_term
                                     region_changed = True
                             if region_changed:
-                                XmpManager.save_faces(file_path, faces)
+                                XmpManager.save_regions(file_path, faces)
                 except Exception as e:
                     logger.error(f"Error updating file {file_path} during tag rename: {e}")
 

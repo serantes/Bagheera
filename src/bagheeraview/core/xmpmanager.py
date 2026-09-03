@@ -2,7 +2,7 @@
 XMP Manager Module for Bagheera.
 
 This module provides a dedicated class for handling XMP metadata, specifically
-for reading and writing face region information compliant with the Metadata
+for reading and writing regions information compliant with the Metadata
 Working Group (MWG) standard. It relies on the `exiv2` library for all
 metadata operations.
 
@@ -31,39 +31,38 @@ logger = logging.getLogger(__name__)
 
 class XmpManager:
     """
-    A static class that provides methods to read and write face region data
+    A static class that provides methods to read and write regions data
     to and from XMP metadata in image files.
     """
 
     @staticmethod
-    def load_faces(path):
+    def load_regions(path):
         """
-        Loads face regions from a file's XMP metadata (MWG Regions).
+        Loads regions data from a file's XMP metadata (MWG Regions).
 
         This method parses the XMP data structure for a `mwg-rs:RegionList`,
-        extracts all regions of type 'Face', and returns them as a list of
-        dictionaries.
-        Each dictionary contains the face's name and its normalized coordinates
+        extracts all regions, and returns them as a list of dictionaries.
+        Each dictionary contains the region's name and its normalized coordinates
         (center x, center y, width, height).
 
         Args:
             path (str): The path to the image file.
 
         Returns:
-            list: A list of dictionaries, where each dictionary represents a face.
+            list: A list of dictionaries, where each dictionary represents a region.
                   Returns an empty list if exiv2 is not available or on error.
         """
         if not exiv2 or not path or not os.path.exists(path):
             return []
 
-        faces = []
+        regions = []
         try:
             img = exiv2.ImageFactory.open(path)
             # readMetadata() is crucial to populate the data structures.
             img.readMetadata()
             xmp = img.xmpData()
 
-            regions = {}
+            regions_list = {}
             for datum in xmp:
                 key = datum.key()
                 if "mwg-rs:RegionList" in key:
@@ -72,43 +71,43 @@ class XmpManager:
                     m = re.search(r'RegionList\[(\d+)\]', key)
                     if m:
                         idx = int(m.group(1))
-                        if idx not in regions:
-                            regions[idx] = {}
+                        if idx not in regions_list:
+                            regions_list[idx] = {}
                         val = datum.toString()
                         if key.endswith("/mwg-rs:Name"):
-                            regions[idx]['name'] = val
+                            regions_list[idx]['name'] = val
                         elif key.endswith("/stArea:x"):
-                            regions[idx]['x'] = float(val)
+                            regions_list[idx]['x'] = float(val)
                         elif key.endswith("/stArea:y"):
-                            regions[idx]['y'] = float(val)
+                            regions_list[idx]['y'] = float(val)
                         elif key.endswith("/stArea:w"):
-                            regions[idx]['w'] = float(val)
+                            regions_list[idx]['w'] = float(val)
                         elif key.endswith("/stArea:h"):
-                            regions[idx]['h'] = float(val)
+                            regions_list[idx]['h'] = float(val)
                         elif key.endswith("/mwg-rs:Type"):
-                            regions[idx]['type'] = val
+                            regions_list[idx]['type'] = val
 
-            # Convert the structured dictionary into a flat list of faces,
+            # Convert the structured dictionary into a flat list of regions,
             # preserving all regions (including 'Pet', etc.) to avoid data loss.
-            for idx, data in sorted(regions.items()):
+            for idx, data in sorted(regions_list.items()):
                 if 'x' in data and 'y' in data and 'w' in data and 'h' in data:
-                    faces.append(data)
+                    regions.append(data)
         except Exception as e:
-            print(f"Error loading faces from XMP: {e}")
-        return faces
+            print(f"Error loading regions from XMP: {e}")
+        return regions
 
     @staticmethod
-    def save_faces(path, faces):
+    def save_regions(path, regions):
         """
-        Saves a list of faces to a file's XMP metadata as MWG Regions.
+        Saves a list of regions to a file's XMP metadata as MWG Regions.
 
         This method performs a clean write by first removing all existing
-        face region metadata from the file and then writing the new data.
+        region metadata from the file and then writing the new data.
         This method preserves the file's original modification time.
 
         Args:
             path (str): The path to the image file.
-            faces (list): A list of face dictionaries to save.
+            regions (list): A list of region dictionaries to save.
 
         Returns:
             bool: True on success, False on failure.
@@ -140,8 +139,8 @@ class XmpManager:
                     except Exception:
                         pass
 
-                # 2) Recreate the RegionList from the provided faces list.
-                if faces:
+                # 2) Recreate the RegionList from the provided regions list.
+                if regions:
                     # To initialize an XMP list (rdf:Bag), it is necessary to
                     # register the key as an array before it can be indexed.
                     # Failing to do so causes the "XMP Toolkit error 102:
@@ -153,16 +152,16 @@ class XmpManager:
                         xmp["Xmp.mwg-rs.Regions/mwg-rs:RegionList"] = \
                             exiv2.XmpTextValue("type=Bag")
 
-                    for i, face in enumerate(faces):
+                    for i, region in enumerate(regions):
                         # The index for XMP arrays is 1-based.
                         base = f"Xmp.mwg-rs.Regions/mwg-rs:RegionList[{i+1}]"
-                        xmp[f"{base}/mwg-rs:Name"] = face.get('name', 'Unknown')
-                        xmp[f"{base}/mwg-rs:Type"] = face.get('type', 'Face')
+                        xmp[f"{base}/mwg-rs:Name"] = region.get('name', 'Unknown')  # Default to 'Unknown' if name is missing
+                        xmp[f"{base}/mwg-rs:Type"] = region.get('type', 'Face')  # Default to 'Face' if type is missing
                         area_base = f"{base}/mwg-rs:Area"
-                        xmp[f"{area_base}/stArea:x"] = str(face.get('x', 0))
-                        xmp[f"{area_base}/stArea:y"] = str(face.get('y', 0))
-                        xmp[f"{area_base}/stArea:w"] = str(face.get('w', 0))
-                        xmp[f"{area_base}/stArea:h"] = str(face.get('h', 0))
+                        xmp[f"{area_base}/stArea:x"] = str(region.get('x', 0))
+                        xmp[f"{area_base}/stArea:y"] = str(region.get('y', 0))
+                        xmp[f"{area_base}/stArea:w"] = str(region.get('w', 0))
+                        xmp[f"{area_base}/stArea:h"] = str(region.get('h', 0))
                         xmp[f"{area_base}/stArea:unit"] = 'normalized'
 
                 img.writeMetadata()
@@ -176,5 +175,5 @@ class XmpManager:
                 msg = UITexts.ERROR_JPEG_METADATA_LIMIT.format(os.path.basename(path))
                 logger.error(msg)
                 raise IOError(msg) from e
-            logger.error(f"Error saving faces to XMP: {e}")
+            logger.error(f"Error saving regions to XMP: {e}")
             raise
