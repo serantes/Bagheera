@@ -2843,28 +2843,55 @@ class MainWindow(QMainWindow):
             self.status_lbl.setText(UITexts.COPIED_TO.format(target_dir))
 
     def rotate_current_image(self, degrees):
-        """Rotates the selected image, attempting lossless rotation for JPEGs."""
+        """Rotates the selected image, attempting soft rotation via exiftool first."""
         path = self.get_current_selected_path()
         if not path:
             return
 
-        _, ext = os.path.splitext(path)
-        ext = ext.lower()
+        self._mark_path_as_app_modified(path)
+
+        norm_degrees = degrees % 360
+        if norm_degrees == 0:
+            return
+
+        # Capture extended attributes (xattrs / user tags)
+        xattrs_orig = {}
+        try:
+            for k in os.listxattr(path):
+                try:
+                    xattrs_orig[k] = os.getxattr(path, k)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         success = False
 
-        # Try lossless rotation for JPEGs using exiftran if available
+        _, ext = os.path.splitext(path)
+        ext = ext.lower()
+        # Try soft rotation via exiftool
         if ext in ['.jpg', '.jpeg']:
             try:
-                cmd = []
-                if degrees == 90:
-                    cmd = ["exiftran", "-i", "-9", path]
-                elif degrees == -90:
-                    cmd = ["exiftran", "-i", "-2", path]
-                elif degrees == 180:
-                    cmd = ["exiftran", "-i", "-1", path]
+                cmd_get = ["exiftool", "-Orientation", "-n", "-s3", path]
+                res = subprocess.run(cmd_get, stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE, text=True)
+                val = res.stdout.strip()
+                curr_orient = int(val) if (res.returncode == 0 and val.isdigit() and 1 <= int(val) <= 8) else 1
 
-                if cmd:
-                    subprocess.check_call(cmd, stdout=subprocess.DEVNULL,
+                if norm_degrees == 90:
+                    trans = {1: 6, 2: 7, 3: 8, 4: 5, 5: 2, 6: 3, 7: 4, 8: 1}
+                elif norm_degrees == 180:
+                    trans = {1: 3, 2: 4, 3: 1, 4: 2, 5: 7, 6: 8, 7: 5, 8: 6}
+                elif norm_degrees == 270:
+                    trans = {1: 8, 2: 5, 3: 6, 4: 7, 5: 4, 6: 1, 7: 2, 8: 3}
+                else:
+                    trans = None
+
+                if trans:
+                    new_orient = trans[curr_orient]
+                    cmd_set = ["exiftool", f"-Orientation={new_orient}", "-n",
+                               "-overwrite_original_in_place", path]
+                    subprocess.check_call(cmd_set, stdout=subprocess.DEVNULL,
                                           stderr=subprocess.DEVNULL)
                     success = True
             except Exception:
@@ -2873,7 +2900,17 @@ class MainWindow(QMainWindow):
         # Fallback to lossy rotation using QImage
         if not success:
             try:
-                self._mark_path_as_app_modified(path)
+                exif_orig, iptc_orig, xmp_orig = None, None, None
+                try:
+                    import exiv2
+                    exiv_in = exiv2.ImageFactory.open(path)
+                    exiv_in.readMetadata()
+                    exif_orig = exiv_in.exifData()
+                    iptc_orig = exiv_in.iptcData()
+                    xmp_orig = exiv_in.xmpData()
+                except Exception:
+                    pass
+
                 reader = QImageReader(path)
                 reader.setAutoTransform(True)
                 img = reader.read()
@@ -2883,11 +2920,182 @@ class MainWindow(QMainWindow):
                 transform = QTransform().rotate(degrees)
                 new_img = img.transformed(transform, Qt.SmoothTransformation)
                 new_img.save(path)
+
+                if exif_orig is not None:
+                    try:
+                        import exiv2
+                        exiv_out = exiv2.ImageFactory.open(path)
+                        exiv_out.readMetadata()
+                        exiv_out.setExifData(exif_orig)
+                        if iptc_orig is not None:
+                            exiv_out.setIptcData(iptc_orig)
+                        if xmp_orig is not None:
+                            exiv_out.setXmpData(xmp_orig)
+
+                        exif_data = exiv_out.exifData()
+                        if 'Exif.Image.Orientation' in exif_data:
+                            exif_data['Exif.Image.Orientation'] = 1
+
+                        exiv_out.writeMetadata()
+                    except Exception:
+                        pass
+
                 success = True
             except Exception as e:
                 QMessageBox.critical(self, UITexts.ERROR,
                                      UITexts.ERROR_ROTATE_IMAGE.format(e))
                 return
+
+        # Restore extended attributes if any were present
+        if xattrs_orig:
+            for k, v in xattrs_orig.items():
+                try:
+                    os.setxattr(path, k, v)
+                except Exception:
+                    pass
+
+        # Invalidate all cached thumbnails for this path. They will be regenerated
+        # on demand.
+        self.cache.invalidate_path(path)
+        try:
+            reader = QImageReader(path)
+            reader.setAutoTransform(True)
+            full_img = reader.read()
+            if not full_img.isNull():
+                # Regenerate the smallest thumbnail for immediate UI update
+                stat_res = os.stat(path)
+                new_mtime = stat_res.st_mtime
+                new_inode = stat_res.st_ino
+                new_dev = stat_res.st_dev
+
+                smallest_size = min(SCANNER_GENERATE_SIZES) \
+                    if SCANNER_GENERATE_SIZES else THUMBNAIL_SIZES[0]
+                thumb_img = full_img.scaled(smallest_size, smallest_size,
+                                            Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                self.cache.set_thumbnail(path, thumb_img, new_mtime, smallest_size,
+                                         inode=new_inode, device_id=new_dev)
+
+                # Update model item
+                if path in self._path_to_model_index:
+                    p_idx = self._path_to_model_index[path]
+                    if p_idx.isValid():
+                        item = self.thumbnail_model.itemFromIndex(QModelIndex(p_idx))
+                        item.setIcon(QIcon(QPixmap.fromImage(thumb_img)))
+                        item.setData(new_mtime, MTIME_ROLE)
+                        item.setData(new_inode, INODE_ROLE)
+                        item.setData(new_dev, DEVICE_ROLE)
+                        self._update_internal_data(path, qi=thumb_img, mtime=new_mtime,
+                                                   inode=new_inode, dev=new_dev)
+        except Exception:
+            pass
+
+        # Update any open viewers showing this image
+        for w in QApplication.topLevelWidgets():
+            if isinstance(w, ImageViewer):
+                if w.controller.get_current_path() == path:
+                    w.load_and_fit_image()
+
+    def flip_current_image(self, horizontal: bool = True):
+        """Flips the selected image horizontally or vertically, attempting soft flip via exiftool first."""
+        path = self.get_current_selected_path()
+        if not path:
+            return
+
+        self._mark_path_as_app_modified(path)
+
+        # Capture extended attributes (xattrs / user tags)
+        xattrs_orig = {}
+        try:
+            for k in os.listxattr(path):
+                try:
+                    xattrs_orig[k] = os.getxattr(path, k)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        success = False
+
+        _, ext = os.path.splitext(path)
+        ext = ext.lower()
+        # Try soft flip via exiftool
+        if ext in ['.jpg', '.jpeg']:
+            try:
+                cmd_get = ["exiftool", "-Orientation", "-n", "-s3", path]
+                res = subprocess.run(cmd_get, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                val = res.stdout.strip()
+                curr_orient = int(val) if (res.returncode == 0 and val.isdigit() and 1 <= int(val) <= 8) else 1
+
+                if horizontal:
+                    trans = {1: 2, 2: 1, 3: 4, 4: 3, 5: 6, 6: 5, 7: 8, 8: 7}
+                else:
+                    trans = {1: 4, 2: 3, 3: 2, 4: 1, 5: 8, 6: 7, 7: 6, 8: 5}
+
+                new_orient = trans[curr_orient]
+                cmd_set = ["exiftool", f"-Orientation={new_orient}", "-n",
+                           "-overwrite_original_in_place", path]
+                subprocess.check_call(cmd_set, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                success = True
+            except Exception:
+                pass  # Fallback to lossy flip
+
+        # Fallback to lossy flip using QImage
+        if not success:
+            try:
+                exif_orig, iptc_orig, xmp_orig = None, None, None
+                try:
+                    import exiv2
+                    exiv_in = exiv2.ImageFactory.open(path)
+                    exiv_in.readMetadata()
+                    exif_orig = exiv_in.exifData()
+                    iptc_orig = exiv_in.iptcData()
+                    xmp_orig = exiv_in.xmpData()
+                except Exception:
+                    pass
+
+                reader = QImageReader(path)
+                reader.setAutoTransform(True)
+                img = reader.read()
+                if img.isNull():
+                    return
+
+                transform = QTransform().scale(-1 if horizontal else 1,
+                                               1 if horizontal else -1)
+                new_img = img.transformed(transform, Qt.SmoothTransformation)
+                new_img.save(path)
+
+                if exif_orig is not None:
+                    try:
+                        import exiv2
+                        exiv_out = exiv2.ImageFactory.open(path)
+                        exiv_out.readMetadata()
+                        exiv_out.setExifData(exif_orig)
+                        if iptc_orig is not None:
+                            exiv_out.setIptcData(iptc_orig)
+                        if xmp_orig is not None:
+                            exiv_out.setXmpData(xmp_orig)
+
+                        exif_data = exiv_out.exifData()
+                        if 'Exif.Image.Orientation' in exif_data:
+                            exif_data['Exif.Image.Orientation'] = 1
+
+                        exiv_out.writeMetadata()
+                    except Exception:
+                        pass
+
+                success = True
+            except Exception as e:
+                QMessageBox.critical(self, UITexts.ERROR,
+                                     UITexts.ERROR_ROTATE_IMAGE.format(e))
+                return
+
+        # Restore extended attributes if any were present
+        if xattrs_orig:
+            for k, v in xattrs_orig.items():
+                try:
+                    os.setxattr(path, k, v)
+                except Exception:
+                    pass
 
         # Invalidate all cached thumbnails for this path. They will be regenerated
         # on demand.
@@ -4801,18 +5009,17 @@ class MainWindow(QMainWindow):
                                  "rename_image",
                                  lambda: self.rename_image(selected_indexes[0].row()))
 
-        action_move = menu.addAction(QIcon.fromTheme("edit-move"),
-                                     UITexts.CONTEXT_MENU_MOVE_TO)
+        action_move = menu.addAction(QIcon.fromTheme("edit-move"), UITexts.CONTEXT_MENU_MOVE_TO)
         action_move.triggered.connect(self.move_current_image)
 
-        action_copy = menu.addAction(QIcon.fromTheme("edit-copy"),
-                                     UITexts.CONTEXT_MENU_COPY_TO)
+        action_copy = menu.addAction(QIcon.fromTheme("edit-copy"), UITexts.CONTEXT_MENU_COPY_TO)
         action_copy.triggered.connect(self.copy_current_image)
 
         menu.addSeparator()
 
-        rotate_menu = menu.addMenu(QIcon.fromTheme("transform-rotate"),
-                                   UITexts.CONTEXT_MENU_ROTATE)
+        modify_menu = menu.addMenu(QIcon.fromTheme("document-edit"), UITexts.CONTEXT_MENU_MODIFY)
+
+        rotate_menu = modify_menu.addMenu(QIcon.fromTheme("transform-rotate"), UITexts.CONTEXT_MENU_ROTATE)
 
         action_rotate_ccw = rotate_menu.addAction(QIcon.fromTheme("object-rotate-left"),
                                                   UITexts.CONTEXT_MENU_ROTATE_LEFT)
@@ -4822,7 +5029,18 @@ class MainWindow(QMainWindow):
                                                  UITexts.CONTEXT_MENU_ROTATE_RIGHT)
         action_rotate_cw.triggered.connect(lambda: self.rotate_current_image(90))
 
+        flip_menu = modify_menu.addMenu(QIcon.fromTheme("transform-flip"), UITexts.CONTEXT_MENU_FLIP)
+
+        action_flip_horizontal = flip_menu.addAction(QIcon.fromTheme("object-flip-horizontal"),
+                                                     UITexts.CONTEXT_MENU_FLIP_HORIZONTALLY)
+        action_flip_horizontal.triggered.connect(lambda: self.flip_current_image(horizontal=True))
+
+        action_flip_vertical = flip_menu.addAction(QIcon.fromTheme("object-flip-vertical"),
+                                                   UITexts.CONTEXT_MENU_FLIP_VERTICALLY)
+        action_flip_vertical.triggered.connect(lambda: self.flip_current_image(horizontal=False))
+
         menu.addSeparator()
+
         # The 'move_to_trash' action now uses the configurable default behavior
         add_action_with_shortcut(menu, UITexts.CONTEXT_MENU_TRASH, "user-trash",
                                  "move_to_trash",
