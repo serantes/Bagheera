@@ -221,7 +221,13 @@ if importlib.util.find_spec("mediapipe") is not None:
             HAVE_MEDIAPIPE = True
     except Exception:
         pass
-HAVE_FACE_RECOGNITION = importlib.util.find_spec("face_recognition") is not None
+HAVE_FACE_RECOGNITION = False
+if importlib.util.find_spec("face_recognition") is not None:
+    try:
+        import face_recognition
+        HAVE_FACE_RECOGNITION = True
+    except Exception:
+        pass
 
 MEDIAPIPE_FACE_MODEL_PATH = os.path.join(
     APP_DATA_DIR, "blaze_face_short_range.tflite")
@@ -524,7 +530,11 @@ _UI_TEXTS = {
         "one:",
         "FACE_NAME_TOOLTIP": "Type a name or select from history.",
         "CLEAR_TEXT_TOOLTIP": "Clear text field",
-        "RENAME_AREA_TITLE": "Rename region",
+        "RENAME_REGION": "Rename",
+        "RENAME_REGION_TITLE": "Rename region",
+        "RENAME_REGION_TOOLTIP": "Edit region name",
+        "RENAME_LAYOUT": "Rename ",
+        "RENAME_LAYOUT_TOOLTIP": "Edit layout name",
         "SHOW_FACES": "Show Faces && other regions",
         "DETECT_FACES": "Detect Face",
         "DETECT_PETS": "Detect Pets",
@@ -1107,7 +1117,11 @@ _UI_TEXTS = {
         "selecciona la correcta:",
         "FACE_NAME_TOOLTIP": "Escribe un nombre o selecciónalo del historial.",
         "CLEAR_TEXT_TOOLTIP": "Limpiar el campo de texto",
-        "RENAME_AREA_TITLE": "Renombrar región",
+        "RENAME_REGION": "Renombrar",
+        "RENAME_REGION_TITLE": "Renombrar región",
+        "RENAME_REGION_TOOLTIP": "Renombrar la región seleccionada",
+        "RENAME_LAYOUT": "Renombrar diseño",
+        "RENAME_LAYOUT_TOOLTIP": "Renombrar el diseño seleccionado",
         "SHOW_FACES": "Mostrar Rostros y otras regiones",
         "DETECT_FACES": "Detectar Rostros",
         "DETECT_PETS": "Detectar Mascotas",
@@ -1700,7 +1714,11 @@ _UI_TEXTS = {
         "selecciona a correcta:",
         "FACE_NAME_TOOLTIP": "Escribe un nome ou selecciónao do historial.",
         "CLEAR_TEXT_TOOLTIP": "Limpar o campo de texto",
-        "RENAME_AREA_TITLE": "Renomear rexión",
+        "RENAME_REGION": "Renomear",
+        "RENAME_REGION_TITLE": "Renomear rexión",
+        "RENAME_REGION_TOOLTIP": "Edit region name",
+        "RENAME_LAYOUT": "Renomear diseño",
+        "RENAME_LAYOUT_TOOLTIP": "Edit layout name",
         "SHOW_FACES": "Amosar Rostros e outras rexións",
         "DETECT_FACES": "Detectar Rostros",
         "DETECT_PETS": "Detectar Mascotas",

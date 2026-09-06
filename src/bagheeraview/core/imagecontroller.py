@@ -13,6 +13,7 @@ Classes:
 import os
 import logging
 import math
+import sys
 from PySide6.QtCore import QThread, Signal, QMutex, QWaitCondition, QObject, Qt, QSize
 from PySide6.QtGui import QImage, QImageReader, QPixmap, QTransform
 from .xmpmanager import XmpManager
@@ -24,6 +25,65 @@ from .constants import (
 from .metadatamanager import XattrManager, load_common_metadata
 
 logger = logging.getLogger(__name__)
+
+_face_recognition_module = None
+_mediapipe_module = None
+_mp_python = None
+_mp_vision = None
+
+
+def _get_face_recognition():
+    global _face_recognition_module
+    if _face_recognition_module is None:
+        if "face_recognition" in sys.modules:
+            _face_recognition_module = sys.modules["face_recognition"]
+        else:
+            import face_recognition
+            _face_recognition_module = face_recognition
+    return _face_recognition_module
+
+
+def _get_mediapipe():
+    global _mediapipe_module, _mp_python, _mp_vision
+    if _mediapipe_module is None:
+        if "mediapipe" in sys.modules:
+            _mediapipe_module = sys.modules["mediapipe"]
+        else:
+            import mediapipe as mp
+            _mediapipe_module = mp
+
+        if "mediapipe.tasks.python" in sys.modules:
+            _mp_python = sys.modules["mediapipe.tasks.python"]
+        else:
+            from mediapipe.tasks import python
+            _mp_python = python
+
+        if "mediapipe.tasks.python.vision" in sys.modules:
+            _mp_vision = sys.modules["mediapipe.tasks.python.vision"]
+        else:
+            from mediapipe.tasks.python import vision
+            _mp_vision = vision
+
+    return _mediapipe_module, _mp_python, _mp_vision
+
+
+def _load_mp_image(path):
+    """
+    Safely creates a mediapipe.Image from an image file path.
+    Supports WebP and other formats by attempting PIL/Pillow loading first,
+    falling back to mp.Image.create_from_file if needed.
+    """
+    mp, _, _ = _get_mediapipe()
+    try:
+        import PIL.Image
+        import numpy as np
+        with PIL.Image.open(path) as pil_img:
+            pil_img = pil_img.convert("RGB")
+            image_np = np.array(pil_img)
+            return mp.Image(image_format=mp.ImageFormat.SRGB, data=image_np)
+    except Exception as e:
+        logger.warning(f"PIL failed to load image '{path}' for MediaPipe, using fallback: {e}")
+        return mp.Image.create_from_file(path)
 
 
 class ImagePreloader(QThread):
@@ -469,7 +529,12 @@ class ImageController(QObject):
 
     def _detect_faces_face_recognition(self, path):
         """Detects faces using the 'face_recognition' library."""
-        import face_recognition
+        try:
+            face_recognition = _get_face_recognition()
+        except Exception as e:
+            logger.error(f"Failed to import face_recognition: {e}")
+            return []
+
         new_faces = []
         try:
             image = face_recognition.load_image_file(path)
@@ -489,9 +554,11 @@ class ImageController(QObject):
 
     def _detect_faces_mediapipe(self, path):
         """Detects faces using the 'mediapipe' library with the new Tasks API."""
-        import mediapipe as mp
-        from mediapipe.tasks import python
-        from mediapipe.tasks.python import vision
+        try:
+            mp, python, vision = _get_mediapipe()
+        except Exception as e:
+            logger.error(f"Failed to import mediapipe: {e}")
+            return []
 
         new_faces = []
 
@@ -519,7 +586,7 @@ class ImageController(QObject):
                 os.close(null_fd)
                 os.close(save_fd)
 
-            mp_image = mp.Image.create_from_file(path)
+            mp_image = _load_mp_image(path)
             detection_result = detector.detect(mp_image)
 
             if detection_result.detections:
@@ -547,9 +614,11 @@ class ImageController(QObject):
             max_results (int): Maximum number of results to return.
             region_type (str): The 'type' label for the detected regions.
         """
-        import mediapipe as mp
-        from mediapipe.tasks import python
-        from mediapipe.tasks.python import vision
+        try:
+            mp, python, vision = _get_mediapipe()
+        except Exception as e:
+            logger.error(f"Failed to import mediapipe: {e}")
+            return []
 
         new_regions = []
 
@@ -580,7 +649,7 @@ class ImageController(QObject):
                 os.close(null_fd)
                 os.close(save_fd)
 
-            mp_image = mp.Image.create_from_file(path)
+            mp_image = _load_mp_image(path)
             detection_result = detector.detect(mp_image)
 
             if detection_result.detections:
