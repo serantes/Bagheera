@@ -2817,7 +2817,7 @@ class ImageViewer(QWidget):
 
         menu = QMenu(self)
         action_del = menu.addAction(UITexts.DELETE_AREA_TITLE)
-        action_ren = menu.addAction(UITexts.RENAME_AREA_TITLE)
+        action_ren = menu.addAction(UITexts.RENAME_REGION_TITLE)
         res = menu.exec(event.globalPos())
 
         if res == action_del:
@@ -2858,7 +2858,7 @@ class ImageViewer(QWidget):
 
         new_full_tag, updated_history, ok = FaceNameDialog.get_name(
             self, history, current_name, main_win=self.main_win,
-            region_type=region_type, title=UITexts.RENAME_AREA_TITLE)
+            region_type=region_type, title=UITexts.RENAME_REGION)
 
         if ok and new_full_tag and new_full_tag != current_name:
             # Remove old tag if it's not used by other faces

@@ -988,7 +988,7 @@ class LayoutsWidget(QWidget):
         save_action.triggered.connect(self.save_selected_layout)
         toolbar.addAction(save_action)
 
-        rename_action = QAction(QIcon.fromTheme("edit-rename"), UITexts.RENAME, self)
+        rename_action = QAction(QIcon.fromTheme("edit-rename"), UITexts.RENAME_LAYOUT_TOOLTIP, self)
         rename_action.triggered.connect(self.rename_layout)
         toolbar.addAction(rename_action)
 
@@ -1084,7 +1084,7 @@ class LayoutsWidget(QWidget):
         old_name = os.path.basename(path).replace(".layout", "")
         new_name, ok = QInputDialog.getText(self,
                                             UITexts.RENAME_LAYOUT_TITLE,
-                                            UITexts.RENAME_LAYOUT_TEXT,
+                                            UITexts.RENAME_LAYOUT_TOOTIP,
                                             text=old_name)
         if ok and new_name:
             new_path = os.path.join(os.path.dirname(path), new_name + ".layout")
