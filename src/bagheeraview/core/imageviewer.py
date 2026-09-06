@@ -413,6 +413,7 @@ class FaceCanvas(QLabel):
         self.controller = viewer.controller
         self.setMouseTracking(True)
         self.drawing = False
+        self.drawing_button = None
         self.start_pos = QPoint()
         self.current_rect = QRect()
         self.dragging = False
@@ -523,7 +524,7 @@ class FaceCanvas(QLabel):
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        if not self.controller.show_faces and not self.viewer.crop_mode:
+        if not self.controller.show_faces and not self.viewer.crop_mode and not self.drawing:
             return
 
         painter = QPainter(self)
@@ -759,6 +760,7 @@ class FaceCanvas(QLabel):
                 return
 
             self.drawing = True
+            self.drawing_button = Qt.LeftButton
             self.start_pos = event.position().toPoint()
             self.crop_rect = QRect()
             self.update()
@@ -787,8 +789,15 @@ class FaceCanvas(QLabel):
                 event.accept()
             else:
                 self.drawing = True
+                self.drawing_button = Qt.LeftButton
                 self.current_rect = QRect(self.start_pos, self.start_pos)
                 event.accept()
+        elif event.button() == Qt.MiddleButton:
+            self.start_pos = event.position().toPoint()
+            self.drawing = True
+            self.drawing_button = Qt.MiddleButton
+            self.current_rect = QRect(self.start_pos, self.start_pos)
+            event.accept()
         elif event.button() == Qt.LeftButton:
             self.dragging = True
             self.drag_start_pos = event.globalPosition().toPoint()
@@ -972,17 +981,21 @@ class FaceCanvas(QLabel):
                 self.update()
             elif self.drawing:
                 self.drawing = False
+                self.drawing_button = None
                 self.update()
 
             event.accept()
             return
 
         if self.drawing:
+            is_middle = (event.button() == Qt.MiddleButton or
+                         getattr(self, 'drawing_button', None) == Qt.MiddleButton)
             self.drawing = False
+            self.drawing_button = None
             if self.current_rect.width() > 10 and self.current_rect.height() > 10:
                 region_type = self.viewer.viewer._next_region_type
-                # Check if Control key was held down to allow selecting type
-                if event.modifiers() & Qt.ControlModifier:
+                # Check if Control key was held down or Middle mouse button was used to allow selecting type
+                if (event.modifiers() & Qt.ControlModifier) or is_middle:
                     menu = QMenu(self)
                     action_face = menu.addAction(UITexts.TYPE_FACE)
                     action_pet = menu.addAction(UITexts.TYPE_PET)
