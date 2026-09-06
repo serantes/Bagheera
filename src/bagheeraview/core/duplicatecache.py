@@ -1172,7 +1172,7 @@ class DuplicateDetector(QThread):
                     hashes_to_batch.append((p, h, mtime, dev, inode))
 
             if hashes_to_batch:
-                total_batch = len(hashes_to_batch)
+                # total_batch = len(hashes_to_batch)
                 base_batch_progress = int(0.4 * (total_files * 2))
                 span_batch_progress = total_files - base_batch_progress
 
