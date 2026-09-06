@@ -1,11 +1,9 @@
-import os
 import numpy as np
 from unittest.mock import MagicMock, patch
 from PIL import Image
 
 from bagheeraview.core.imagecontroller import (
     ImageController,
-    _get_face_recognition,
     _get_mediapipe,
     _load_mp_image
 )
@@ -16,7 +14,8 @@ def test_get_mediapipe_caching():
     mock_python = MagicMock()
     mock_vision = MagicMock()
 
-    with patch.dict("sys.modules", {"mediapipe": mock_mp, "mediapipe.tasks.python": mock_python, "mediapipe.tasks.python.vision": mock_vision}):
+    with patch.dict("sys.modules", {"mediapipe": mock_mp, "mediapipe.tasks.python": mock_python,
+                                    "mediapipe.tasks.python.vision": mock_vision}):
         mp1, py1, vis1 = _get_mediapipe()
         mp2, py2, vis2 = _get_mediapipe()
         assert mp1 is mp2
