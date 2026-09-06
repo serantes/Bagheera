@@ -1203,17 +1203,7 @@ class MainWindow(QMainWindow):
         self.thumbnail_view.customContextMenuRequested.connect(self.show_context_menu)
         self.thumbnail_view.doubleClicked.connect(self.on_view_double_clicked)
 
-        self.thumbnail_model = QStandardItemModel(self)
-        self.proxy_model = ThumbnailSortFilterProxyModel(self)
-        self.proxy_model.setSourceModel(self.thumbnail_model)
-        self.proxy_model.setDynamicSortFilter(False)  # Manual invalidation
-
-        self.thumbnail_view.setModel(self.proxy_model)
-        self.thumbnail_view.selectionModel().selectionChanged.connect(
-            self.on_selection_changed)
-
-        self.delegate = ThumbnailDelegate(self)
-        self.thumbnail_view.setItemDelegate(self.delegate)
+        self._set_thumbnail_model(True)
 
         layout.addWidget(self.thumbnail_view)
 
@@ -1533,6 +1523,28 @@ class MainWindow(QMainWindow):
         else:
             self.show()
             self.setFocus()
+
+    def _set_thumbnail_model(self, from_init: bool = False):
+        self.thumbnail_view.setModel(None)
+
+        if not from_init:
+            self._old_proxy_model = self.proxy_model
+            self._old_thumbnail_model = self.thumbnail_model
+            self._old_delegate = self.delegate
+            self._old_proxy_model.deleteLater()
+            self._old_proxy_model.clear_cache()
+
+        self.thumbnail_model = QStandardItemModel(self)
+        self.proxy_model = ThumbnailSortFilterProxyModel(self)
+        self.proxy_model.setSourceModel(self.thumbnail_model)
+        self.proxy_model.setDynamicSortFilter(False)  # Manual invalidation
+
+        self.thumbnail_view.setModel(self.proxy_model)
+        self.thumbnail_view.selectionModel().selectionChanged.connect(
+            self.on_selection_changed)
+
+        self.delegate = ThumbnailDelegate(self)
+        self.thumbnail_view.setItemDelegate(self.delegate)
 
     def _process_model_update_queue(self):
         """Processes a chunk of the pending model updates."""
@@ -2942,12 +2954,11 @@ class MainWindow(QMainWindow):
 
         # Clear the model if not syncing with an existing viewer
         if not sync_viewer:
-            self.thumbnail_model.clear()
+            self._set_thumbnail_model()
             self.found_items_data = []
             self._path_to_model_index.clear()
             self._known_paths.clear()
             self._group_info_cache.clear()
-            self.proxy_model.clear_cache()
             self._model_update_queue.clear()
             self._model_update_timer.stop()
             self.fs_watcher.clear_paths()
@@ -3339,7 +3350,7 @@ class MainWindow(QMainWindow):
                 # If items were added incrementally, count matches and we skip rebuild.
                 if full_reset or \
                    self.thumbnail_model.rowCount() != len(self.found_items_data):
-                    self.thumbnail_model.clear()
+                    self._set_thumbnail_model()
                     self._path_to_model_index.clear()
                     # Fast append of all items
                     for item_data in self.found_items_data:
@@ -3359,7 +3370,7 @@ class MainWindow(QMainWindow):
                 self.proxy_model.sort(-1)  # Disable proxy sorting
 
                 if full_reset:
-                    self.thumbnail_model.clear()
+                    self._set_thumbnail_model()
                     self._path_to_model_index.clear()
 
                 # 1. Decorate: Calculate group info once per item with local memoization
@@ -4431,7 +4442,7 @@ class MainWindow(QMainWindow):
                 path = term[6:] if term.startswith("file:/") else term
             if os.path.isfile(path):
                 # If a single file is passed, open it in a viewer and scan its directory
-                self.thumbnail_model.clear()
+                self._set_thumbnail_model()
                 self.active_viewer = ImageViewer(self.cache, [path], 0,
                                                  initial_tags=None,
                                                  initial_rating=0, parent=self,
