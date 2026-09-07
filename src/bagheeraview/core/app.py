@@ -2854,6 +2854,15 @@ class MainWindow(QMainWindow):
         if norm_degrees == 0:
             return
 
+        # Capture original file timestamps (atime and mtime)
+        orig_atime, orig_mtime = None, None
+        try:
+            st = os.stat(path)
+            orig_atime = st.st_atime
+            orig_mtime = st.st_mtime
+        except Exception:
+            pass
+
         # Capture extended attributes (xattrs / user tags)
         xattrs_orig = {}
         try:
@@ -2889,7 +2898,7 @@ class MainWindow(QMainWindow):
 
                 if trans:
                     new_orient = trans[curr_orient]
-                    cmd_set = ["exiftool", f"-Orientation={new_orient}", "-n",
+                    cmd_set = ["exiftool", "-P", f"-Orientation={new_orient}", "-n",
                                "-overwrite_original_in_place", path]
                     subprocess.check_call(cmd_set, stdout=subprocess.DEVNULL,
                                           stderr=subprocess.DEVNULL)
@@ -2954,6 +2963,14 @@ class MainWindow(QMainWindow):
                 except Exception:
                     pass
 
+        # Restore original timestamps (mtime and atime)
+        if orig_mtime is not None:
+            try:
+                atime = orig_atime if orig_atime is not None else orig_mtime
+                os.utime(path, (atime, orig_mtime))
+            except Exception:
+                pass
+
         # Invalidate all cached thumbnails for this path. They will be regenerated
         # on demand.
         self.cache.invalidate_path(path)
@@ -3003,6 +3020,15 @@ class MainWindow(QMainWindow):
 
         self._mark_path_as_app_modified(path)
 
+        # Capture original file timestamps (atime and mtime)
+        orig_atime, orig_mtime = None, None
+        try:
+            st = os.stat(path)
+            orig_atime = st.st_atime
+            orig_mtime = st.st_mtime
+        except Exception:
+            pass
+
         # Capture extended attributes (xattrs / user tags)
         xattrs_orig = {}
         try:
@@ -3032,7 +3058,7 @@ class MainWindow(QMainWindow):
                     trans = {1: 4, 2: 3, 3: 2, 4: 1, 5: 8, 6: 7, 7: 6, 8: 5}
 
                 new_orient = trans[curr_orient]
-                cmd_set = ["exiftool", f"-Orientation={new_orient}", "-n",
+                cmd_set = ["exiftool", "-P", f"-Orientation={new_orient}", "-n",
                            "-overwrite_original_in_place", path]
                 subprocess.check_call(cmd_set, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 success = True
@@ -3096,6 +3122,14 @@ class MainWindow(QMainWindow):
                     os.setxattr(path, k, v)
                 except Exception:
                     pass
+
+        # Restore original timestamps (mtime and atime)
+        if orig_mtime is not None:
+            try:
+                atime = orig_atime if orig_atime is not None else orig_mtime
+                os.utime(path, (atime, orig_mtime))
+            except Exception:
+                pass
 
         # Invalidate all cached thumbnails for this path. They will be regenerated
         # on demand.

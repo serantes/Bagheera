@@ -56,12 +56,10 @@ class FileSystemWatcher(QObject):
             self._observer = Observer()
             self._event_handler = self._Handler(self)
             self._observer.start()
+            # Connect the internal signal to the debouncing slot
+            self._file_modified_from_handler.connect(self._on_file_modified_debounced)
         else:
             self._observer = None  # Keep observer as None if watchdog is not available
-
-        # Connect the internal signal to the debouncing slot
-        if HAVE_WATCHDOG:
-            self._file_modified_from_handler.connect(self._on_file_modified_debounced)
 
     def _on_file_modified_debounced(self, path):
         """
