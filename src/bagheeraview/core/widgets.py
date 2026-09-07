@@ -1084,7 +1084,7 @@ class LayoutsWidget(QWidget):
         old_name = os.path.basename(path).replace(".layout", "")
         new_name, ok = QInputDialog.getText(self,
                                             UITexts.RENAME_LAYOUT_TITLE,
-                                            UITexts.RENAME_LAYOUT_TOOTIP,
+                                            UITexts.RENAME_LAYOUT_TOOLTIP,
                                             text=old_name)
         if ok and new_name:
             new_path = os.path.join(os.path.dirname(path), new_name + ".layout")
