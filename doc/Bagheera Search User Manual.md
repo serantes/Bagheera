@@ -161,7 +161,7 @@ Properties are grouped by file type for easier reference..
 ### Documents
 * Author
 * Copyright
-* CreationDate (Formatted as yyyy-MM-dd. Note: inconsistent in **Baloo** with '==' comparison; use in `having` options for reliability).
+* CreationDate (Formatted as yyyy-MM-dd. Note: inconsistent in **Baloo** with '==' comparison; use only in `having` options to obtain reliable results).
 * Generator
 * Keywords
 * Language
@@ -179,7 +179,7 @@ Properties are grouped by file type for easier reference..
 * Width
 
 ### Images
-* ImageDateTime (Formatted as yyyy-MM-dd. Note: inconsistent in **Baloo** with '==' comparison; use in `having` options for reliability).
+* ImageDateTime (Formatted as yyyy-MM-dd. Note: inconsistent in **Baloo** with '==' comparison; use only in `having` options to obtain reliable results).
 * ImageMake
 * ImageModel
 * ImageOrientation
@@ -244,7 +244,7 @@ The following properties are undocumented but available in the source code. They
 
 ## 8. Having
 
-The `--having` option allows you to filter the results returned by **Baloo**. It supports the standard **Baloo** syntax plus the `NOT` operator.
+The `--having` option allows you to filter the results returned by **Baloo**. It supports the standard **Baloo** syntax plus the `NOT` operator. If you need multiple terms or you use operators like `>`  or `>` single or double quotes are mandatory.
 
 Additionally, you can use:
 
@@ -266,14 +266,14 @@ Additionally, you can use:
 
 ## 9. Subqueries
 
-**Bagheera** supports a secondary search within the folders returned by a main query. This is particularly useful for deep searches.
+**Bagheera** supports a secondary search within the folders returned by a main query. This is particularly useful for deep searches. If you need multiple terms or you use operators like `>`  or `>` single or double quotes are mandatory.
 
 When using `--subquery`, the main query first identifies relevant folders; the subquery is then applied to the files contained within those folders. You can also use `--subquery-having` to filter these results further.
 
 **Example:** Search for folders named "Project" and find documents within them modified in the last week.
 
 ```bash
-bagheerasearch Project –subquery MODIFIED LAST WEEK
+bagheerasearch Project –subquery "MODIFIED LAST WEEK"
 ```
 
 ---
@@ -289,7 +289,7 @@ bagheerasearch --type image MODIFIED TODAY
 # Landscape i not tagged as "Work".
 bagheerasearch --type image --having "width > height AND NOT tags:Work"
 
-# Find high-rated files from last year.
+# Find high-rated files one year ago.
 bagheerasearch "rating >= 9 AND MODIFIED 1 YEAR AGO"
 
 # Complex multi-criteria search.
@@ -311,8 +311,9 @@ bagheerasearch tags=Science --having "NOT tags=Fiction"
 
 ### Missing Metadata
 
-Ensure **Baloo** is enabled and has finished indexing (`balooctl6 status`). Bagheera reads the index located at `~/.local/share/baloo/index`.
+Ensure **Baloo** is enabled and has finished indexing (`balooctl6 status`). Bagheera reads the Baloo database located at `~/.local/share/baloo/index`.
 
 ### Dependency Issues
 
 Bagheera requires the compiled C++ wrapper `libbaloo_wrapper.so`. If the tool fails to start, ensure you have the `KF6Baloo` and `Qt6Core` development headers installed and reinstall the package to trigger the `setup.py` compilation.
+
