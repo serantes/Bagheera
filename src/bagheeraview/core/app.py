@@ -3558,7 +3558,9 @@ class MainWindow(QMainWindow):
                 # If items were added incrementally, count matches and we skip rebuild.
                 if full_reset or \
                    self.thumbnail_model.rowCount() != len(self.found_items_data):
-                    self._set_thumbnail_model()
+                    # This would clear the model and reset it, but we want to preserve existing items if possible.
+                    # self._set_thumbnail_model()
+                    self.thumbnail_model.clear()
                     self._path_to_model_index.clear()
                     # Fast append of all items
                     for item_data in self.found_items_data:
@@ -3578,7 +3580,9 @@ class MainWindow(QMainWindow):
                 self.proxy_model.sort(-1)  # Disable proxy sorting
 
                 if full_reset:
-                    self._set_thumbnail_model()
+                    # This would clear the model and reset it, but we want to preserve existing items if possible.
+                    # self._set_thumbnail_model()
+                    self.thumbnail_model.clear()
                     self._path_to_model_index.clear()
 
                 # 1. Decorate: Calculate group info once per item with local memoization
