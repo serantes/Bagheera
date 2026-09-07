@@ -4182,7 +4182,7 @@ class MainWindow(QMainWindow):
 
         if hidden_count > 0:
             self.filter_stats_lbl.setText(
-                UITexts.FILTER_STATS_HIDDEN.format(hidden_count))
+                UITexts.FILTER_STATS_HIDDEN.format(hidden_count, visible_count))
             self.filter_stats_lbl.show()
         else:
             self.filter_stats_lbl.hide()
