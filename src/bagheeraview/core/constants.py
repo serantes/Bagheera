@@ -86,9 +86,12 @@ def save_app_config():
     """Saves the main application configuration to the JSON file."""
     try:
         os.makedirs(CONFIG_DIR, exist_ok=True)
+        config_to_save = APP_CONFIG.copy()
+        # Default values for session properties must be reset.
+        # config_to_save["last_region_type"] = "Face"
+        # config_to_save["last_region_name"] = ""
         with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
-            # Use APP_CONFIG global
-            json.dump(APP_CONFIG, f, indent=4)
+            json.dump(config_to_save, f, indent=4)
     except Exception as e:
         print(f"CRITICAL: Failed to save configuration to {CONFIG_PATH}: {e}")
 
@@ -104,6 +107,7 @@ def load_app_config():
 
             # Default values for session properties must be restored.
             loaded_config["next_region_type"] = "Face"
+            loaded_config["last_region_name"] = ""
 
             return loaded_config
     except (json.JSONDecodeError, OSError):
@@ -166,6 +170,7 @@ SCANNER_SETTINGS_DEFAULTS = {
     "duplicate_blacklist": "",
     "regions_reset_to_face": False,
     "next_region_type": "Face",
+    "last_region_name": "",
     "similar_threshold": 65,  # Similarity percentage (50-100)
 }
 

@@ -990,12 +990,14 @@ class FaceCanvas(QLabel):
         if self.drawing:
             is_middle = (event.button() == Qt.MiddleButton or
                          getattr(self, 'drawing_button', None) == Qt.MiddleButton)
+            is_shift = bool(event.modifiers() & Qt.ShiftModifier)
             self.drawing = False
             self.drawing_button = None
             if self.current_rect.width() > 10 and self.current_rect.height() > 10:
                 region_type = self.viewer.viewer._next_region_type
                 # Check if Control key was held down or Middle mouse button was used to allow selecting type
                 if (event.modifiers() & Qt.ControlModifier) or is_middle:
+                    APP_CONFIG["last_region_name"] = ""
                     menu = QMenu(self)
                     action_face = menu.addAction(UITexts.TYPE_FACE)
                     action_pet = menu.addAction(UITexts.TYPE_PET)
@@ -1020,45 +1022,52 @@ class FaceCanvas(QLabel):
                         self.update()
                         return
 
-                history_list = []
-                if self.viewer.main_win:
-                    if region_type == "Pet":
-                        history_list = self.viewer.main_win.pet_names_history
-                    elif region_type == "Body":
-                        history_list = self.viewer.main_win.body_names_history
-                    elif region_type == "Object":
-                        history_list = self.viewer.main_win.object_names_history
-                    elif region_type == "Landmark":
-                        history_list = self.viewer.main_win.landmark_names_history
-                    else:
-                        history_list = self.viewer.main_win.face_names_history
+                last_name = APP_CONFIG.get("last_region_name", "")
+                if is_shift and last_name:
+                    full_tag = last_name
+                    ok = True
+                else:
+                    history_list = []
+                    if self.viewer.main_win:
+                        if region_type == "Pet":
+                            history_list = self.viewer.main_win.pet_names_history
+                        elif region_type == "Body":
+                            history_list = self.viewer.main_win.body_names_history
+                        elif region_type == "Object":
+                            history_list = self.viewer.main_win.object_names_history
+                        elif region_type == "Landmark":
+                            history_list = self.viewer.main_win.landmark_names_history
+                        else:
+                            history_list = self.viewer.main_win.face_names_history
 
-                history = history_list if self.viewer.main_win else []
+                    history = history_list if self.viewer.main_win else []
 
-                setting_key = f"{region_type.lower()}_use_last_name"
-                suggested = history[0] if history and APP_CONFIG.get(
-                    setting_key, False) else ""
+                    setting_key = f"{region_type.lower()}_use_last_name"
+                    suggested = history[0] if history and APP_CONFIG.get(
+                        setting_key, False) else ""
 
-                full_tag, updated_history, ok = FaceNameDialog.get_name(
-                    self.viewer, history, current_name=suggested,
-                    main_win=self.viewer.main_win, region_type=region_type)
+                    full_tag, updated_history, ok = FaceNameDialog.get_name(
+                        self.viewer, history, current_name=suggested,
+                        main_win=self.viewer.main_win, region_type=region_type)
+
+                    if ok and full_tag:
+                        APP_CONFIG["last_region_name"] = full_tag
+                        if self.viewer.main_win:
+                            if region_type == "Pet":
+                                self.viewer.main_win.pet_names_history = updated_history
+                            elif region_type == "Body":
+                                self.viewer.main_win.body_names_history = updated_history
+                            elif region_type == "Object":
+                                self.viewer.main_win.object_names_history = updated_history
+                            elif region_type == "Landmark":
+                                self.viewer.main_win.landmark_names_history = \
+                                    updated_history
+                            else:
+                                self.viewer.main_win.face_names_history = updated_history
 
                 if ok and full_tag:
                     if not self.controller.show_faces:
                         self.viewer.viewer.toggle_faces()
-
-                    if self.viewer.main_win:
-                        if region_type == "Pet":
-                            self.viewer.main_win.pet_names_history = updated_history
-                        elif region_type == "Body":
-                            self.viewer.main_win.body_names_history = updated_history
-                        elif region_type == "Object":
-                            self.viewer.main_win.object_names_history = updated_history
-                        elif region_type == "Landmark":
-                            self.viewer.main_win.landmark_names_history = \
-                                updated_history
-                        else:
-                            self.viewer.main_win.face_names_history = updated_history
 
                     center_x, center_y, norm_w, norm_h = self.map_to_source(
                         self.current_rect)
@@ -3151,6 +3160,7 @@ class ImageViewer(QWidget):
         if self._next_region_type != region_type:
             self._next_region_type = region_type
             APP_CONFIG["next_region_type"] = region_type
+            APP_CONFIG["last_region_name"] = ""
             self.update_status_bar()
         if not self.controller.show_faces:
             self.toggle_faces()
