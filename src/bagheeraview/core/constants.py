@@ -124,7 +124,8 @@ ICON_THEME_VIEWER = "bagheeraview"
 ICON_THEME_VIEWER_FALLBACK = "image"
 
 # --- FILE HANDLING ---
-IMAGE_EXTENSIONS = {'.bmp', '.gif', '.jpeg', '.jpg', '.nef', '.png', '.tiff', '.webp'}
+IMAGE_EXTENSIONS = {'.bmp', '.dds', '.gif', '.heic', '.ico', '.icns', '.j2k', '.jp2', '.jpeg', '.jpg', '.nef', '.nrw', '.pbm',
+                    '.pgm', '.png', '.ppm', '.tga', '.tiff', '.wbmp', '.webp', '.xbm', '.xpm'}
 IMAGE_MIME_TYPES = "Image files (*" + ' *'.join(IMAGE_EXTENSIONS) + ")"
 
 # Path to KDE's screen configuration file. Used for more accurate screen
