@@ -2055,6 +2055,8 @@ class ImageViewer(QWidget):
         Args:
             index (int): The index of the image to select in the filmstrip.
         """
+        if not self.filmstrip:
+            return
         if self.filmstrip.count() == 0:
             return
         if 0 <= index < self.filmstrip.count():
@@ -2273,7 +2275,7 @@ class ImageViewer(QWidget):
             self.update_view(resize_win=False)
 
         # Defer sync to ensure layout and scroll area are ready, fixing navigation sync
-        if pane == self.active_pane:
+        if pane == self.active_pane and pane.controller:
             QTimer.singleShot(
                 0, lambda: self.sync_filmstrip_selection(pane.controller.index))
 
