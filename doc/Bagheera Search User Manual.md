@@ -45,7 +45,7 @@ Combine multiple criteria using uppercase logical operators:
 - `NOT`: Inverts the following condition (only available within `having` options).
 - `(...)`: Use parentheses to group expressions and define the order of evaluation.
 
-**Example:** `bagheerasearch type=images AND "modified>2025-01-01" --having "(vacaciones OR summer) AND NOT (work OR trabajo)"`
+**Example:** `bagheerasearch type=images AND "modified>=2025-01-01" AND (tags:vacaciones OR tags:summer) --having "NOT (tags:work OR tags:trabajo)"`
 
 ### Property Filters
 
@@ -244,7 +244,7 @@ The following properties are undocumented but available in the source code. They
 
 ## 8. Having
 
-The `--having` option allows you to filter the results returned by **Baloo**. It supports the standard **Baloo** syntax plus the `NOT` operator. If you need multiple terms or you use operators like `>`  or `>` single or double quotes are mandatory.
+The `--having` option allows you to filter the results returned by **Baloo**. It supports the standard **Baloo** syntax plus the `NOT` operator. If you need multiple terms or you use operators like `>` or `<` single or double quotes are mandatory.
 
 Additionally, you can use:
 
@@ -258,22 +258,22 @@ Additionally, you can use:
 
 - **Case Sensitivity**: All text comparisons are case-insensitive unless `==` is used.
 - **Empty Values**: You can check for the presence or absence of values using empty quotes. For example, `tags!=""` matches any file with at least one tag, while `tags=""` matches files with no tags.
-- **Tag Levels**: Comparisons are performed against the full tag path and each individual level. A file tagged `Person/Maria Callas` matches `Maria`, `Callas`, `Person`, and the full string.
+- **Tag Levels**: Comparisons are performed against the full tag path and each individual level. A file tagged `Person/María Callas` matches `Maria`, `María`, `Callas`, `Person`, and the full string.
 - **Character Limit**: Unlike **Baloo**, the 3-character minimum limit for string values is not enforced within `having` options.
-- **Unicode characters**: If the query contains Unicode characters, double quotes are required. For example, if your tag is 富士山, you must write --having 'tags="富士山"' or the query will not return any results.
+- **Unicode characters**: If the query contains Unicode characters, double quotes are required. For example, if your tag is `María` or `マリア`, you must write --having 'tags="マリア" tags="María"' or the query will not return any results.
 
 ---
 
 ## 9. Subqueries
 
-**Bagheera** supports a secondary search within the folders returned by a main query. This is particularly useful for deep searches. If you need multiple terms or you use operators like `>`  or `>` single or double quotes are mandatory.
+**Bagheera** supports a secondary search within the folders returned by a main query. This is particularly useful for deep searches. If you need multiple terms or you use operators like `>` or `<` single or double quotes are mandatory.
 
 When using `--subquery`, the main query first identifies relevant folders; the subquery is then applied to the files contained within those folders. You can also use `--subquery-having` to filter these results further.
 
 **Example:** Search for folders named "Project" and find documents within them modified in the last week.
 
 ```bash
-bagheerasearch Project –subquery "MODIFIED LAST WEEK"
+bagheerasearch Project –-subquery "MODIFIED LAST WEEK"
 ```
 
 ---
@@ -311,7 +311,7 @@ bagheerasearch tags=Science --having "NOT tags=Fiction"
 
 ### Missing Metadata
 
-Ensure **Baloo** is enabled and has finished indexing (`balooctl6 status`). Bagheera reads the Baloo database located at `~/.local/share/baloo/index`.
+Ensure **Baloo** is enabled and has finished indexing (`balooctl status` or `balooctl6 status`). Bagheera reads the Baloo database located at `~/.local/share/baloo/index`.
 
 ### Dependency Issues
 
