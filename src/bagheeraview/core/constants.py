@@ -231,7 +231,8 @@ HAVE_FACE_RECOGNITION = False
 if importlib.util.find_spec("face_recognition") is not None:
     try:
         import face_recognition
-        HAVE_FACE_RECOGNITION = True
+        if hasattr(face_recognition, 'face_locations'):
+            HAVE_FACE_RECOGNITION = True
     except Exception:
         pass
 
