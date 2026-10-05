@@ -244,7 +244,7 @@ The following properties are undocumented but available in the source code. They
 
 ## 8. Having
 
-The `--having` option allows you to filter the results returned by **Baloo**. It supports the standard **Baloo** syntax plus the `NOT` operator. If you need multiple terms or you use operators like `>` or `<` single or double quotes are mandatory.
+The `--having` option allows you to filter the results returned by **Baloo**. It supports the standard **Baloo** syntax plus the `NOT` operator. If you need multiple terms or you use operators like `>`, `>=`, `<`  or `<=` single or double quotes are mandatory.
 
 Additionally, you can use:
 
@@ -266,7 +266,7 @@ Additionally, you can use:
 
 ## 9. Subqueries
 
-**Bagheera** supports a secondary search within the folders returned by a main query. This is particularly useful for deep searches. If you need multiple terms or you use operators like `>` or `<` single or double quotes are mandatory.
+**Bagheera** supports a secondary search within the folders returned by a main query. This is particularly useful for deep searches. If you need multiple terms or you use operators like `>`, `>=`, `<=` or `<=` single or double quotes are mandatory.
 
 When using `--subquery`, the main query first identifies relevant folders; the subquery is then applied to the files contained within those folders. You can also use `--subquery-having` to filter these results further.
 
