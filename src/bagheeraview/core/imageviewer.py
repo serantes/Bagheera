@@ -39,6 +39,7 @@ from .imagecontroller import ImageController
 from .widgets import FaceNameInputWidget
 from .utils import PowerManager
 from .propertiesdialog import PropertiesDialog
+from .personrecognition import PersonRecognitionDB, extract_face_encoding
 
 
 class HighlightWidget(QWidget):
@@ -407,10 +408,10 @@ class FaceCanvas(QLabel):
     A custom QLabel that draws face regions on top of the image.
     Handles mouse interaction for creating and managing face regions.
     """
-    def __init__(self, viewer):
+    def __init__(self, image_panel):
         super().__init__()
-        self.viewer = viewer
-        self.controller = viewer.controller
+        self.image_panel = image_panel
+        self.controller = image_panel.controller
         self.setMouseTracking(True)
         self.drawing = False
         self.drawing_button = None
@@ -524,7 +525,7 @@ class FaceCanvas(QLabel):
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        if not self.controller.show_faces and not self.viewer.crop_mode and not self.drawing:
+        if not self.controller.show_faces and not self.image_panel.crop_mode and not self.drawing:
             return
 
         painter = QPainter(self)
@@ -591,13 +592,13 @@ class FaceCanvas(QLabel):
                     painter.drawText(bg_rect, Qt.AlignCenter, display_name)
 
         # Draw rubber band for new face
-        if self.drawing and not self.viewer.crop_mode:
+        if self.drawing and not self.image_panel.crop_mode:
             painter.setPen(QPen(QColor(0, 120, 255), 2, Qt.DashLine))
             painter.setBrush(Qt.NoBrush)
             painter.drawRect(self.current_rect)
 
         # Draw crop rectangle if in crop mode
-        if self.viewer.crop_mode and not self.crop_rect.isNull():
+        if self.image_panel.crop_mode and not self.crop_rect.isNull():
             # Draw dimmed overlay outside crop rect
             painter.setBrush(QColor(0, 0, 0, 160))
             painter.setPen(Qt.NoPen)
@@ -748,9 +749,9 @@ class FaceCanvas(QLabel):
 
     def mousePressEvent(self, event):
         """Handles mouse press for drawing new faces or panning."""
-        if hasattr(self.viewer, 'reset_inactivity_timer'):
-            self.viewer.reset_inactivity_timer()
-        if self.viewer.crop_mode and event.button() == Qt.LeftButton:
+        if hasattr(self.image_panel, 'reset_inactivity_timer'):
+            self.image_panel.reset_inactivity_timer()
+        if self.image_panel.crop_mode and event.button() == Qt.LeftButton:
             handle = self._hit_test_crop(event.position().toPoint())
             if handle:
                 self.crop_handle = handle
@@ -768,8 +769,8 @@ class FaceCanvas(QLabel):
             return
 
         # Activate the pane on click
-        if hasattr(self.viewer, 'activate'):
-            self.viewer.activate()
+        if hasattr(self.image_panel, 'activate'):
+            self.image_panel.activate()
 
         if self.controller.show_faces and event.button() == Qt.LeftButton:
             self.start_pos = event.position().toPoint()
@@ -778,7 +779,7 @@ class FaceCanvas(QLabel):
             idx, handle = self._hit_test(self.start_pos)
             if idx != -1:
                 if handle == 'NAME':
-                    self.viewer.rename_face(self.controller.faces[idx])
+                    self.image_panel.rename_face(self.controller.faces[idx])
                     event.accept()
                     return
 
@@ -812,9 +813,9 @@ class FaceCanvas(QLabel):
 
     def mouseMoveEvent(self, event):
         """Handles mouse move for drawing new faces or panning."""
-        if hasattr(self.viewer, 'reset_inactivity_timer'):
-            self.viewer.reset_inactivity_timer()
-        if self.viewer.crop_mode:
+        if hasattr(self.image_panel, 'reset_inactivity_timer'):
+            self.image_panel.reset_inactivity_timer()
+        if self.image_panel.crop_mode:
             curr_pos = event.position().toPoint()
 
             if self.crop_handle:
@@ -965,8 +966,8 @@ class FaceCanvas(QLabel):
             event.accept()
         elif self.dragging:
             delta = event.globalPosition().toPoint() - self.drag_start_pos
-            h_bar = self.viewer.scroll_area.horizontalScrollBar()
-            v_bar = self.viewer.scroll_area.verticalScrollBar()
+            h_bar = self.image_panel.scroll_area.horizontalScrollBar()
+            v_bar = self.image_panel.scroll_area.verticalScrollBar()
             h_bar.setValue(self.drag_start_scroll_x - delta.x())
             v_bar.setValue(self.drag_start_scroll_y - delta.y())
             event.accept()
@@ -975,7 +976,7 @@ class FaceCanvas(QLabel):
 
     def mouseReleaseEvent(self, event):
         """Handles mouse release for drawing new faces or panning."""
-        if self.viewer.crop_mode:
+        if self.image_panel.crop_mode:
             if self.crop_handle:
                 self.crop_handle = None
                 self.update()
@@ -994,7 +995,7 @@ class FaceCanvas(QLabel):
             self.drawing = False
             self.drawing_button = None
             if self.current_rect.width() > 10 and self.current_rect.height() > 10:
-                region_type = self.viewer.viewer._next_region_type
+                region_type = self.image_panel.viewer._next_region_type
                 # Check if Control key was held down or Middle mouse button was used to allow selecting type
                 if (event.modifiers() & Qt.ControlModifier) or is_middle:
                     APP_CONFIG["last_region_name"] = ""
@@ -1028,46 +1029,46 @@ class FaceCanvas(QLabel):
                     ok = True
                 else:
                     history_list = []
-                    if self.viewer.main_win:
+                    if self.image_panel.main_win:
                         if region_type == "Pet":
-                            history_list = self.viewer.main_win.pet_names_history
+                            history_list = self.image_panel.main_win.pet_names_history
                         elif region_type == "Body":
-                            history_list = self.viewer.main_win.body_names_history
+                            history_list = self.image_panel.main_win.body_names_history
                         elif region_type == "Object":
-                            history_list = self.viewer.main_win.object_names_history
+                            history_list = self.image_panel.main_win.object_names_history
                         elif region_type == "Landmark":
-                            history_list = self.viewer.main_win.landmark_names_history
+                            history_list = self.image_panel.main_win.landmark_names_history
                         else:
-                            history_list = self.viewer.main_win.face_names_history
+                            history_list = self.image_panel.main_win.face_names_history
 
-                    history = history_list if self.viewer.main_win else []
+                    history = history_list if self.image_panel.main_win else []
 
                     setting_key = f"{region_type.lower()}_use_last_name"
                     suggested = history[0] if history and APP_CONFIG.get(
                         setting_key, False) else ""
 
                     full_tag, updated_history, ok = FaceNameDialog.get_name(
-                        self.viewer, history, current_name=suggested,
-                        main_win=self.viewer.main_win, region_type=region_type)
+                        self.image_panel, history, current_name=suggested,
+                        main_win=self.image_panel.main_win, region_type=region_type)
 
                     if ok and full_tag:
                         APP_CONFIG["last_region_name"] = full_tag
-                        if self.viewer.main_win:
+                        if self.image_panel.main_win:
                             if region_type == "Pet":
-                                self.viewer.main_win.pet_names_history = updated_history
+                                self.image_panel.main_win.pet_names_history = updated_history
                             elif region_type == "Body":
-                                self.viewer.main_win.body_names_history = updated_history
+                                self.image_panel.main_win.body_names_history = updated_history
                             elif region_type == "Object":
-                                self.viewer.main_win.object_names_history = updated_history
+                                self.image_panel.main_win.object_names_history = updated_history
                             elif region_type == "Landmark":
-                                self.viewer.main_win.landmark_names_history = \
+                                self.image_panel.main_win.landmark_names_history = \
                                     updated_history
                             else:
-                                self.viewer.main_win.face_names_history = updated_history
+                                self.image_panel.main_win.face_names_history = updated_history
 
                 if ok and full_tag:
                     if not self.controller.show_faces:
-                        self.viewer.viewer.toggle_faces()
+                        self.image_panel.viewer.toggle_faces()
 
                     center_x, center_y, norm_w, norm_h = self.map_to_source(
                         self.current_rect)
@@ -1077,12 +1078,24 @@ class FaceCanvas(QLabel):
                         region_type=region_type)
 
                     if region_type != "Face" and APP_CONFIG.get("regions_reset_to_face", False):
-                        self.viewer.viewer.set_next_region_type("Face")
+                        self.image_panel.viewer.set_next_region_type("Face")
                     else:
-                        self.viewer.viewer.set_next_region_type(region_type)
+                        self.image_panel.viewer.set_next_region_type(region_type)
 
                     self.controller.toggle_tag(full_tag, True)
+                    if region_type == "Face":
+                        new_face_dict = {
+                            'name': full_tag,
+                            'x': center_x,
+                            'y': center_y,
+                            'w': norm_w,
+                            'h': norm_h,
+                            'type': 'Face'
+                        }
+                        # self.viewer._update_person_recognition_for_face(new_face_dict, full_tag)
+                        self.image_panel.viewer._update_person_recognition_for_face(new_face_dict, full_tag)
                     self.update()  # Repaint to show the new face with its name
+
             self.current_rect = QRect()
             self.update()
             event.accept()
@@ -1104,15 +1117,15 @@ class FaceCanvas(QLabel):
         """Zooms to a face on double-click."""
         if self.controller.show_faces and event.button() == Qt.LeftButton:
             # The event position is already local to the canvas
-            clicked_face = self.viewer._get_clicked_face(event.position().toPoint())
+            clicked_face = self.image_panel.viewer._get_clicked_face(event.position().toPoint())
             if clicked_face:
-                self.viewer.zoom_manager.zoom_to_rect(clicked_face)
+                self.image_panel.viewer.zoom_manager.zoom_to_rect(clicked_face)
                 event.accept()
                 return
 
         # Double click to toggle fullscreen if handled by viewer/pane
-        if hasattr(self.viewer, 'toggle_fullscreen'):
-            self.viewer.toggle_fullscreen()
+        if hasattr(self.image_panel.viewer, 'toggle_fullscreen'):
+            self.image_panel.viewer.toggle_fullscreen()
         # If no face was double-clicked, pass the event on
         super().mouseDoubleClickEvent(event)
 
@@ -2911,10 +2924,41 @@ class ImageViewer(QWidget):
             try:
                 self.controller.save_faces()
                 self.controller.toggle_tag(new_full_tag, True)
+                if region_type == "Face":
+                    self._update_person_recognition_for_face(face_to_rename, new_full_tag)
             except Exception as e:
                 QMessageBox.critical(self, UITexts.ERROR, str(e))
             if self.canvas:
                 self.canvas.update()
+
+    def _update_person_recognition_for_face(self, face_region, new_tag):
+        """
+        Updates or removes person recognition DB entry for a face region based on its tag.
+        - If new_tag == unrecognized_person_tag: removes matching encoding from DB if present.
+        - Otherwise: adds/updates the face encoding + new_tag in DB.
+        """
+        if not APP_CONFIG.get("person_recognition_enabled", False):
+            return
+
+        region_type = face_region.get('type', 'Face') if isinstance(face_region, dict) else 'Face'
+        if region_type != 'Face':
+            return
+
+        current_path = self.controller.get_current_path()
+        if not current_path:
+            return
+
+        face_encoding = extract_face_encoding(current_path, face_region)
+        if not face_encoding:
+            return
+
+        rec_db = PersonRecognitionDB.get_instance()
+        unrecognized_tag = APP_CONFIG.get("unrecognized_person_tag", "Persona desconocida")
+
+        if new_tag == unrecognized_tag:
+            rec_db.remove_face_by_encoding(face_encoding)
+        else:
+            rec_db.add_face(None, face_encoding, new_tag)
 
     def toggle_main_window_visibility(self):
         """Toggles the visibility of the main window."""
@@ -3191,7 +3235,7 @@ class ImageViewer(QWidget):
         self._show_viewer_context_menu(event)
 
     def run_face_detection(self):
-        """Runs face detection on the current image."""
+        """Runs face detection on the current image with optional person recognition."""
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             new_faces = self.controller.detect_faces()
@@ -3201,8 +3245,16 @@ class ImageViewer(QWidget):
         if not new_faces:
             return
 
+        recognition_enabled = APP_CONFIG.get("person_recognition_enabled", False)
+        unrecognized_tag = APP_CONFIG.get("unrecognized_person_tag", "Unrecognized")
+        unrecognized_action = APP_CONFIG.get("unrecognized_person_action", "ask")
+
+        rec_db = PersonRecognitionDB.get_instance() if recognition_enabled else None
+
+        current_path = self.controller.get_current_path()
         IOU_THRESHOLD = 0.7  # If IoU is > 70%, consider it the same face
         added_count = 0
+
         for new_face in new_faces:
             is_duplicate = False
             for existing_face in self.controller.faces:
@@ -3228,23 +3280,56 @@ class ImageViewer(QWidget):
                                                int(new_face.get('y', 0) * h), 50, 50)
             QApplication.processEvents()
 
-            history = self.main_win.face_names_history if self.main_win else []
-            suggested = history[0] if history and APP_CONFIG.get(
-                "face_use_last_name", False) else ""
-            full_tag, updated_history, ok = FaceNameDialog.get_name(
-                self, history, current_name=suggested, main_win=self.main_win)
+            face_encoding = None
+            if current_path:
+                face_encoding = extract_face_encoding(current_path, new_face)
 
-            if ok and full_tag:
-                new_face['name'] = full_tag
-                self.controller.toggle_tag(full_tag, True)
-                if self.main_win:
-                    self.main_win.face_names_history = updated_history
+            matched_tag = None
+            if recognition_enabled and face_encoding:
+                matched_tag, _ = rec_db.identify_person(face_encoding)
+
+            if recognition_enabled and matched_tag:
+                # Identified automatically
+                new_face['name'] = matched_tag
+                self.controller.toggle_tag(matched_tag, True)
+                if self.main_win and hasattr(self.main_win, 'face_names_history'):
+                    if matched_tag not in self.main_win.face_names_history:
+                        self.main_win.face_names_history.insert(0, matched_tag)
                 added_count += 1
+
+            elif recognition_enabled and not matched_tag and unrecognized_action == "assign_tag":
+                # Unidentified and configured to assign default unrecognized tag
+                assigned_tag = unrecognized_tag
+                new_face['name'] = assigned_tag
+                self.controller.toggle_tag(assigned_tag, True)
+                if face_encoding:
+                    rec_db.remove_face_by_encoding(face_encoding)
+                if self.main_win and hasattr(self.main_win, 'face_names_history'):
+                    if assigned_tag not in self.main_win.face_names_history:
+                        self.main_win.face_names_history.insert(0, assigned_tag)
+                added_count += 1
+
             else:
-                # If user cancels, remove the face that was temporarily added
-                self.controller.faces.pop()
-                if self.canvas:
-                    self.canvas.update()
+                # Ask user for person name (recognition disabled or action is 'ask')
+                history = self.main_win.face_names_history if self.main_win else []
+                suggested = history[0] if history and APP_CONFIG.get(
+                    "face_use_last_name", False) else ""
+                full_tag, updated_history, ok = FaceNameDialog.get_name(
+                    self, history, current_name=suggested, main_win=self.main_win)
+
+                if ok and full_tag:
+                    new_face['name'] = full_tag
+                    self.controller.toggle_tag(full_tag, True)
+                    if self.main_win:
+                        self.main_win.face_names_history = updated_history
+                    self._update_person_recognition_for_face(new_face, full_tag)
+                    added_count += 1
+
+                else:
+                    # If user cancels, remove the face that was temporarily added
+                    self.controller.faces.pop()
+                    if self.canvas:
+                        self.canvas.update()
 
         if added_count > 0:
             try:

@@ -687,9 +687,36 @@ class SettingsDialog(QDialog):
         self.face_history_spin.setToolTip(UITexts.SETTINGS_FACE_HISTORY_TOOLTIP)
         face_sub_layout.addLayout(face_history_layout)
 
+        self.person_recognition_enable_check = QCheckBox(
+            UITexts.SETTINGS_PERSON_RECOGNITION_ENABLE_LABEL)
+        face_sub_layout.addWidget(self.person_recognition_enable_check)
+
+        unrecognized_tag_layout = QHBoxLayout()
+        unrecognized_tag_label = QLabel(UITexts.SETTINGS_UNRECOGNIZED_PERSON_TAG_LABEL)
+        self.unrecognized_person_tag_edit = QLineEdit()
+        self.unrecognized_person_tag_edit.setPlaceholderText(
+            UITexts.SETTINGS_PLACEHOLDER_TAGS)
+        self.unrecognized_person_tag_edit.setClearButtonEnabled(True)
+        unrecognized_tag_layout.addWidget(unrecognized_tag_label)
+        unrecognized_tag_layout.addWidget(self.unrecognized_person_tag_edit)
+        face_sub_layout.addLayout(unrecognized_tag_layout)
+
+        unrecognized_action_layout = QHBoxLayout()
+        unrecognized_action_label = QLabel(
+            UITexts.SETTINGS_UNRECOGNIZED_PERSON_ACTION_LABEL)
+        self.unrecognized_person_action_combo = QComboBox()
+        self.unrecognized_person_action_combo.addItem(
+            UITexts.SETTINGS_UNRECOGNIZED_ACTION_ASK, "ask")
+        self.unrecognized_person_action_combo.addItem(
+            UITexts.SETTINGS_UNRECOGNIZED_ACTION_ASSIGN, "assign_tag")
+        unrecognized_action_layout.addWidget(unrecognized_action_label)
+        unrecognized_action_layout.addWidget(self.unrecognized_person_action_combo, 1)
+        face_sub_layout.addLayout(unrecognized_action_layout)
+
         self.face_use_last_name_check = QCheckBox(UITexts.SETTINGS_USE_LAST_NAME_LABEL)
         self.face_use_last_name_check.setToolTip(UITexts.SETTINGS_USE_LAST_NAME_TOOLTIP)
         face_sub_layout.addWidget(self.face_use_last_name_check)
+
         face_sub_layout.addStretch()
         self.regions_sub_tabs.addTab(face_sub_tab, UITexts.TYPE_FACE)
 
@@ -1020,7 +1047,17 @@ class SettingsDialog(QDialog):
             "landmark_menu_max_items", FACES_MENU_MAX_ITEMS_DEFAULT)
 
         face_use_last_name = APP_CONFIG.get("face_use_last_name", False)
+        person_recognition_enabled = APP_CONFIG.get(
+            "person_recognition_enabled",
+            SCANNER_SETTINGS_DEFAULTS["person_recognition_enabled"])
+        unrecognized_person_tag = APP_CONFIG.get(
+            "unrecognized_person_tag",
+            SCANNER_SETTINGS_DEFAULTS["unrecognized_person_tag"])
+        unrecognized_person_action = APP_CONFIG.get(
+            "unrecognized_person_action",
+            SCANNER_SETTINGS_DEFAULTS["unrecognized_person_action"])
         pet_use_last_name = APP_CONFIG.get("pet_use_last_name", False)
+
         body_use_last_name = APP_CONFIG.get("body_use_last_name", False)
         object_use_last_name = APP_CONFIG.get("object_use_last_name", False)
         landmark_use_last_name = APP_CONFIG.get("landmark_use_last_name", False)
@@ -1152,6 +1189,12 @@ class SettingsDialog(QDialog):
         self.landmark_history_spin.setValue(landmark_history_count)
 
         self.face_use_last_name_check.setChecked(face_use_last_name)
+        self.person_recognition_enable_check.setChecked(person_recognition_enabled)
+        self.unrecognized_person_tag_edit.setText(unrecognized_person_tag)
+        action_idx = self.unrecognized_person_action_combo.findData(unrecognized_person_action)
+        if action_idx != -1:
+            self.unrecognized_person_action_combo.setCurrentIndex(action_idx)
+
         self.pet_use_last_name_check.setChecked(pet_use_last_name)
         self.body_use_last_name_check.setChecked(body_use_last_name)
         self.object_use_last_name_check.setChecked(object_use_last_name)
@@ -1420,6 +1463,13 @@ class SettingsDialog(QDialog):
 
         APP_CONFIG["thumbnails_refresh_interval"] = self.thumbs_refresh_spin.value()
         APP_CONFIG["face_use_last_name"] = self.face_use_last_name_check.isChecked()
+        APP_CONFIG["person_recognition_enabled"] = \
+            self.person_recognition_enable_check.isChecked()
+        APP_CONFIG["unrecognized_person_tag"] = \
+            self.unrecognized_person_tag_edit.text()
+        APP_CONFIG["unrecognized_person_action"] = \
+            self.unrecognized_person_action_combo.currentData()
+
         APP_CONFIG["pet_use_last_name"] = self.pet_use_last_name_check.isChecked()
         APP_CONFIG["body_use_last_name"] = self.body_use_last_name_check.isChecked()
         APP_CONFIG["object_use_last_name"] = self.object_use_last_name_check.isChecked()

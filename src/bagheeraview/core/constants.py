@@ -73,6 +73,7 @@ LAYOUTS_DIR = os.path.join(APP_DATA_DIR, "layouts")  # Layouts saving directory
 FAVORITES_FILE = "favorites.json"
 FAVORITES_PATH = os.path.join(APP_DATA_DIR, FAVORITES_FILE)
 DUPLICATE_CACHE_PATH = os.path.join(APP_DATA_DIR, "duplicates")
+PERSON_RECOGNITION_PATH = os.path.join(APP_DATA_DIR, "person_recognition")
 DUPLICATE_HASH_DB_NAME = b"hashes"
 DUPLICATE_EXCEPTIONS_DB_NAME = b"exceptions"
 DUPLICATE_PENDING_DB_NAME = b"pending"
@@ -80,6 +81,7 @@ DUPLICATE_BKTREE_DB_NAME = b"bktree"
 DUPLICATE_HASH_TO_FILES_DB_NAME = b"hash_to_files"
 METADATA_DB_NAME = b"metadata"
 DIRECTORY_DB_NAME = b"directories"
+PERSON_RECOGNITION_DB_NAME = b"person_recognition"
 
 
 def save_app_config():
@@ -173,6 +175,9 @@ SCANNER_SETTINGS_DEFAULTS = {
     "next_region_type": "Face",
     "last_region_name": "",
     "similar_threshold": 65,  # Similarity percentage (50-100)
+    "person_recognition_enabled": False,
+    "unrecognized_person_tag": "Unrecognized",
+    "unrecognized_person_action": "ask",
 }
 
 # --- IMAGE VIEWER DEFAULTS ---
@@ -719,6 +724,12 @@ _UI_TEXTS = {
         "SETTINGS_USE_LAST_NAME_LABEL": "Use last name by default",
         "SETTINGS_USE_LAST_NAME_TOOLTIP": "Automatically fill the assignment window "
         "with the last used name.",
+        "SETTINGS_PERSON_RECOGNITION_ENABLE_LABEL": "Enable person recognition",
+        "SETTINGS_UNRECOGNIZED_PERSON_TAG_LABEL": "Unrecognized person tag:",
+        "SETTINGS_UNRECOGNIZED_PERSON_ACTION_LABEL": "Unrecognized person action:",
+        "SETTINGS_UNRECOGNIZED_ACTION_ASK": "Ask for name",
+        "SETTINGS_UNRECOGNIZED_ACTION_ASSIGN": "Assign unrecognized tag",
+
         "SETTINGS_REGIONS_RESET_TO_FACE_LABEL": "Reset to 'Face' after selection",
         "SETTINGS_REGIONS_RESET_TO_FACE_TOOLTIP": "Automatically switch back to 'Face' "
         "mode after adding a different region type (Pet, Body, etc.).",
@@ -1319,6 +1330,12 @@ _UI_TEXTS = {
         "SETTINGS_USE_LAST_NAME_LABEL": "Usar último nombre por defecto",
         "SETTINGS_USE_LAST_NAME_TOOLTIP": "Rellena automáticamente la ventana de "
         "asignación con el último nombre utilizado.",
+        "SETTINGS_PERSON_RECOGNITION_ENABLE_LABEL": "Activar reconocimiento de personas",
+        "SETTINGS_UNRECOGNIZED_PERSON_TAG_LABEL": "Tag persona no reconocida:",
+        "SETTINGS_UNRECOGNIZED_PERSON_ACTION_LABEL": "Acción persona no reconocida:",
+        "SETTINGS_UNRECOGNIZED_ACTION_ASK": "Preguntar",
+        "SETTINGS_UNRECOGNIZED_ACTION_ASSIGN": "Asignar tag persona no reconocida",
+
         "SETTINGS_FACE_HISTORY_COUNT_LABEL": "Máximo historial de caras:",
         "SETTINGS_THUMBS_REFRESH_LABEL": "Intervalo refresco miniaturas (ms):",
         "SETTINGS_THUMBS_BG_COLOR_LABEL": "Color de fondo de miniaturas:",
@@ -1916,6 +1933,12 @@ _UI_TEXTS = {
         "SETTINGS_USE_LAST_NAME_LABEL": "Usar o último nome por defecto",
         "SETTINGS_USE_LAST_NAME_TOOLTIP": "Rechea automáticamente a ventá de "
         "asignación có último nome utilizado.",
+        "SETTINGS_PERSON_RECOGNITION_ENABLE_LABEL": "Activar recoñecemento de persoas",
+        "SETTINGS_UNRECOGNIZED_PERSON_TAG_LABEL": "Etiqueta de persoa non recoñecida:",
+        "SETTINGS_UNRECOGNIZED_PERSON_ACTION_LABEL": "Acción persoa non recoñecida:",
+        "SETTINGS_UNRECOGNIZED_ACTION_ASK": "Preguntar",
+        "SETTINGS_UNRECOGNIZED_ACTION_ASSIGN": "Asignar etiqueta de persoa non recoñecida",
+
         "SETTINGS_FACE_HISTORY_COUNT_LABEL": "Máximo historial de caras:",
         "SETTINGS_THUMBS_REFRESH_LABEL": "Intervalo refresco miniaturas (ms):",
         "SETTINGS_THUMBS_BG_COLOR_LABEL": "Cor de fondo de miniaturas:",
