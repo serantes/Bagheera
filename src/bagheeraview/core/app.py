@@ -88,6 +88,51 @@ from .metadatamanager import load_common_metadata
 from .filesystemwatcher import FileSystemWatcher
 
 
+def _parse_resolution_value(value):
+    """Parse a '<width>x<height>' string into a (width, height) tuple.
+
+    Raises:
+        ValueError: If the value is not a positive integer pair.
+    """
+    parts = value.strip().upper().split("X")
+    if len(parts) != 2:
+        raise ValueError(f"expected <width>x<height>, got {value!r}")
+    try:
+        width, height = int(parts[0]), int(parts[1])
+    except ValueError:
+        raise ValueError(f"dimensions must be integers, got {value!r}")
+    if width <= 0 or height <= 0:
+        raise ValueError(f"dimensions must be positive, got {width}x{height}")
+    return width, height
+
+
+def _extract_resolution(args):
+    """Extract and validate the '--resolution <value>' flag from CLI args.
+
+    Returns (remaining_args, resolution); resolution is (width, height) or
+    None when the flag is absent. Exits with a clear error if malformed.
+    """
+    remaining, resolution = [], None
+    i = 0
+    while i < len(args):
+        if args[i] == "--resolution":
+            print(f"Setting resolution to {args[i + 1]}")
+            if i + 1 >= len(args):
+                print("Error: --resolution requires a value "
+                      "(e.g. --resolution 1920x1080)", file=sys.stderr)
+                sys.exit(2)
+            try:
+                resolution = _parse_resolution_value(args[i + 1])
+            except ValueError as exc:
+                print(f"Error: invalid --resolution: {exc}", file=sys.stderr)
+                sys.exit(2)
+            i += 2
+        else:
+            remaining.append(args[i])
+            i += 1
+    return remaining, resolution
+
+
 class ShortcutHelpDialog(QDialog):
     """A dialog to display, filter, and edit keyboard shortcuts."""
     def __init__(self, global_shortcuts, viewer_shortcuts, main_win):
@@ -1104,7 +1149,7 @@ class MainWindow(QMainWindow):
     scanners and individual image viewer windows.
     """
 
-    def __init__(self, cache, args, thread_pool_manager, duplicate_cache):
+    def __init__(self, cache, args, thread_pool_manager, duplicate_cache, resolution=None):
         """Initializes the MainWindow.
 
         Args:
@@ -1478,6 +1523,9 @@ class MainWindow(QMainWindow):
 
         # Initial configuration loading
         self.load_config()
+        # A CLI --resolution flag takes precedence over restored geometry.
+        if resolution is not None:
+            self.resize(resolution[0], resolution[1])
         self.load_full_history()
 
         # Initialize the shortcut controller (after config is loaded)
@@ -5917,7 +5965,8 @@ def main():
     thread_pool_manager = ThreadPoolManager()
     cache = ThumbnailCache()
     args = [a for a in sys.argv[1:] if a != "--x11"]
-    win = MainWindow(cache, args, thread_pool_manager, duplicate_cache)
+    args, resolution = _extract_resolution(args)
+    win = MainWindow(cache, args, thread_pool_manager, duplicate_cache, resolution=resolution)
     app.installEventFilter(win.shortcut_controller)
 
     sys.exit(app.exec())
