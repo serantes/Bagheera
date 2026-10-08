@@ -114,7 +114,7 @@ Tags are stored with a path-like structure (e.g., `Person/Julia`).
 
 ---
 
-## 6. Supportted types
+## 6. Supported types
 
 The following types, to use in `--type` option or `type` property, are supported:
 
@@ -130,9 +130,9 @@ The following types, to use in `--type` option or `type` property, are supported
 
 ---
 
-## 7. Supportted searchable properties
+## 7. Supported searchable properties
 
-Properties are grouped by file type for easier reference..
+Properties are grouped by file type for easier reference.
 
 ### All Files
 * filename
@@ -248,9 +248,9 @@ The `--having` option allows you to filter the results returned by **Baloo**. It
 
 Additionally, you can use:
 
-- `==` (case-sensitive equal, , behaviour is not the same as '==' in Baloo)
+- `==` (case-sensitive equal, behavior is not the same as '==' in Baloo)
 - `!=` (not equal)
-- `!:` (does not contains)
+- `!:` (does not contain)
 - Property-to-property comparison (e.g., `width > height`).
 - `created`: A **Bagheera-specific** property for file creation dates (Formatted as `yyyy-MM-dd`).
 
@@ -266,7 +266,7 @@ Additionally, you can use:
 
 ## 9. Subqueries
 
-**Bagheera** supports a secondary search within the folders returned by a main query. This is particularly useful for deep searches. If you need multiple terms or you use operators like `>`, `>=`, `<=` or `<=` single or double quotes are mandatory.
+**Bagheera** supports a secondary search within the folders returned by a main query. This is particularly useful for deep searches. If you need multiple terms or you use operators like `>`, `>=`, `<` or `<=` single or double quotes are mandatory.
 
 When using `--subquery`, the main query first identifies relevant folders; the subquery is then applied to the files contained within those folders. You can also use `--subquery-having` to filter these results further.
 
@@ -286,7 +286,7 @@ Here are some practical examples of how to use **Bagheera Search** effectively:
 # Images taken today.
 bagheerasearch --type image MODIFIED TODAY
 
-# Landscape i not tagged as "Work".
+# Landscape is not tagged as "Work".
 bagheerasearch --type image --having "width > height AND NOT tags:Work"
 
 # Find high-rated files one year ago.
@@ -298,10 +298,10 @@ bagheerasearch "(tags:cosplay OR tags:portrait) AND width < 1000 AND rating > 0"
 # Get files from folders named "KDE" in "~/Documents".
 bagheerasearch --directory '~/Documents' KDE --subquery
 
-# Get al presentations not tagged as "Obsolete" or "Revised" from folders named "KDE" in "~/Documents".
+# Get all presentations not tagged as "Obsolete" or "Revised" from folders named "KDE" in "~/Documents".
 bagheerasearch --directory '~/Documents' KDE --subquery 'Baloo OR Bagheera' --type Presentation --having 'NOT (tags=Obsolete OR tags=Revised)'
 
-# Get files tagget as "Science" ignoring "Science Fiction" tag.
+# Get files tagged as "Science" ignoring "Science Fiction" tag.
 bagheerasearch tags=Science --having "NOT tags=Fiction"
 ```
 
@@ -309,9 +309,9 @@ bagheerasearch tags=Science --having "NOT tags=Fiction"
 
 ## 11. Troubleshooting
 
-### Missing Metadata
+### Incorrect or missing results
 
-Ensure **Baloo** is enabled and has finished indexing (`balooctl status` or `balooctl6 status`). Bagheera reads the Baloo database located at `~/.local/share/baloo/index`.
+Ensure **Baloo** is enabled and has finished indexing, use `balooctl status` or `balooctl6 status` and check that `Indexer state` is `Idle`. Bagheera reads the Baloo database located at `~/.local/share/baloo/index`.
 
 ### Dependency Issues
 
