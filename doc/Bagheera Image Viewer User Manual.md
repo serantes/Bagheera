@@ -12,7 +12,7 @@ Welcome to the Bagheera Image Viewer! This application is designed to help you b
 * **Duplicate Detection**: Find and manage duplicate images using various methods.
 * **Customizable Layouts**: Save and restore your window and viewer arrangements.
 * **Image Viewer**: A dedicated viewer with navigation, zoom, slideshow, and image manipulation tools.
-* **Region Detection**: Automatically detect and tag faces and pets, but also you can manually add bodies, objects, and landmarks regions in your images.
+* **Region Detection**: Automatically detects and tags faces and pets. Users can also manually add custom regions (e.g., bodies, objects, landmarks) to enhance categorization.
 * **Keyboard Shortcuts**: Fully customizable shortcuts for efficient workflow.
 * **File System Watcher**: Automatically updates the view when files are added, modified, or deleted externally.
 
@@ -24,7 +24,7 @@ The main window of Bagheera Image Viewer consists of several key areas:
 
 Located at the top of the window, the search bar allows you to:
 
-* **Enter Search Queries**: Type keywords, tags (e.g., `tags=landscape`), or specific Bagueera queries.
+* **Enter Search Queries**: Type keywords, tags (e.g., `tags=landscape`), or specific Bagheera queries.
 * **Enter File Paths**: Directly type a directory path to scan, or a file path to open it in the viewer.
 * **Browse Button**: Opens a file dialog to select an image to scan.
 
@@ -33,7 +33,7 @@ Located at the top of the window, the search bar allows you to:
 The central area displays your images as thumbnails. This view is virtualized, meaning it can handle thousands of images without performance degradation.
 
 * **Selection**: Click on a thumbnail to select it. Use `Ctrl+Click` for multiple selections, and `Shift+Click` for range selection.
-* **Double-Click**: Double-clicking a thumbnail opens it in the dedicated Image Viewer.
+* **Double-Click**: Double-clicking a thumbnail opens it in the dedicated Image Viewer, optimizing the display for full-size viewing.
 * **Context Menu**: Right-clicking on a thumbnail or a group header brings up a context menu with various actions (see Section 5).
 
 ### 2.3. Status Bar
@@ -292,10 +292,10 @@ The Settings dialog (accessible via the main menu) allows you to customize vario
 
 Configure settings related to face, pet, body, object, and landmark detection.
 
-* **[Region Type] tags**: Default tags to apply for detected regions (e.g., `Person` for faces).
-* **[Region Type] Detection Engine**: Library used for detection (e.g., MediaPipe for faces).
-* **[Region Type] box color**: Color of the bounding box drawn around detected regions.
-* **Max [Region Type] history**: Maximum number of recently used names to remember for autocompletion.
+* **[Region Name] tags**: Default tags to apply for detected regions (e.g., `Person` for faces).
+* **[Region Name] Detection Engine**: Library used for detection (e.g., MediaPipe for faces).
+* **[Region Name] box color**: Color of the bounding box drawn around detected regions.
+* **Max [Region Name] history**: Maximum number of recently used names to remember for autocompletion.
 * **Use last name by default**: Automatically fill the assignment window with the last used name.
 * **Reset to 'Face' after selection**: Automatically switch back to 'Face' mode after adding a different region type (Pet, Body, etc.).
 * **Download Model**: Button to download required models for MediaPipe detection.
