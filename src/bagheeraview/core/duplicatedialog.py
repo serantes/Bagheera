@@ -184,6 +184,27 @@ class DuplicateManagerDialog(QDialog):
         self.left_pane = self.left_pane_widget.pane
         self.right_pane = self.right_pane_widget.pane
 
+    def _disconnect_fs_watcher(self):
+        """
+        Disconnects the file system watcher signals exactly once.
+
+        Safe to call multiple times; subsequent calls are no-ops, which
+        avoids libpyside warnings about failed disconnections.
+        """
+        if getattr(self, '_fs_signals_disconnected', False):
+            return
+        self._fs_signals_disconnected = True
+        watcher = getattr(self.main_win, 'fs_watcher', None)
+        if watcher is None:
+            return
+        for signal, slot in (
+                (watcher.file_deleted, self._on_file_deleted_externally),
+                (watcher.file_moved, self._on_file_moved_externally)):
+            try:
+                signal.disconnect(slot)
+            except (RuntimeError, TypeError):
+                pass
+
     def closeEvent(self, event):
         """
         Handles the dialog close event.
@@ -191,14 +212,7 @@ class DuplicateManagerDialog(QDialog):
         Disconnects external signals from the file system watcher and
         performs cleanup on the image panes to free resources.
         """
-        if self.main_win and hasattr(self.main_win, 'fs_watcher'):
-            try:
-                self.main_win.fs_watcher.file_deleted.disconnect(
-                    self._on_file_deleted_externally)
-                self.main_win.fs_watcher.file_moved.disconnect(
-                    self._on_file_moved_externally)
-            except (RuntimeError, TypeError):
-                pass
+        self._disconnect_fs_watcher()
 
         if hasattr(self, 'left_pane') and self.left_pane:
             self.left_pane.cleanup()
