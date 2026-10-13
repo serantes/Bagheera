@@ -48,35 +48,37 @@ def test_detect_faces_mediapipe_webp(qapp, tmp_path):
     img.save(img_path, format="WEBP")
 
     controller = ImageController([], -1)
+    try:
+        mock_mp = MagicMock()
+        mock_python = MagicMock()
+        mock_vision = MagicMock()
+        mock_detector = MagicMock()
 
-    mock_mp = MagicMock()
-    mock_python = MagicMock()
-    mock_vision = MagicMock()
-    mock_detector = MagicMock()
+        # Mock detector returning 1 detection
+        mock_detection = MagicMock()
+        mock_detection.bounding_box.origin_x = 10
+        mock_detection.bounding_box.origin_y = 10
+        mock_detection.bounding_box.width = 40
+        mock_detection.bounding_box.height = 40
 
-    # Mock detector returning 1 detection
-    mock_detection = MagicMock()
-    mock_detection.bounding_box.origin_x = 10
-    mock_detection.bounding_box.origin_y = 10
-    mock_detection.bounding_box.width = 40
-    mock_detection.bounding_box.height = 40
+        mock_result = MagicMock()
+        mock_result.detections = [mock_detection]
+        mock_detector.detect.return_value = mock_result
+        mock_vision.FaceDetector.create_from_options.return_value = mock_detector
 
-    mock_result = MagicMock()
-    mock_result.detections = [mock_detection]
-    mock_detector.detect.return_value = mock_result
-    mock_vision.FaceDetector.create_from_options.return_value = mock_detector
+        mock_mp_image = MagicMock()
+        mock_mp_image.width = 100
+        mock_mp_image.height = 100
+        mock_mp.Image.return_value = mock_mp_image
 
-    mock_mp_image = MagicMock()
-    mock_mp_image.width = 100
-    mock_mp_image.height = 100
-    mock_mp.Image.return_value = mock_mp_image
+        with patch("bagheeraview.core.imagecontroller._get_mediapipe", return_value=(mock_mp, mock_python, mock_vision)), \
+             patch("os.path.exists", return_value=True), \
+             patch("bagheeraview.core.imagecontroller._load_mp_image", return_value=mock_mp_image):
 
-    with patch("bagheeraview.core.imagecontroller._get_mediapipe", return_value=(mock_mp, mock_python, mock_vision)), \
-         patch("os.path.exists", return_value=True), \
-         patch("bagheeraview.core.imagecontroller._load_mp_image", return_value=mock_mp_image):
-
-        faces = controller._detect_faces_mediapipe(img_path)
-        assert len(faces) == 1
-        assert faces[0]["type"] == "Face"
-        assert faces[0]["w"] == 0.4
-        assert faces[0]["h"] == 0.4
+            faces = controller._detect_faces_mediapipe(img_path)
+            assert len(faces) == 1
+            assert faces[0]["type"] == "Face"
+            assert faces[0]["w"] == 0.4
+            assert faces[0]["h"] == 0.4
+    finally:
+        controller.cleanup()
