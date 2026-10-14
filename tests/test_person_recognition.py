@@ -204,6 +204,35 @@ def test_find_matches_returns_ordered_results(temp_db_dir):
         db.close()
 
 
+def test_find_matches_stays_correct_across_writes(temp_db_dir):
+    """find_matches stays correct across cache-invalidating writes."""
+    db = PersonRecognitionDB(db_path=temp_db_dir)
+    try:
+        encoding1 = [0.1 * i for i in range(128)]
+        encoding1_similar = [0.1 * i + 0.001 for i in range(128)]
+        encoding2 = [0.5 * (i % 2) for i in range(128)]
+
+        db.add_face("id_1", encoding1, "Alice")
+        db.add_face("id_2", encoding2, "Bob")
+
+        # Build the stacked-matrix cache and exercise it.
+        assert [m["face_id"] for m in db.find_matches(encoding1_similar)] == ["id_1"]
+        assert [m["face_id"] for m in db.find_matches(encoding2)] == ["id_2"]
+
+        # Adding a record must invalidate and rebuild the cache.
+        encoding3 = [0.3 * i for i in range(128)]
+        assert db.add_face("id_3", encoding3, "Carol") is True
+        assert [m["face_id"] for m in db.find_matches(encoding1_similar)] == ["id_1"]
+        assert [m["face_id"] for m in db.find_matches(encoding3)] == ["id_3"]
+
+        # Removing a record must invalidate the cache again.
+        assert db.remove_face("id_2") is True
+        assert db.find_matches(encoding2) == []
+        assert [m["face_id"] for m in db.find_matches(encoding1_similar)] == ["id_1"]
+    finally:
+        db.close()
+
+
 def test_count_and_remove_face(temp_db_dir):
     """count / __len__ and remove_face operate on individual records."""
     db = PersonRecognitionDB(db_path=temp_db_dir)

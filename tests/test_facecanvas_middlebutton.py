@@ -1,8 +1,6 @@
-import os
 from unittest.mock import MagicMock, patch
-from PySide6.QtCore import Qt, QPoint, QRect, QPointF
-from PySide6.QtGui import QMouseEvent
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt, QPoint, QPointF
+from PySide6.QtGui import QMouseEvent, QPointingDevice
 from bagheeraview.core.imageviewer import FaceCanvas
 
 
@@ -26,9 +24,11 @@ def test_facecanvas_middle_button_region_selection(qapp):
     press_event = QMouseEvent(
         QMouseEvent.Type.MouseButtonPress,
         pos_start,
+        pos_start,
         Qt.MouseButton.MiddleButton,
         Qt.MouseButton.MiddleButton,
-        Qt.KeyboardModifier.NoModifier
+        Qt.KeyboardModifier.NoModifier,
+        QPointingDevice.primaryPointingDevice()
     )
     canvas.mousePressEvent(press_event)
 
@@ -40,9 +40,11 @@ def test_facecanvas_middle_button_region_selection(qapp):
     move_event = QMouseEvent(
         QMouseEvent.Type.MouseMove,
         pos_end,
+        pos_end,
         Qt.MouseButton.NoButton,
         Qt.MouseButton.MiddleButton,
-        Qt.KeyboardModifier.NoModifier
+        Qt.KeyboardModifier.NoModifier,
+        QPointingDevice.primaryPointingDevice()
     )
     canvas.mouseMoveEvent(move_event)
 
@@ -50,9 +52,11 @@ def test_facecanvas_middle_button_region_selection(qapp):
     release_event = QMouseEvent(
         QMouseEvent.Type.MouseButtonRelease,
         pos_end,
+        pos_end,
         Qt.MouseButton.MiddleButton,
         Qt.MouseButton.NoButton,
-        Qt.KeyboardModifier.NoModifier
+        Qt.KeyboardModifier.NoModifier,
+        QPointingDevice.primaryPointingDevice()
     )
 
     mock_action = MagicMock()
@@ -90,9 +94,11 @@ def test_facecanvas_left_button_without_ctrl(qapp):
     press_event = QMouseEvent(
         QMouseEvent.Type.MouseButtonPress,
         pos_start,
+        pos_start,
         Qt.MouseButton.LeftButton,
         Qt.MouseButton.LeftButton,
-        Qt.KeyboardModifier.NoModifier
+        Qt.KeyboardModifier.NoModifier,
+        QPointingDevice.primaryPointingDevice()
     )
     canvas.mousePressEvent(press_event)
 
@@ -100,9 +106,11 @@ def test_facecanvas_left_button_without_ctrl(qapp):
     move_event = QMouseEvent(
         QMouseEvent.Type.MouseMove,
         pos_end,
+        pos_end,
         Qt.MouseButton.NoButton,
         Qt.MouseButton.LeftButton,
-        Qt.KeyboardModifier.NoModifier
+        Qt.KeyboardModifier.NoModifier,
+        QPointingDevice.primaryPointingDevice()
     )
     canvas.mouseMoveEvent(move_event)
 
@@ -110,9 +118,11 @@ def test_facecanvas_left_button_without_ctrl(qapp):
     release_event = QMouseEvent(
         QMouseEvent.Type.MouseButtonRelease,
         pos_end,
+        pos_end,
         Qt.MouseButton.LeftButton,
         Qt.MouseButton.NoButton,
-        Qt.KeyboardModifier.NoModifier
+        Qt.KeyboardModifier.NoModifier,
+        QPointingDevice.primaryPointingDevice()
     )
 
     mock_menu = MagicMock()
