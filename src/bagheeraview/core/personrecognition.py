@@ -243,6 +243,9 @@ class PersonRecognitionDB:
         self._records = {}
         # Nested maps: dimension -> {face_id: numpy.ndarray}.
         self._encodings = {}
+        # Cached stacked matrices per dimension, aligned with ``_encodings``:
+        # {dimension: (face_ids list, numpy.ndarray matrix)}.
+        self._stacked_encodings = {}
         self._cache_loaded = False
         self.open_db()
 
@@ -309,6 +312,7 @@ class PersonRecognitionDB:
             self._cache_loaded = False
             self._records.clear()
             self._encodings.clear()
+            self._stacked_encodings.clear()
             env = self._lmdb_env
             self._lmdb_env = None
             self._db = None
@@ -340,6 +344,7 @@ class PersonRecognitionDB:
         """Rebuild the in-memory cache from LMDB; caller holds ``self._lock``."""
         self._records.clear()
         self._encodings.clear()
+        self._stacked_encodings.clear()
         self._cache_loaded = False
         if not self._lmdb_env or not self._db:
             self._open_db_locked()
@@ -362,6 +367,35 @@ class PersonRecognitionDB:
                 except (UnicodeDecodeError, json.JSONDecodeError):
                     logger.warning("Skipping corrupt face record %r", key)
         self._cache_loaded = True
+
+    def _invalidate_stack_locked(self):
+        """Drop every cached stacked matrix; caller must hold ``self._lock``."""
+        self._stacked_encodings.clear()
+
+    def _stacked_for_dim_locked(self, dim):
+        """Return ``(face_ids, matrix)`` for ``dim``, building and caching it.
+
+        The rows of ``matrix`` are aligned with ``face_ids``.  Returns
+        ``([], None)`` when no encoding of that dimensionality is stored.
+
+        Args:
+            dim (int): Encoding dimensionality.
+
+        Returns:
+            tuple: ``(list[str], numpy.ndarray or None)``.
+        """
+        cached = self._stacked_encodings.get(dim)
+        if cached is not None:
+            return cached
+
+        stored = self._encodings.get(dim)
+        if not stored:
+            return [], None
+
+        face_ids = list(stored.keys())
+        matrix = np.vstack([stored[fid] for fid in face_ids])
+        self._stacked_encodings[dim] = (face_ids, matrix)
+        return face_ids, matrix
 
     # ------------------------------------------------------------------
     # Public query API
@@ -403,12 +437,10 @@ class PersonRecognitionDB:
                 self._open_db_locked()
             self._ensure_cache_locked()
 
-            stored = self._encodings.get(arr.size)
-            if not stored:
+            face_ids, matrix = self._stacked_for_dim_locked(arr.size)
+            if matrix is None:
                 return []
 
-            face_ids = list(stored.keys())
-            matrix = np.vstack([stored[fid] for fid in face_ids])
             dists = np.linalg.norm(matrix - arr, axis=1)
 
             effective = min(tolerance, _default_tolerance(arr.size))
@@ -504,6 +536,7 @@ class PersonRecognitionDB:
             for dim_map in self._encodings.values():
                 dim_map.pop(face_id, None)
             self._records.pop(face_id, None)
+            self._invalidate_stack_locked()
 
             try:
                 with self._lmdb_env.begin(db=self._db, write=True) as txn:
@@ -519,6 +552,7 @@ class PersonRecognitionDB:
                         json.dumps(record).encode("utf-8"))
                 self._records[face_id] = record
                 self._encodings.setdefault(arr.size, {})[face_id] = arr
+                self._invalidate_stack_locked()
                 logger.info("Stored person face record %s -> %r", face_id, tag)
                 return True
             except lmdb.Error as exc:
@@ -551,6 +585,7 @@ class PersonRecognitionDB:
                     self._records.pop(face_id, None)
                     for dim_map in self._encodings.values():
                         dim_map.pop(face_id, None)
+                    self._invalidate_stack_locked()
                     logger.info("Removed face record %s", face_id)
                 return bool(deleted)
             except lmdb.Error as exc:
