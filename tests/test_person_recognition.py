@@ -75,68 +75,135 @@ def test_extract_face_encoding(temp_db_dir):
     assert len(encoding) > 0
 
 
-def test_remove_face_by_encoding(temp_db_dir):
+def test_remove_face_by_source(temp_db_dir):
     db = PersonRecognitionDB(db_path=temp_db_dir)
     encoding = [0.2 * i for i in range(128)]
+    img_path = os.path.join(temp_db_dir, "face_a.png")
+    region = {"x": 0.5, "y": 0.5, "w": 0.4, "h": 0.4}
 
-    db.add_face("id_1", encoding, "Carlos")
+    db.add_face("id_1", encoding, "Carlos",
+                source={"path": img_path, **region})
     tag, _ = db.identify_person(encoding)
     assert tag == "Carlos"
 
-    # Remove face encoding (e.g. when set to unrecognized)
-    removed_count = db.remove_face_by_encoding(encoding)
-    assert removed_count >= 1
+    # Remove the record created from this exact face region (e.g. when the
+    # user marks the face as unrecognized).
+    removed_count = db.remove_face_by_source(img_path, region)
+    assert removed_count == 1
+    assert db.count() == 0
 
     # Should no longer be identified
     tag_after, _ = db.identify_person(encoding)
     assert tag_after is None
 
 
-def test_add_face_dedupes_prior_same_face(temp_db_dir):
-    """Re-tagging a face replaces the previously stored association."""
+def test_add_face_keeps_similar_distinct_person(temp_db_dir):
+    """A similar (non-identical) encoding tagged with a different name must
+    not delete the previously stored person."""
     db = PersonRecognitionDB(db_path=temp_db_dir)
     try:
         encoding1 = [0.1 * i for i in range(128)]
         encoding1_similar = [0.1 * i + 0.001 for i in range(128)]
 
         assert db.add_face("id_1", encoding1, "Alice") is True
-        # Same face, new tag: the old record is removed first.
+        # Similar face, new tag: both records must survive.
         assert db.add_face("id_2", encoding1_similar, "Bob") is True
 
-        assert db.count() == 1
+        assert db.count() == 2
         tag, face_id = db.identify_person(encoding1)
+        assert tag == "Alice"
+        assert face_id == "id_1"
+        tag, face_id = db.identify_person(encoding1_similar)
         assert tag == "Bob"
         assert face_id == "id_2"
     finally:
         db.close()
 
 
-def test_remove_face_by_encoding_respects_explicit_tolerance(temp_db_dir):
-    """An explicit tolerance of 0 only removes exact duplicates."""
+def test_add_face_same_source_replaces(temp_db_dir):
+    """Re-adding a face from the same photo + region replaces that face's own
+    record instead of duplicating it."""
     db = PersonRecognitionDB(db_path=temp_db_dir)
     try:
-        rng = np.random.RandomState(42)
-        a = rng.rand(1024).astype(np.float32)
-        b = a + 0.0156  # Euclidean distance ~0.5 (> 0.45 default, < 0.6)
-        assert 0.45 < float(np.linalg.norm(a - b)) < 0.6
+        encoding = [0.2 * i for i in range(128)]
+        img_path = os.path.join(temp_db_dir, "face_a.png")
+        region = {"x": 0.5, "y": 0.5, "w": 0.4, "h": 0.4}
+        source = {"path": img_path, **region}
 
-        assert db.add_face("fa", a.tolist(), "A") is True
-        assert db.add_face("fb", b.tolist(), "B") is True
+        assert db.add_face("id_1", encoding, "Alice", source=source) is True
+        # Same face re-tagged: the old record is replaced, not duplicated.
+        assert db.add_face("id_2", encoding, "Alice", source=source) is True
+
+        assert db.count() == 1
+        assert db.get_all_faces()[0]["face_id"] == "id_2"
+    finally:
+        db.close()
+
+
+def test_add_face_source_scoped_replacement(temp_db_dir):
+    """Editing one face must never delete a different face's reference, even
+    when their encodings are nearly identical (the case where recognition
+    misidentified the person)."""
+    db = PersonRecognitionDB(db_path=temp_db_dir)
+    try:
+        rng = np.random.RandomState(7)
+        a = rng.rand(128).astype(np.float32)
+        b = a + 0.02  # ~0.226 -> well inside the 0.6 tolerance
+        assert float(np.linalg.norm(a - b)) < 0.6
+
+        img_a = os.path.join(temp_db_dir, "alice.jpg")
+        img_b = os.path.join(temp_db_dir, "bob.jpg")
+        region_a = {"x": 0.5, "y": 0.5, "w": 0.4, "h": 0.4}
+        region_b = {"x": 0.5, "y": 0.5, "w": 0.4, "h": 0.4}
+
+        assert db.add_face("id_alice", a.tolist(), "Alice",
+                           source={"path": img_a, **region_a}) is True
+        # Bob's face is auto-identified as Alice (similar encoding) but comes
+        # from a different photo: it must get its own record.
+        assert db.add_face("id_bob", b.tolist(), "Bob",
+                           source={"path": img_b, **region_b}) is True
         assert db.count() == 2
 
-        # The per-dimension default caps the caller tolerance: a query on
-        # `a` only matches `a` itself even with a loose caller tolerance.
-        assert len(db.find_matches(a, tolerance=0.6)) == 1
+        # Rename Bob -> Robert: only Bob's record is replaced. Alice's
+        # reference (the one the auto-identification matched) survives.
+        assert db.add_face("id_robert", b.tolist(), "Robert",
+                           source={"path": img_b, **region_b}) is True
+        assert db.count() == 2
+        tags = sorted({rec["tag"] for rec in db.get_all_faces()})
+        assert tags == ["Alice", "Robert"]
+        tag, _ = db.identify_person(a)
+        assert tag == "Alice"
+        tag, _ = db.identify_person(b)
+        assert tag == "Robert"
+    finally:
+        db.close()
 
-        # Exact removal must not delete the merely-similar record.
-        assert db.remove_face_by_encoding(b.tolist(), tolerance=0) == 1
+
+def test_remove_face_by_source_scoped(temp_db_dir):
+    """remove_face_by_source only deletes the record created from the target
+    face; similar records of other people are left untouched."""
+    db = PersonRecognitionDB(db_path=temp_db_dir)
+    try:
+        rng = np.random.RandomState(11)
+        a = rng.rand(128).astype(np.float32)
+        b = a + 0.02  # ~0.226 -> well inside the 0.6 tolerance
+        assert float(np.linalg.norm(a - b)) < 0.6
+
+        img_a = os.path.join(temp_db_dir, "alice.jpg")
+        img_b = os.path.join(temp_db_dir, "bob.jpg")
+        region_a = {"x": 0.5, "y": 0.5, "w": 0.4, "h": 0.4}
+        region_b = {"x": 0.5, "y": 0.5, "w": 0.4, "h": 0.4}
+
+        assert db.add_face("id_a", a.tolist(), "Alice",
+                           source={"path": img_a, **region_a}) is True
+        assert db.add_face("id_b", b.tolist(), "Bob",
+                           source={"path": img_b, **region_b}) is True
+
+        removed = db.remove_face_by_source(img_b, region_b)
+        assert removed == 1
         assert db.count() == 1
         tag, _ = db.identify_person(a)
-        assert tag == "A"
-
-        # Default tolerance removes the remaining similar record.
-        assert db.remove_face_by_encoding(a.tolist()) == 1
-        assert db.count() == 0
+        assert tag == "Alice"
     finally:
         db.close()
 

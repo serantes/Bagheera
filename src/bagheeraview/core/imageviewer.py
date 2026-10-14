@@ -2925,7 +2925,8 @@ class ImageViewer(QWidget):
                 self.controller.save_faces()
                 self.controller.toggle_tag(new_full_tag, True)
                 if region_type == "Face":
-                    self._update_person_recognition_for_face(face_to_rename, new_full_tag)
+                    self._update_person_recognition_for_face(
+                        face_to_rename, new_full_tag)
             except Exception as e:
                 QMessageBox.critical(self, UITexts.ERROR, str(e))
             if self.canvas:
@@ -2933,9 +2934,11 @@ class ImageViewer(QWidget):
 
     def _update_person_recognition_for_face(self, face_region, new_tag):
         """
-        Updates or removes person recognition DB entry for a face region based on its tag.
-        - If new_tag == unrecognized_person_tag: removes matching encoding from DB if present.
-        - Otherwise: adds/updates the face encoding + new_tag in DB.
+        Updates or removes person recognition DB entry for a face region.
+        - If new_tag == unrecognized_person_tag: removes the record created
+          from this exact face region (same image + region), if any.
+        - Otherwise: stores/updates the face encoding + new_tag linked to this
+          exact face region, without touching records of any other face.
         """
         if not APP_CONFIG.get("person_recognition_enabled", False):
             return
@@ -2954,11 +2957,18 @@ class ImageViewer(QWidget):
 
         rec_db = PersonRecognitionDB.get_instance()
         unrecognized_tag = APP_CONFIG.get("unrecognized_person_tag", "Persona desconocida")
+        source = {
+            "path": current_path,
+            "x": face_region.get("x"),
+            "y": face_region.get("y"),
+            "w": face_region.get("w"),
+            "h": face_region.get("h"),
+        }
 
         if new_tag == unrecognized_tag:
-            rec_db.remove_face_by_encoding(face_encoding)
+            rec_db.remove_face_by_source(current_path, source)
         else:
-            rec_db.add_face(None, face_encoding, new_tag)
+            rec_db.add_face(None, face_encoding, new_tag, source=source)
 
     def toggle_main_window_visibility(self):
         """Toggles the visibility of the main window."""
@@ -3298,12 +3308,12 @@ class ImageViewer(QWidget):
                 added_count += 1
 
             elif recognition_enabled and not matched_tag and unrecognized_action == "assign_tag":
-                # Unidentified and configured to assign default unrecognized tag
+                # Unidentified and configured to assign default unrecognized tag.
+                # This face has no person-recognition record (it was not
+                # matched), so there is nothing to delete from the DB.
                 assigned_tag = unrecognized_tag
                 new_face['name'] = assigned_tag
                 self.controller.toggle_tag(assigned_tag, True)
-                if face_encoding:
-                    rec_db.remove_face_by_encoding(face_encoding)
                 if self.main_win and hasattr(self.main_win, 'face_names_history'):
                     if assigned_tag not in self.main_win.face_names_history:
                         self.main_win.face_names_history.insert(0, assigned_tag)
@@ -3588,8 +3598,9 @@ class ImageViewer(QWidget):
             return
 
         if 0 <= deleted_idx < self.filmstrip.count():
-            item = self.filmstrip.takeItem(deleted_idx)
-            del item  # Ensure the QListWidgetItem is deleted
+            # takeItem() returns the removed QListWidgetItem; dropping the
+            # returned reference ensures the Python wrapper is released.
+            self.filmstrip.takeItem(deleted_idx)
         else:
             self.populate_filmstrip()  # Fallback to full rebuild
 

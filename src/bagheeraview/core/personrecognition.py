@@ -59,6 +59,11 @@ DEFAULT_FALLBACK_TOLERANCE = 0.45
 #: Side length (in pixels) of the square grayscale fallback descriptor.
 FALLBACK_FEATURE_SIZE = 32
 
+#: Minimum Intersection over Union for two face regions to be considered the
+#: same face (matches the duplicate-detection threshold used by
+#: :class:`~bagheeraview.core.imageviewer.ImageViewer`).
+FACE_REGION_IOU_THRESHOLD = 0.7
+
 #: Guard so the singleton factory is safe to call from several threads.
 _instance_lock = threading.Lock()
 
@@ -101,6 +106,41 @@ def _normalize_vector(values):
         logger.debug("Rejecting encoding with NaN or infinite values")
         return None
     return arr
+
+
+def _regions_iou(region_a, region_b):
+    """Return the Intersection over Union of two centered normalized regions.
+
+    Both regions use the ``x`` / ``y`` center plus ``w`` / ``h`` size
+    convention, with coordinates normalized to the image dimensions.
+
+    Args:
+        region_a (dict): Region with keys ``x``, ``y``, ``w``, ``h``.
+        region_b (dict): Region with keys ``x``, ``y``, ``w``, ``h``.
+
+    Returns:
+        float: IoU in the [0, 1] range (``0.0`` when the regions do not
+        overlap).
+    """
+    a_x1 = region_a["x"] - region_a["w"] / 2
+    a_y1 = region_a["y"] - region_a["h"] / 2
+    a_x2 = region_a["x"] + region_a["w"] / 2
+    a_y2 = region_a["y"] + region_a["h"] / 2
+
+    b_x1 = region_b["x"] - region_b["w"] / 2
+    b_y1 = region_b["y"] - region_b["h"] / 2
+    b_x2 = region_b["x"] + region_b["w"] / 2
+    b_y2 = region_b["y"] + region_b["h"] / 2
+
+    inter_width = max(0.0, min(a_x2, b_x2) - max(a_x1, b_x1))
+    inter_height = max(0.0, min(a_y2, b_y2) - max(a_y1, b_y1))
+    intersection = inter_width * inter_height
+    area_a = max(0.0, a_x2 - a_x1) * max(0.0, a_y2 - a_y1)
+    area_b = max(0.0, b_x2 - b_x1) * max(0.0, b_y2 - b_y1)
+    union = area_a + area_b - intersection
+    if union <= 0:
+        return 0.0
+    return intersection / union
 
 
 # Lazy, process-wide import of the optional face_recognition dependency.
@@ -222,9 +262,10 @@ class PersonRecognitionDB:
     """Store face encodings and person tags in an LMDB database.
 
     The class provides nearest-neighbour matching between feature vectors and
-    supports both exact and tolerance-based deletion of records.  Reads and
-    writes are protected by an internal lock, so a single instance is safe to
-    share across threads.
+    source-based deletion of records: a record is only deleted when it was
+    created from the same face (same image path and overlapping region).
+    Reads and writes are protected by an internal lock, so a single instance
+    is safe to share across threads.
 
     Args:
         db_path (str or Path, optional): Directory holding the LMDB
@@ -406,7 +447,8 @@ class PersonRecognitionDB:
 
         Returns:
             list[dict]: One dict per record, with keys ``face_id``, ``tag``,
-            ``encoding`` and ``created_at``.
+            ``encoding`` and ``created_at``, plus ``source`` (optional) with
+            the image path and normalized region the face was created from.
         """
         with self._lock:
             if not self._lmdb_env or not self._db:
@@ -493,19 +535,26 @@ class PersonRecognitionDB:
     # ------------------------------------------------------------------
     # Public write API
     # ------------------------------------------------------------------
-    def add_face(self, face_id=None, encoding=None, tag=None):
+    def add_face(self, face_id=None, encoding=None, tag=None, source=None):
         """Store a face identifier, encoding vector and person tag.
 
-        Any existing record whose encoding lies within the default tolerance
-        of the new one is removed first, so re-tagging the same face replaces
-        the previous association.  The delete + insert runs in a single LMDB
-        write transaction (atomic).
+        A record is tied to the face instance it was created from: ``source``
+        identifies the exact image path and region.  Before inserting, only
+        records created from the same face (same path and overlapping region)
+        are removed, regardless of their tag, so editing a face's name
+        replaces that face's own record while never deleting the reference of
+        a different person whose encoding happens to be similar.  The delete +
+        insert runs in a single LMDB write transaction (atomic).
 
         Args:
             face_id (str, optional): Unique identifier for this face.  When
                 ``None`` a new identifier is generated.
             encoding (list[float] or numpy.ndarray): Feature vector.
             tag (str): Person tag string.
+            source (dict, optional): Origin of the face, with keys ``path``
+                (image path) and ``x``, ``y``, ``w``, ``h`` (normalized
+                region).  When ``None`` the record is stored without origin
+                and is never auto-replaced by another ``add_face`` call.
 
         Returns:
             bool: ``True`` when the record was persisted, ``False`` otherwise.
@@ -517,12 +566,16 @@ class PersonRecognitionDB:
         if not face_id:
             face_id = f"face_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
 
+        source = self._normalize_source(source)
+
         record = {
             "face_id": face_id,
             "tag": tag,
             "encoding": arr.tolist(),
             "created_at": time.time(),
         }
+        if source is not None:
+            record["source"] = source
 
         with self._lock:
             if not self._lmdb_env or not self._db:
@@ -531,33 +584,87 @@ class PersonRecognitionDB:
                 return False
             self._ensure_cache_locked()
 
-            # Keep the cache consistent if the same face_id is re-added with
-            # a different encoding dimensionality (the write below overwrites).
-            for dim_map in self._encodings.values():
-                dim_map.pop(face_id, None)
-            self._records.pop(face_id, None)
-            self._invalidate_stack_locked()
-
+            deleted_ids = []
             try:
                 with self._lmdb_env.begin(db=self._db, write=True) as txn:
-                    for fid, stored in list(
-                            self._encodings.get(arr.size, {}).items()):
-                        if np.linalg.norm(
-                                stored - arr) <= _default_tolerance(arr.size):
+                    for fid, rec in list(self._records.items()):
+                        if fid == face_id:
+                            continue
+                        if source is not None and self._same_face_source(
+                                rec.get("source"), source):
                             txn.delete(fid.encode("utf-8"))
-                            self._records.pop(fid, None)
-                            self._encodings[arr.size].pop(fid, None)
+                            deleted_ids.append(fid)
                     txn.put(
                         face_id.encode("utf-8"),
                         json.dumps(record).encode("utf-8"))
-                self._records[face_id] = record
-                self._encodings.setdefault(arr.size, {})[face_id] = arr
-                self._invalidate_stack_locked()
-                logger.info("Stored person face record %s -> %r", face_id, tag)
-                return True
             except lmdb.Error as exc:
                 logger.error("Error writing face record to DB: %s", exc)
                 return False
+
+            # Only touch the in-memory cache after a successful commit so it
+            # can never diverge from LMDB (even if the transaction rolled
+            # back), and keep it consistent when the same face_id is re-added
+            # with a different encoding dimensionality.
+            for fid in deleted_ids:
+                self._records.pop(fid, None)
+                for dim_map in self._encodings.values():
+                    dim_map.pop(fid, None)
+            for dim_map in self._encodings.values():
+                dim_map.pop(face_id, None)
+            self._records.pop(face_id, None)
+            self._records[face_id] = record
+            self._encodings.setdefault(arr.size, {})[face_id] = arr
+            self._invalidate_stack_locked()
+            logger.info("Stored person face record %s -> %r", face_id, tag)
+            return True
+
+    def _normalize_source(self, source):
+        """Coerce a face origin dict into a validated JSON-serializable form.
+
+        Args:
+            source (dict or None): Face origin with ``path`` and normalized
+                ``x``, ``y``, ``w``, ``h``.
+
+        Returns:
+            dict or None: The sanitized origin, or ``None`` when the input is
+            missing or malformed.
+        """
+        if source is None:
+            return None
+        if not isinstance(source, dict):
+            logger.debug("Ignoring non-dict face source %r", source)
+            return None
+        try:
+            return {
+                "path": str(source.get("path")),
+                "x": float(source.get("x")),
+                "y": float(source.get("y")),
+                "w": float(source.get("w")),
+                "h": float(source.get("h")),
+            }
+        except (TypeError, ValueError):
+            logger.warning("Ignoring invalid face source %r", source)
+            return None
+
+    def _same_face_source(self, stored_source, source):
+        """Return ``True`` when a stored record belongs to the same face.
+
+        Two faces are the same when they were created from the same image path
+        and their regions overlap with at least
+        :data:`FACE_REGION_IOU_THRESHOLD`.
+
+        Args:
+            stored_source (dict or None): Origin stored on the record.
+            source (dict): Sanitized origin to compare against.
+
+        Returns:
+            bool: ``True`` for the same face.
+        """
+        if not stored_source or not isinstance(stored_source, dict):
+            return False
+        if stored_source.get("path") != source.get("path"):
+            return False
+        return _regions_iou(stored_source, source) >= FACE_REGION_IOU_THRESHOLD
 
     def remove_face(self, face_id):
         """Delete a single stored record by its face identifier.
@@ -592,25 +699,51 @@ class PersonRecognitionDB:
                 logger.error("Error removing face record from DB: %s", exc)
                 return False
 
-    def remove_face_by_encoding(self, target_encoding, tolerance=0.6):
-        """Remove every stored record matching ``target_encoding``.
+    def remove_face_by_source(self, path, region):
+        """Remove every stored record created from a specific face region.
+
+        Only records whose origin matches ``path`` and overlaps ``region``
+        (at least :data:`FACE_REGION_IOU_THRESHOLD`) are deleted.  Records of
+        other people are left untouched even when their encoding is similar.
 
         Args:
-            target_encoding (list[float] or numpy.ndarray): Vector to match.
-            tolerance (float): Maximum Euclidean distance.  Pass ``0`` to
-                delete only exact duplicates.
+            path (str): Image path the face was tagged on.
+            region (dict): Normalized face region with keys ``x``, ``y``
+                (center), ``w`` and ``h`` (width/height).
 
         Returns:
             int: Number of deleted records.
         """
-        matches = self.find_matches(target_encoding, tolerance)
-        face_ids = [match["face_id"] for match in matches]
-        deleted_count = 0
-        for face_id in face_ids:
-            if self.remove_face(face_id):
-                deleted_count += 1
-        if deleted_count:
-            logger.info(
-                "Removed %d person recognition record(s) matching encoding",
-                deleted_count)
-        return deleted_count
+        if not path or not isinstance(region, dict):
+            return 0
+        source = self._normalize_source({**region, "path": path})
+        if source is None:
+            return 0
+
+        with self._lock:
+            if not self._lmdb_env or not self._db:
+                self._open_db_locked()
+            if not self._lmdb_env or not self._db:
+                return 0
+            self._ensure_cache_locked()
+
+            deleted_ids = []
+            try:
+                with self._lmdb_env.begin(db=self._db, write=True) as txn:
+                    for fid, rec in list(self._records.items()):
+                        if self._same_face_source(rec.get("source"), source):
+                            txn.delete(fid.encode("utf-8"))
+                            deleted_ids.append(fid)
+            except lmdb.Error as exc:
+                logger.error("Error removing face records by source: %s", exc)
+                return 0
+
+            for fid in deleted_ids:
+                self._records.pop(fid, None)
+                for dim_map in self._encodings.values():
+                    dim_map.pop(fid, None)
+            self._invalidate_stack_locked()
+            if deleted_ids:
+                logger.info("Removed %d person recognition record(s) from %s",
+                            len(deleted_ids), path)
+            return len(deleted_ids)
