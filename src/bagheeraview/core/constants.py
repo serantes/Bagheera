@@ -16,6 +16,7 @@ import json
 import os
 import shutil
 import sys
+import warnings
 
 from PySide6.QtCore import Qt
 
@@ -235,7 +236,17 @@ if importlib.util.find_spec("mediapipe") is not None:
 HAVE_FACE_RECOGNITION = False
 if importlib.util.find_spec("face_recognition") is not None:
     try:
-        import face_recognition
+        # The face_recognition_models dependency (third-party) still imports
+        # pkg_resources, which setuptools marks as deprecated. This is not
+        # fixable from our own sources, so suppress that single upstream
+        # DeprecationWarning while probing for the optional library.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="pkg_resources is deprecated as an API.*",
+                category=DeprecationWarning,
+            )
+            import face_recognition
         if hasattr(face_recognition, 'face_locations'):
             HAVE_FACE_RECOGNITION = True
     except Exception:
