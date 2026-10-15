@@ -13,6 +13,8 @@ Bagheera is a suite of tools designed to improve the KDE Baloo experience. The d
 - **KDE Integration:** Baloo search and basic management
 - **Metadata Handling:** Advanced image header manipulation to store faces, pets, bodies, objects, and landmarks, with support for file extended attributes
 - **Duplicate Detection:** Using perceptual hashing (pHash).
+- **Image Similarity Search:** Powered by FAISS for fast feature vector matching.
+- **Person Identification:** Facial detection and recognition using deep learning embeddings.
 
 ## 📥 Installation (Development)
 
@@ -118,6 +120,7 @@ Bagheera requires KDE Frameworks 6 (specifically Baloo and KFileMetaData) and Qt
 Before installing, ensure your system has Python 3.13 and the following KF6 development libraries and tools installed:
 
 #### openSUSE
+
 ```bash
 zypper install kf6-baloo-devel kf6-kcoreaddons-devel python313-pyside6 pkgconf gcc
 ```
@@ -188,7 +191,7 @@ bagheerasearch --directory '~/Documents' KDE --subquery 'Baloo OR Bagheera' --ty
 
 - `:` : Contains (text comparison)
 - `=` : Equal
-- `==` : Case-sensitive equal (available only in Bagheera 'having' expressions)
+- `==` : Case-sensitive equal (extended in Bagheera 'having' expressions)
 - `!=` : Not equal (available only in Bagheera 'having' expressions)
 - `!:` : Does not contain (available only in Bagheera 'having' expressions)
 - `>`, `>=`, `<`, `<=` : Numeric and date comparisons
@@ -212,7 +215,7 @@ Use the `--type` flag or `type:` property:
 
 These are some common properties available to use in queries (run `--help-query` for the full list):
 
-- `filename`, `mimetype`, `modified`, `rating`, `tags`
+- **Common**: `filename`, `mimetype`, `modified`, `rating`, `tags`
 - **Audio**: `Artist`, `Album`, `Duration`, `Genre`
 - **Document**: `Author`, `PageCount`, `Title`
 - **Media**: `Width`, `Height`, `ImageMake`, `PhotoFlash`
@@ -277,6 +280,8 @@ BagheeraSearch is currently available only in **English**.
 - **Tagging, Rating & Comments System:** Effortlessly manage tags, ratings, and comments that integrate directly with your filesystem's extended attributes and are natively used by **Baloo**.
 - **Result Filtering:** Results can be filtered instantly by tags or filename.
 - **Duplicates Management:** A system to detect and manage duplicate images using perceptual hashing, including an image comparison form and an ignore list.
+- **Image Similarity Management:** A search and discovery system to find visually similar images using FAISS vector indexing, featuring similarity threshold controls and match browsing.
+- **People & Face Management:** A system to automatically detect and identify individuals in photos using facial recognition embeddings, including face tagging tools and person profile management.
 - **Smart State Persistence:** The application remembers your workflow. Your **last used search**, **last used sort order**, and **view settings** are automatically saved and restored upon startup.
 - **Favorites:** Favorite searches can be saved and reused.
 - **Caching:** The thumbnail cache and image hashes are stored in highly performant local LMDB databases.
