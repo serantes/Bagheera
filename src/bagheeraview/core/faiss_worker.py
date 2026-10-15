@@ -1,3 +1,15 @@
+"""
+FAISS Similar Search Worker Module for Bagheera.
+
+This module provides the FAISSSimilarSearchWorker, a QThread-based worker that
+finds images visually similar to a target image. The worker maintains a
+persistent SQLite cache of MediaPipe image embeddings, builds an in-memory
+FAISS inner-product index (using an NVIDIA GPU when available) and emits the
+matching results ordered by descending similarity.
+
+Classes:
+    FAISSSimilarSearchWorker: Background worker for the similar-image search.
+"""
 import os
 import sqlite3
 import urllib.request
@@ -18,13 +30,34 @@ DB_PATH = os.path.join(APP_DATA_DIR, "faiss_embeddings.db")
 
 class FAISSSimilarSearchWorker(QThread):
     """
-    Worker thread to find similar images to a target path using FAISS and MediaPipe embeddings.
+    Worker thread that finds images similar to a target image.
+
+    The worker scans the whitelisted/blacklisted folders, updates the local
+    embedding cache (``faiss_embeddings.db``) using the MediaPipe MobileNet V3
+    Small image embedder, and searches an in-memory FAISS index to rank images
+    by cosine similarity against the target embedding.
+
+    Signals:
+        progress_update: Emitted with ``(current, total, message)`` progress.
+        results_found: Emitted with the list of ``(path, similarity)`` results.
+        finished: Emitted when the whole search has completed.
     """
     progress_update = Signal(int, int, str)
     results_found = Signal(list)  # List of (path, similarity)
     finished = Signal()
 
     def __init__(self, target_path, threshold, whitelist_str, blacklist_str):
+        """
+        Initializes the FAISSSimilarSearchWorker.
+
+        Args:
+            target_path (str): Path of the image to find similar images for.
+            threshold (int): Minimum similarity percentage (0-100) required
+                for a result to be reported.
+            whitelist_str (str): Comma separated list of allowed paths;
+                defaults to the target's directory when empty.
+            blacklist_str (str): Comma separated list of excluded paths.
+        """
         super().__init__()
         self.target_path = os.path.abspath(os.path.normpath(target_path))
         self.threshold = threshold
@@ -40,10 +73,23 @@ class FAISSSimilarSearchWorker(QThread):
             self.whitelist = [os.path.dirname(self.target_path)]
 
     def stop(self):
+        """Requests the worker to abort and waits until it has finished."""
         self._is_running = False
         self.wait()
 
     def _is_allowed(self, path):
+        """
+        Checks whether a path passes the blacklist/whitelist rules.
+
+        Blacklisted paths and their subtrees are always excluded; a path is
+        allowed only if it equals or is contained in a whitelisted entry.
+
+        Args:
+            path (str): Path to check.
+
+        Returns:
+            bool: True if the path is allowed, False otherwise.
+        """
         abs_p = os.path.abspath(os.path.normpath(path))
         for b in self.blacklist:
             if abs_p == b or abs_p.startswith(b + os.sep):
@@ -54,6 +100,15 @@ class FAISSSimilarSearchWorker(QThread):
         return False
 
     def _get_all_images(self):
+        """
+        Collects all image files allowed under the whitelisted paths.
+
+        Blacklisted subtrees are pruned in place during the directory walk;
+        non-directory whitelist entries are included when they are images.
+
+        Returns:
+            list: Unique absolute paths of the allowed images.
+        """
         images = []
         for root_path in self.whitelist:
             if not os.path.isdir(root_path):
@@ -75,6 +130,12 @@ class FAISSSimilarSearchWorker(QThread):
         return list(set(images))
 
     def _init_db(self):
+        """
+        Opens (and creates if needed) the local embedding cache database.
+
+        Returns:
+            sqlite3.Connection: Connection to the embeddings cache.
+        """
         os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -89,6 +150,9 @@ class FAISSSimilarSearchWorker(QThread):
         return conn
 
     def _download_model_if_needed(self):
+        """
+        Downloads the MediaPipe embedder model when it is not yet cached.
+        """
         if not os.path.exists(MODEL_PATH):
             os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
             logger.info("Downloading MediaPipe model...")
@@ -97,6 +161,15 @@ class FAISSSimilarSearchWorker(QThread):
             logger.info("Model downloaded successfully.")
 
     def run(self):
+        """
+        Executes the similar-image search pipeline in the worker thread.
+
+        The pipeline scans the filesystem for allowed images, evicts stale
+        cache entries, embeds the new or modified images with the MediaPipe
+        model, builds a FAISS inner-product index (GPU accelerated when an
+        NVIDIA device is available) and emits the results whose similarity is
+        above the configured threshold.
+        """
         conn = None
         try:
             conn = self._init_db()

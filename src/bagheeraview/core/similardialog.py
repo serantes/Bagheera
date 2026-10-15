@@ -1,3 +1,15 @@
+"""
+Similar Image Search Dialog Module for Bagheera.
+
+This module implements the SimilarImagesDialog, a dialog that searches for
+images visually similar to a target image. The similarity search runs in a
+background thread (see FAISSSimilarSearchWorker) and its results are shown in a
+table, with an image preview pane that supports zooming, region detection,
+fast tagging and file management actions.
+
+Classes:
+    SimilarImagesDialog: Dialog to search for and manage similar images.
+"""
 import os
 import subprocess
 from PySide6.QtWidgets import (
@@ -15,8 +27,24 @@ from .propertiesdialog import PropertiesDialog
 
 
 class SimilarImagesDialog(QDialog):
-    """Dialog to display and search for similar images."""
+    """
+    A dialog to search for and manage images visually similar to a target file.
+
+    Similarity results are listed on the left-hand table together with an
+    image preview pane on the right. The preview reuses the ImagePane
+    machinery to support zooming, automatic region detection (faces and pets),
+    fast tagging, deletion and metadata editing of the selected result.
+    """
+
     def __init__(self, target_path, main_win):
+        """
+        Initializes the SimilarImagesDialog.
+
+        Args:
+            target_path (str): Path of the image against which the similarity
+                is computed.
+            main_win (MainWindow): Reference to the main application window.
+        """
         super().__init__(main_win)
         self.target_path = os.path.abspath(os.path.normpath(target_path))
         self.main_win = main_win
@@ -117,6 +145,13 @@ class SimilarImagesDialog(QDialog):
         return widget
 
     def start_search(self):
+        """
+        Starts a new similarity search using the current threshold.
+
+        The search button is disabled and an indeterminate progress bar is
+        shown while a FAISSSimilarSearchWorker runs in the background. If a
+        search is already running, this method does nothing.
+        """
         if self.worker and self.worker.isRunning():
             return
 
@@ -139,6 +174,14 @@ class SimilarImagesDialog(QDialog):
         self.worker.start()
 
     def on_progress(self, cur, total, msg):
+        """
+        Callback for the progress updates emitted by the search worker.
+
+        Args:
+            cur (int): Number of images processed so far.
+            total (int): Total number of images to process.
+            msg (str): Human readable progress message.
+        """
         self.status_lbl.show()
         if total > 0:
             self.progress_bar.show()
@@ -150,10 +193,23 @@ class SimilarImagesDialog(QDialog):
         self.status_lbl.setText(msg)
 
     def on_results_found(self, results):
+        """
+        Callback for the similarity results emitted by the search worker.
+
+        Args:
+            results (list): List of ``(path, similarity)`` tuples ordered by
+                descending similarity.
+        """
         self.results = results
         self._populate_table()
 
     def _populate_table(self):
+        """
+        Fills the results table with the current similarity results.
+
+        Each row shows the similarity percentage and the file name of the
+        corresponding match; the first row is selected when results exist.
+        """
         self.table.blockSignals(True)
         self.table.setRowCount(len(self.results))
         for i, (path, sim) in enumerate(self.results):
@@ -167,17 +223,35 @@ class SimilarImagesDialog(QDialog):
             self.table.setCurrentCell(0, 0)
 
     def on_finished(self):
+        """Restores the dialog controls after the search worker finishes."""
         self.progress_bar.hide()
         self.status_lbl.setText("")
         self.status_lbl.hide()
         self.btn_search.setEnabled(True)
 
     def _on_cell_changed(self, row, col, prev_row, prev_col):
+        """
+        Updates the preview pane when the current table row changes.
+
+        Args:
+            row (int): New current row.
+            col (int): New current column.
+            prev_row (int): Previous current row.
+            prev_col (int): Previous current column.
+        """
         if row >= 0 and row < len(self.results):
             path = self.results[row][0]
             self._update_preview(path)
 
     def _update_preview(self, path):
+        """
+        Loads the given image into the preview pane and updates its labels.
+
+        If the file no longer exists, an informative placeholder is shown.
+
+        Args:
+            path (str): Path of the image to preview.
+        """
         if path:
             if not os.path.exists(path):
                 self.preview_pane.controller.update_list([], 0)
@@ -209,6 +283,15 @@ class SimilarImagesDialog(QDialog):
                 self.preview_pane.update_view()
 
     def _format_size(self, size):
+        """
+        Formats a byte count into a human readable size string.
+
+        Args:
+            size (float): Size in bytes.
+
+        Returns:
+            str: Size formatted with the most appropriate binary unit.
+        """
         for unit in ['B', 'KiB', 'MiB', 'GiB']:
             if size < 1024:
                 return f"{size:.1f} {unit}"
@@ -316,6 +399,12 @@ class SimilarImagesDialog(QDialog):
         menu.exec(self.preview_pane.mapToGlobal(pos))
 
     def _handle_permanent_delete(self, path):
+        """
+        Asks for confirmation and permanently deletes the given file.
+
+        Args:
+            path (str): Path of the file to delete.
+        """
         confirm = QMessageBox(self)
         confirm.setIcon(QMessageBox.Warning)
         confirm.setText(UITexts.CONFIRM_DELETE_TEXT)
@@ -326,6 +415,16 @@ class SimilarImagesDialog(QDialog):
             self._handle_deletion(path, permanent=True)
 
     def _handle_deletion(self, path, permanent=None):
+        """
+        Deletes the given file (moving it to trash by default) and refreshes
+        the results table.
+
+        Args:
+            path (str): Path of the file to delete.
+            permanent (bool, optional): If True, the file is deleted without
+                using the trash bin. When None, the ``default_delete_to_trash``
+                application setting is used.
+        """
         _permanent = permanent if permanent is not None else not APP_CONFIG.get("default_delete_to_trash", True)
         if not _permanent and APP_CONFIG.get("duplicate_confirm_delete", True):
             reply = QMessageBox.question(
@@ -354,22 +453,36 @@ class SimilarImagesDialog(QDialog):
             self.right_pane_widget.dir_lbl.setText("")
 
     def _show_properties(self, path):
+        """
+        Opens the properties dialog for the given image.
+
+        Args:
+            path (str): Path of the image whose properties are requested.
+        """
         tags = self.preview_pane.controller._current_tags
         rating = self.preview_pane.controller._current_rating
         dlg = PropertiesDialog(path, initial_tags=tags, initial_rating=rating, parent=self)
         dlg.exec()
 
     def set_next_region_type(self, region_type):
+        """
+        Sets the region type for the next manual region added by the user.
+
+        Args:
+            region_type (str): Region type identifier (e.g. "Face", "Pet").
+        """
         self._next_region_type = region_type
         if not self.preview_pane.controller.show_faces:
             self.preview_pane.controller.show_faces = True
             self.preview_pane.canvas.update()
 
     def toggle_faces(self):
+        """Toggles the display of face regions on the preview image."""
         self.preview_pane.controller.show_faces = not self.preview_pane.controller.show_faces
         self.preview_pane.canvas.update()
 
     def _show_fast_tags(self):
+        """Shows the fast tagging menu for the current preview image."""
         from .imageviewer import FastTagManager
         if not hasattr(self.preview_pane, "update_status_bar"):
             self.preview_pane.update_status_bar = lambda: None
@@ -377,6 +490,12 @@ class SimilarImagesDialog(QDialog):
         manager.show_menu()
 
     def _open_location_in_bagheeraview(self, path):
+        """
+        Opens the folder containing the given file in the main window.
+
+        Args:
+            path (str): Path of the file whose location is opened.
+        """
         folder_path = os.path.dirname(path)
         self.main_win.start_scan([folder_path])
         self.main_win.show()
@@ -384,6 +503,16 @@ class SimilarImagesDialog(QDialog):
         self.main_win.activateWindow()
 
     def _run_region_detection(self, detect_type):
+        """
+        Runs automatic region detection on the preview image.
+
+        Newly detected regions are merged with the existing ones, discarding
+        overlapping duplicates, and the user is asked to name each of them.
+
+        Args:
+            detect_type (str): Detection kind, one of "faces", "pets" or any
+                other value (which results in no detection).
+        """
         from .imageviewer import FaceNameDialog
         controller = self.preview_pane.controller
         canvas = self.preview_pane.canvas
@@ -454,6 +583,16 @@ class SimilarImagesDialog(QDialog):
                 QMessageBox.critical(self, UITexts.ERROR, str(e))
 
     def _calculate_iou(self, boxA, boxB):
+        """
+        Computes the Intersection over Union (IoU) of two bounding boxes.
+
+        Args:
+            boxA (dict): First box with keys ``x``, ``y``, ``w`` and ``h``.
+            boxB (dict): Second box with keys ``x``, ``y``, ``w`` and ``h``.
+
+        Returns:
+            float: The IoU value in the range [0, 1].
+        """
         boxA_x1 = boxA['x'] - boxA['w'] / 2
         boxA_y1 = boxA['y'] - boxA['h'] / 2
         boxA_x2 = boxA['x'] + boxA['w'] / 2
@@ -479,40 +618,70 @@ class SimilarImagesDialog(QDialog):
 
     # Implementation of API required for ImagePane
     def set_active_pane(self, pane):
+        """No-op implementation required by the ImagePane API."""
         pass
 
     def on_metadata_changed(self, path, metadata=None):
+        """No-op implementation required by the ImagePane API."""
         pass
 
     def on_controller_list_updated(self, index):
+        """No-op implementation required by the ImagePane API."""
         pass
 
     def update_view_for_pane(self, pane, resize_win=False):
+        """
+        Refreshes the pixmap shown on the given pane's canvas.
+
+        Args:
+            pane (ImagePane): Pane whose canvas is updated.
+            resize_win (bool, optional): Unused, kept for API compatibility.
+        """
         pixmap = pane.controller.get_display_pixmap()
         if not pixmap.isNull():
             pane.canvas.setPixmap(pixmap)
             pane.canvas.adjustSize()
 
     def load_and_fit_image_for_pane(self, pane, restore_config=None):
+        """No-op implementation required by the ImagePane API."""
         pass
 
     def reset_inactivity_timer(self):
+        """No-op implementation required by the ImagePane API."""
         pass
 
     def sync_filmstrip_selection(self, index):
+        """No-op implementation required by the ImagePane API."""
         pass
 
     def _get_clicked_face_for_pane(self, pane, pos):
+        """
+        Returns the face clicked on the given pane.
+
+        Args:
+            pane (ImagePane): Unused, kept for API compatibility.
+            pos (QPoint): Unused, kept for API compatibility.
+
+        Returns:
+            None: This dialog never returns a clicked face.
+        """
         return None
 
     def rename_face(self, face):
+        """No-op implementation required by the ImagePane API."""
         pass
 
     def toggle_fullscreen(self):
+        """No-op implementation required by the ImagePane API."""
         pass
 
     def wheelEvent(self, event):
-        """Handles mouse wheel events for zooming the preview image."""
+        """
+        Zooms the preview image when the wheel is rotated with Ctrl pressed.
+
+        Args:
+            event (QWheelEvent): The wheel event to handle.
+        """
         if event.modifiers() & Qt.ControlModifier and self.preview_pane:
             focus_pos = self.preview_pane.mapFromGlobal(event.globalPosition().toPoint())
             if event.angleDelta().y() > 0:
@@ -524,7 +693,15 @@ class SimilarImagesDialog(QDialog):
             super().wheelEvent(event)
 
     def keyPressEvent(self, event):
-        """Handles keyboard shortcuts for zooming."""
+        """
+        Handles the keyboard shortcuts used for zooming the preview image.
+
+        Supported keys: ``+``/``=`` (zoom in), ``-`` (zoom out), ``0`` (reset
+        zoom) and ``Z`` (toggle fit-to-screen).
+
+        Args:
+            event (QKeyEvent): The key event to handle.
+        """
         key = event.key()
         if key in (Qt.Key_Plus, Qt.Key_Equal):
             if self.preview_pane:
@@ -546,6 +723,12 @@ class SimilarImagesDialog(QDialog):
             super().keyPressEvent(event)
 
     def done(self, r):
+        """
+        Stops the search worker and cleans up the preview pane on close.
+
+        Args:
+            r (int): Result code passed by the dialog's close mechanism.
+        """
         if self.worker and self.worker.isRunning():
             self.worker.stop()
         if self.preview_pane:
