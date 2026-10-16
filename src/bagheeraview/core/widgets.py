@@ -1315,6 +1315,11 @@ class FavoritesWidget(QWidget):
         add_action.triggered.connect(self.add_favorite)
         toolbar.addAction(add_action)
 
+        overwrite_action = QAction(QIcon.fromTheme("document-save"), UITexts.OVERWRITE, self)
+        overwrite_action.setToolTip(UITexts.OVERWRITE_FAVORITE_TOOLTIP)
+        overwrite_action.triggered.connect(self.overwrite_favorite)
+        toolbar.addAction(overwrite_action)
+
         edit_action = QAction(QIcon.fromTheme("edit-rename"), UITexts.RENAME, self)
         edit_action.setToolTip(UITexts.EDIT_FAVORITE_TOOLTIP)
         edit_action.triggered.connect(self.edit_comment)
@@ -1419,6 +1424,27 @@ class FavoritesWidget(QWidget):
         self.table.setItem(row, 1, QTableWidgetItem(query))
         self.table.setItem(row, 2, QTableWidgetItem(""))
         self.table.setCurrentCell(row, 0)
+        self.save_favorites()
+
+    def overwrite_favorite(self):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+        query = self.main_win.search_input.currentText().strip()
+        if not query:
+            return
+
+        # Ask for a comment before overwriting the favorite
+        new_comment, ok = QInputDialog.getText(
+            self, UITexts.EDIT_COMMENT_TITLE,
+            UITexts.EDIT_COMMENT_TEXT.format(query),
+            QLineEdit.Normal, self.table.item(row, 0).text())
+
+        if not ok:
+            return
+
+        self.table.item(row, 0).setText(new_comment)
+        self.table.item(row, 1).setText(query)
         self.save_favorites()
 
     def edit_comment(self):
