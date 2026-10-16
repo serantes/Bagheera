@@ -17,7 +17,9 @@ from PySide6.QtWidgets import (
     QSplitter, QWidget, QMessageBox, QApplication, QMenu,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView
 )
-from PySide6.QtGui import QIcon, QImageReader, QImage, QDesktopServices
+from PySide6.QtGui import (
+    QDesktopServices, QIcon, QImage, QImageReader, QKeySequence, QShortcut
+)
 from PySide6.QtCore import Qt, QTimer, QUrl
 from .imageviewer import ImagePane
 from .constants import APP_CONFIG, UITexts
@@ -28,6 +30,16 @@ class DuplicateManagerDialog(QDialog):
     """
     A dialog to review and manage duplicate image pairs found by the detector.
     """
+
+    # The dialog resolves its own keyboard shortcuts (deletion, etc.), so the
+    # application-wide shortcut controller must not intercept those keys.
+    handles_own_shortcuts = True
+
+    # Default region type requested by the FaceCanvas API. The dialog never
+    # offers region editing, but this value is read while drawing with the
+    # middle mouse button, so it must exist.
+    _next_region_type = "Face"
+
     def __init__(self, duplicates, duplicate_cache, main_win, review_mode=False):
         """
         Initializes the DuplicateManagerDialog.
@@ -55,6 +67,7 @@ class DuplicateManagerDialog(QDialog):
 
         self._setup_ui()
         self._populate_list()
+        self._setup_dialog_shortcuts()
 
         if self.main_win and hasattr(self.main_win, 'fs_watcher'):
             self.main_win.fs_watcher.file_deleted.connect(
@@ -324,7 +337,11 @@ class DuplicateManagerDialog(QDialog):
         Handles keyboard shortcuts for navigation and actions.
 
         Provides quick access to deletion (U/I), ignore (O), and skip (P),
-        as well as standard zoom controls (Z/+/ -).
+        as well as standard zoom controls (Z/+/ -). ``Delete``/``Shift+Delete``
+        move the active pane's image to the trash or delete it permanently.
+
+        Args:
+            event (QKeyEvent): The key event to handle.
         """
         key = event.key()
         if key == Qt.Key_U:
@@ -342,6 +359,13 @@ class DuplicateManagerDialog(QDialog):
             return
         elif key == Qt.Key_P:
             self._skip()
+            event.accept()
+            return
+        elif key == Qt.Key_Delete:
+            if event.modifiers() & Qt.ShiftModifier:
+                self._shortcut_delete()
+            else:
+                self._shortcut_trash()
             event.accept()
             return
 
@@ -441,11 +465,79 @@ class DuplicateManagerDialog(QDialog):
         pass
 
     def _get_clicked_face_for_pane(self, pane, pos):
-        """Required by ImagePane API, no-op in this dialog."""
+        """
+        Returns the face region under the given canvas position, if any.
+
+        Args:
+            pane (ImagePane): The pane whose regions are inspected.
+            pos (QPoint): Position in canvas coordinates.
+
+        Returns:
+            dict or None: The clicked face/pet region or ``None``.
+        """
+        if pane is None:
+            return None
+        for face in pane.controller.faces:
+            rect = pane.canvas.map_from_source(face)
+            if rect.contains(pos):
+                return face
         return None
+
+    def _get_clicked_face(self, pos):
+        """
+        Returns the face region under the given active pane canvas position.
+
+        This method completes the ImagePane/ImageViewer API expected by the
+        FaceCanvas so that double-clicking a region can zoom to it.
+
+        Args:
+            pos (QPoint): Position in canvas coordinates.
+
+        Returns:
+            dict or None: The clicked face/pet region or ``None``.
+        """
+        pane = self.active_pane or self.left_pane
+        return self._get_clicked_face_for_pane(pane, pos)
+
+    @property
+    def zoom_manager(self):
+        """
+        Zoom manager of the active pane (ImagePane API compatibility).
+
+        Returns:
+            ZoomManager or None: The active pane zoom manager.
+        """
+        pane = self.active_pane or self.left_pane
+        return pane.zoom_manager if pane else None
+
+    def _update_person_recognition_for_face(self, face_region, new_tag):
+        """
+        No-op implementation required by the FaceCanvas drawing flow.
+
+        Person recognition is a viewer-level feature; the duplicate
+        management dialog only displays and compares images.
+
+        Args:
+            face_region (dict): The face region data.
+            new_tag (str): The name assigned to the face.
+        """
+        pass
 
     def rename_face(self, face):
         """Required by ImagePane API, no-op in this dialog."""
+        pass
+
+    def toggle_faces(self):
+        """Required by the FaceCanvas API, no-op in this dialog."""
+        pass
+
+    def set_next_region_type(self, region_type):
+        """
+        Required by the FaceCanvas API, no-op in this dialog.
+
+        Args:
+            region_type (str): Region type identifier (e.g. "Face").
+        """
         pass
 
     def toggle_fullscreen(self):
@@ -746,7 +838,14 @@ class DuplicateManagerDialog(QDialog):
             QIcon.fromTheme("document-open"), UITexts.CONTEXT_MENU_OPEN)
         self.main_win.populate_open_with_submenu(open_menu, path)
 
-        # Open location
+        # Open location with the main application
+        action_open_bagheeraview = menu.addAction(
+            QIcon.fromTheme("system-run"),
+            UITexts.CONTEXT_MENU_OPEN_BAGHEERAVIEW)
+        action_open_bagheeraview.triggered.connect(
+            lambda: self._open_location_in_bagheeraview(path))
+
+        # Open location with Dolphin
         action_open_default_app = menu.addAction(
             QIcon.fromTheme("system-run"),
             UITexts.CONTEXT_MENU_OPEN_DEFAULT_APP)
@@ -782,12 +881,14 @@ class DuplicateManagerDialog(QDialog):
 
         # Trash / Delete
         action_trash = menu.addAction(
-            QIcon.fromTheme("user-trash"), UITexts.CONTEXT_MENU_TRASH)
+            QIcon.fromTheme("user-trash"),
+            self._menu_text(UITexts.CONTEXT_MENU_TRASH, "move_to_trash"))
         action_trash.triggered.connect(
             lambda: self._handle_action(delete_path=path, permanent=False))
 
         action_delete = menu.addAction(
-            QIcon.fromTheme("edit-delete"), UITexts.CONTEXT_MENU_DELETE)
+            QIcon.fromTheme("edit-delete"),
+            self._menu_text(UITexts.CONTEXT_MENU_DELETE, "delete_permanently"))
         action_delete.triggered.connect(
             lambda: self._handle_permanent_delete(path))
 
@@ -795,11 +896,105 @@ class DuplicateManagerDialog(QDialog):
 
         # Properties
         action_props = menu.addAction(
-            QIcon.fromTheme("document-properties"), UITexts.CONTEXT_MENU_PROPERTIES)
+            QIcon.fromTheme("document-properties"),
+            UITexts.CONTEXT_MENU_PROPERTIES)
         action_props.triggered.connect(
             lambda: self._show_properties(path, pane))
 
         menu.exec(pane.mapToGlobal(pos))
+
+    def _menu_text(self, base_text, action=None):
+        """
+        Appends the keyboard shortcut assigned to ``action`` to ``base_text``.
+
+        Args:
+            base_text (str): Original action text.
+            action (str, optional): Action name whose shortcut is displayed,
+                if one is configured.
+
+        Returns:
+            str: The text with the shortcut hint appended (``\\t<shortcut>``)
+            when a shortcut is available.
+        """
+        key_combo = self._menu_action_shortcuts.get(action) if action else None
+        if key_combo is None:
+            return base_text
+        key, mods = key_combo
+        try:
+            mod_val = int(mods)
+        except TypeError:
+            mod_val = mods.value
+        seq = QKeySequence(mod_val | key)
+        shortcut_str = seq.toString(QKeySequence.NativeText)
+        return f"{base_text}\t{shortcut_str}" if shortcut_str else base_text
+
+    def _setup_dialog_shortcuts(self):
+        """
+        Registers the deletion shortcuts for this dialog.
+
+        ``Delete`` sends the focused pane's image to the trash and
+        ``Shift+Delete`` deletes it permanently, reusing the global shortcut
+        assignments so the behaviour stays configurable.
+        """
+        self._menu_action_shortcuts = {}
+        controller = getattr(self.main_win, "shortcut_controller", None)
+        if controller is not None:
+            for action in ("move_to_trash", "delete_permanently"):
+                key_combo = getattr(
+                    controller, "action_to_shortcut", {}).get(action)
+                if key_combo is not None:
+                    self._menu_action_shortcuts[action] = key_combo
+
+        self._shortcut_objects = []
+        for action, handler in (("move_to_trash", self._shortcut_trash),
+                                ("delete_permanently", self._shortcut_delete)):
+            key_combo = self._menu_action_shortcuts.get(action)
+            if key_combo is None:
+                continue
+            key, mods = key_combo
+            try:
+                mod_val = int(mods)
+            except TypeError:
+                mod_val = mods.value
+            shortcut = QShortcut(
+                QKeySequence(mod_val | key), self)
+            shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(handler)
+            self._shortcut_objects.append(shortcut)
+
+    def _active_pane_path(self):
+        """
+        Returns the path shown by the currently focused pane, if any.
+
+        Returns:
+            str or None: The path of the active pane image.
+        """
+        pane = self.active_pane or self.left_pane
+        if pane is None:
+            return None
+        return pane.controller.get_current_path()
+
+    def _shortcut_trash(self):
+        """Moves the image of the active pane to the trash."""
+        path = self._active_pane_path()
+        if path:
+            self._handle_action(delete_path=path, permanent=False)
+
+    def _shortcut_delete(self):
+        """Permanently deletes the image of the active pane."""
+        path = self._active_pane_path()
+        if path:
+            self._handle_permanent_delete(path)
+
+    def _open_location_in_bagheeraview(self, path):
+        """
+        Opens the folder containing the given file in the main window and
+        positions the thumbnail grid on that image.
+
+        Args:
+            path (str): Path of the file whose location is opened.
+        """
+        self.main_win.locate_path_in_view(path)
 
     def _handle_permanent_delete(self, path):
         """

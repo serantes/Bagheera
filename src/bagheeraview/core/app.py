@@ -483,6 +483,15 @@ class AppShortcutController(QObject):
         if is_typing:
             return False
 
+        # Dialogs that declare ``handles_own_shortcuts`` (e.g. the similar and
+        # duplicate management dialogs) resolve their context-menu keys
+        # themselves, so the global shortcuts must not be triggered while they
+        # are active.
+        active_window = QApplication.activeWindow()
+        if active_window is not None and \
+           getattr(active_window, "handles_own_shortcuts", False):
+            return False
+
         # 1. Check Favorite Shortcuts FIRST (Priority Override)
         if (key, mods) in self._favorite_shortcuts:
             query = self._favorite_shortcuts[(key, mods)]
@@ -1462,6 +1471,9 @@ class MainWindow(QMainWindow):
         # Queue and timer for incremental model updates (prevents UI freeze
         # on fast scan)
         self._model_update_queue = deque()
+        # Path pending to be located in the thumbnail grid after a scan
+        # (used by the "Open location with BagheeraView" action).
+        self._pending_locate_path = None
         self._model_update_timer = QTimer(self)
         self._model_update_timer.setInterval(30)  # ~30 FPS updates
         self._model_update_timer.timeout.connect(self._process_model_update_queue)
@@ -1616,6 +1628,8 @@ class MainWindow(QMainWindow):
             self._model_update_timer.stop()
             # Ensure filter stats are updated at the end
             self.apply_filters()
+            # Retry locating a path requested by the location dialogs.
+            self._maybe_locate_pending_path()
 
     def _apply_global_stylesheet(self):
         """Applies application-wide stylesheets from config."""
@@ -2643,6 +2657,68 @@ class MainWindow(QMainWindow):
                 self.thumbnail_view.scrollTo(
                     first_valid_index, QAbstractItemView.EnsureVisible)
 
+    def locate_path_in_view(self, path_to_locate):
+        """
+        Opens the main window and positions the thumbnail grid on the given
+        image.
+
+        If the image is already present in the current view it is selected and
+        scrolled into view without rescanning. Otherwise the parent folder is
+        scanned and the selection is retried as soon as the model has been
+        populated.
+
+        Args:
+            path_to_locate (str): Path of the image to locate in the grid.
+        """
+        path_to_locate = os.path.abspath(
+            os.path.expanduser(path_to_locate))
+        folder_path = os.path.dirname(path_to_locate)
+
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+        if self.find_and_select_path(path_to_locate):
+            # Already loaded: make sure the thumbnail is visible even if it
+            # was previously selected but scrolled out of view.
+            persistent_index = self._path_to_model_index.get(path_to_locate)
+            if persistent_index and persistent_index.isValid():
+                proxy_index = self.proxy_model.mapFromSource(
+                    QModelIndex(persistent_index))
+                if proxy_index.isValid():
+                    self.thumbnail_view.scrollTo(
+                        proxy_index, QAbstractItemView.EnsureVisible)
+            self._pending_locate_path = None
+            return
+
+        # The image is not in the current view yet: scan its folder and
+        # select it once the scan finishes.
+        self._pending_locate_path = path_to_locate
+        self.start_scan([folder_path], select_paths=[path_to_locate])
+
+    def _maybe_locate_pending_path(self):
+        """
+        Retries the pending image selection after the model has been updated.
+
+        This is invoked after the incremental model queue is flushed and once
+        a scan finishes. If the pending path is still not present in the model,
+        the remaining scan results are requested so that the thumbnail can
+        eventually be located.
+        """
+        if not self._pending_locate_path:
+            return
+
+        if self.find_and_select_path(self._pending_locate_path):
+            self._pending_locate_path = None
+            return
+
+        # The path is not loaded yet: request any remaining files so that the
+        # thumbnail eventually appears in the model.
+        last_index = getattr(self, "_scanner_last_index", 0)
+        total_files = getattr(self, "_scanner_total_files", 0)
+        if self.scanner is not None and last_index < total_files:
+            self.scanner.load_images(last_index, total_files - last_index)
+
     def toggle_visibility(self):
         """Toggles the visibility of the main window, opening a viewer if needed."""
         if self.isVisible():
@@ -3324,6 +3400,9 @@ class MainWindow(QMainWindow):
         if self.rebuild_timer.isActive():
             self.rebuild_timer.stop()
         self.rebuild_view()
+
+        # Retry locating a path requested by the location dialogs.
+        self._maybe_locate_pending_path()
 
     def more_files_available(self, i, count):
         """Slot for when a batch of images has been loaded, with more available."""

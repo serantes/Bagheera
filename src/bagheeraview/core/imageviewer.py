@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import (
     QPixmap, QIcon, QTransform, QDrag, QPainter, QPen, QColor, QAction, QCursor,
-    QImageReader, QMovie, QKeySequence, QPainterPath, QImage
+    QImageReader, QMovie, QKeySequence, QPainterPath, QImage, QDesktopServices
 )
 from PySide6.QtCore import (
     Signal, QPoint, QSize, Qt, QMimeData, QUrl, QTimer, QEvent, QRect, Slot, QRectF,
@@ -1950,7 +1950,16 @@ class ImageViewer(QWidget):
             "compare_1": lambda: self.set_comparison_mode(1),
             "compare_2": lambda: self.set_comparison_mode(2),
             "compare_4": lambda: self.set_comparison_mode(4),
-            "link_panes": self.toggle_link_panes,
+            "open_folder": lambda: (
+                path := self.controller.get_current_path(),
+                subprocess.Popen(['dolphin', '--select', path])
+                if os.path.isfile(path)
+                else QDesktopServices.openUrl(
+                    QUrl.fromLocalFile(
+                        path if os.path.isdir(path) else os.path.dirname(path)
+                    )
+                )
+            )[-1],
         }
 
     def _execute_action(self, action):
@@ -3025,6 +3034,8 @@ class ImageViewer(QWidget):
             menu_structure = [
                 {"text": UITexts.CONTEXT_MENU_OPEN, "icon": "document-open",
                  "dynamic_submenu": self._populate_open_with_menu},
+                {"text": UITexts.CONTEXT_MENU_OPEN_SEARCH_LOCATION,
+                 "action": "open_folder", "icon": "folder-search"},
                 "separator",
                 {"text": UITexts.VIEWER_MENU_TAGS,
                  "action": "fast_tag", "icon": "document-properties"},

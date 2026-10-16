@@ -18,7 +18,9 @@ from PySide6.QtWidgets import (
     QSpinBox, QSplitter, QWidget, QMenu, QApplication, QAbstractItemView,
     QMessageBox
 )
-from PySide6.QtGui import QIcon, QImage, QDesktopServices
+from PySide6.QtGui import (
+    QDesktopServices, QIcon, QImage, QKeySequence, QShortcut
+)
 from PySide6.QtCore import Qt, QUrl
 from .constants import UITexts, APP_CONFIG, AVAILABLE_FACE_ENGINES, AVAILABLE_PET_ENGINES
 from .faiss_worker import FAISSSimilarSearchWorker
@@ -35,6 +37,10 @@ class SimilarImagesDialog(QDialog):
     machinery to support zooming, automatic region detection (faces and pets),
     fast tagging, deletion and metadata editing of the selected result.
     """
+
+    # The dialog resolves the context-menu keyboard shortcuts itself, so the
+    # application-wide shortcut controller must not intercept those keys.
+    handles_own_shortcuts = True
 
     def __init__(self, target_path, main_win):
         """
@@ -113,6 +119,7 @@ class SimilarImagesDialog(QDialog):
         self.splitter.setStretchFactor(0, 0)  # Left table doesn't stretch
         self.splitter.setStretchFactor(1, 1)  # Right image stretches
         self._next_region_type = "Face"
+        self._setup_dialog_shortcuts()
         self.start_search()
 
     def _create_preview_pane_widget(self):
@@ -304,6 +311,12 @@ class SimilarImagesDialog(QDialog):
         if not path or not os.path.exists(path):
             return
 
+        # If regions are shown and the click falls inside one, display the
+        # region menu instead of the general image menu.
+        global_pos = self.preview_pane.mapToGlobal(pos)
+        if self._show_region_context_menu(global_pos):
+            return
+
         menu = QMenu(self)
 
         # 1. Open Submenu
@@ -328,19 +341,27 @@ class SimilarImagesDialog(QDialog):
         menu.addSeparator()
 
         # 2. Quick tags
-        action_fast_tag = menu.addAction(QIcon.fromTheme("document-properties"), UITexts.VIEWER_MENU_TAGS)
+        action_fast_tag = menu.addAction(
+            QIcon.fromTheme("document-properties"),
+            self._menu_text(UITexts.VIEWER_MENU_TAGS, "fast_tag"))
         action_fast_tag.triggered.connect(self._show_fast_tags)
 
         # 3. Region management
-        region_menu = menu.addMenu(QIcon.fromTheme("edit-image-face-recognize"), UITexts.VIEWER_MENU_DETECT_AREAS)
+        region_menu = menu.addMenu(
+            QIcon.fromTheme("edit-image-face-recognize"),
+            UITexts.VIEWER_MENU_DETECT_AREAS)
 
-        action_detect_faces = region_menu.addAction(UITexts.VIEWER_MENU_DETECT_FACES)
+        action_detect_faces = region_menu.addAction(
+            self._menu_text(UITexts.VIEWER_MENU_DETECT_FACES, "detect_faces"))
         action_detect_faces.setEnabled(bool(AVAILABLE_FACE_ENGINES))
-        action_detect_faces.triggered.connect(lambda: self._run_region_detection("faces"))
+        action_detect_faces.triggered.connect(
+            lambda: self._run_region_detection("faces"))
 
-        action_detect_pets = region_menu.addAction(UITexts.VIEWER_MENU_DETECT_PETS)
+        action_detect_pets = region_menu.addAction(
+            self._menu_text(UITexts.VIEWER_MENU_DETECT_PETS, "detect_pets"))
         action_detect_pets.setEnabled(bool(AVAILABLE_PET_ENGINES))
-        action_detect_pets.triggered.connect(lambda: self._run_region_detection("pets"))
+        action_detect_pets.triggered.connect(
+            lambda: self._run_region_detection("pets"))
 
         region_menu.addSeparator()
 
@@ -376,7 +397,9 @@ class SimilarImagesDialog(QDialog):
         menu.addSeparator()
 
         # 5. Show faces & other regions
-        action_show_faces = menu.addAction(QIcon.fromTheme("edit-image-face-show"), UITexts.SHOW_FACES)
+        action_show_faces = menu.addAction(
+            QIcon.fromTheme("edit-image-face-show"),
+            self._menu_text(UITexts.SHOW_FACES, "toggle_faces"))
         action_show_faces.setCheckable(True)
         action_show_faces.setChecked(self.preview_pane.controller.show_faces)
         action_show_faces.triggered.connect(self.toggle_faces)
@@ -384,19 +407,72 @@ class SimilarImagesDialog(QDialog):
         menu.addSeparator()
 
         # 6. Trash & Delete
-        action_trash = menu.addAction(QIcon.fromTheme("user-trash"), UITexts.CONTEXT_MENU_TRASH)
-        action_trash.triggered.connect(lambda: self._handle_deletion(path, permanent=False))
+        action_trash = menu.addAction(
+            QIcon.fromTheme("user-trash"),
+            self._menu_text(UITexts.CONTEXT_MENU_TRASH, "move_to_trash"))
+        action_trash.triggered.connect(
+            lambda: self._handle_deletion(path, permanent=False))
 
-        action_delete = menu.addAction(QIcon.fromTheme("edit-delete"), UITexts.CONTEXT_MENU_DELETE)
-        action_delete.triggered.connect(lambda: self._handle_permanent_delete(path))
+        action_delete = menu.addAction(
+            QIcon.fromTheme("edit-delete"),
+            self._menu_text(UITexts.CONTEXT_MENU_DELETE, "delete_permanently"))
+        action_delete.triggered.connect(
+            lambda: self._handle_permanent_delete(path))
 
         menu.addSeparator()
 
         # 7. Properties
-        action_props = menu.addAction(QIcon.fromTheme("document-properties"), UITexts.CONTEXT_MENU_PROPERTIES)
+        action_props = menu.addAction(
+            QIcon.fromTheme("document-properties"),
+            self._menu_text(UITexts.CONTEXT_MENU_PROPERTIES, "properties"))
         action_props.triggered.connect(lambda: self._show_properties(path))
 
-        menu.exec(self.preview_pane.mapToGlobal(pos))
+        menu.exec(global_pos)
+
+    def _show_region_context_menu(self, global_pos):
+        """
+        Shows the region context menu when the click falls over a region.
+
+        Regions are shown when face display is enabled. The menu offers the
+        same actions as the image viewer: delete the region and rename it.
+
+        Args:
+            global_pos (QPoint): Global position of the context-menu request.
+
+        Returns:
+            bool: True if a region was clicked and its menu was shown.
+        """
+        controller = self.preview_pane.controller
+        if not controller.show_faces:
+            return False
+
+        canvas = self.preview_pane.canvas
+        if canvas is None:
+            return False
+
+        clicked_face = self._get_clicked_face(canvas.mapFromGlobal(global_pos))
+        if not clicked_face:
+            return False
+
+        menu = QMenu(self)
+        action_delete = menu.addAction(QIcon.fromTheme("edit-delete"),
+                                       UITexts.DELETE_AREA_TITLE)
+        action_rename = menu.addAction(QIcon.fromTheme("edit-rename"),
+                                       UITexts.RENAME_REGION_TITLE)
+        res = menu.exec(global_pos)
+
+        if res == action_delete:
+            face_name = clicked_face.get('name', '')
+            controller.remove_face(clicked_face)
+            if face_name:
+                has_other = any(f.get('name') == face_name
+                                for f in controller.faces)
+                if not has_other:
+                    controller.toggle_tag(face_name, False)
+            canvas.update()
+        elif res == action_rename:
+            self.rename_face(clicked_face)
+        return True
 
     def _handle_permanent_delete(self, path):
         """
@@ -489,18 +565,117 @@ class SimilarImagesDialog(QDialog):
         manager = FastTagManager(self.preview_pane)
         manager.show_menu()
 
+    def _menu_text(self, base_text, action=None):
+        """
+        Appends the keyboard shortcut assigned to ``action`` to ``base_text``.
+
+        Args:
+            base_text (str): Original action text.
+            action (str, optional): Action name whose shortcut is displayed,
+                if one is configured.
+
+        Returns:
+            str: The text with the shortcut hint appended (``\\t<shortcut>``)
+            when a shortcut is available.
+        """
+        key_combo = self._menu_action_shortcuts.get(action) if action else None
+        if key_combo is None:
+            return base_text
+        key, mods = key_combo
+        try:
+            mod_val = int(mods)
+        except TypeError:
+            mod_val = mods.value
+        seq = QKeySequence(mod_val | key)
+        shortcut_str = seq.toString(QKeySequence.NativeText)
+        return f"{base_text}\t{shortcut_str}" if shortcut_str else base_text
+
+    def _setup_dialog_shortcuts(self):
+        """
+        Registers the context-menu shortcuts for this dialog.
+
+        The shortcuts are taken from the viewer shortcuts of the main window
+        (so they are configurable by the user) and are installed with the
+        ``WidgetWithChildrenShortcut`` context, which guarantees they work no
+        matter which child widget (results table, preview pane, ...) has the
+        focus.
+        """
+        self._menu_action_shortcuts = {}
+        viewer_shortcuts = getattr(self.main_win, "viewer_shortcuts", {}) or {}
+        for _key_combo, (action, _desc) in viewer_shortcuts.items():
+            self._menu_action_shortcuts[action] = _key_combo
+
+        # The trash and permanent-delete actions reuse the global shortcuts.
+        controller = getattr(self.main_win, "shortcut_controller", None)
+        if controller is not None:
+            for action in ("move_to_trash", "delete_permanently"):
+                key_combo = getattr(
+                    controller, "action_to_shortcut", {}).get(action)
+                if key_combo is not None:
+                    self._menu_action_shortcuts[action] = key_combo
+
+        self._shortcut_objects = []
+        self._menu_handlers = {
+            "fast_tag": self._show_fast_tags,
+            "detect_faces": lambda: self._run_region_detection("faces"),
+            "detect_pets": lambda: self._run_region_detection("pets"),
+            "toggle_faces": self.toggle_faces,
+            "properties": self._show_properties_current,
+            "move_to_trash": self._shortcut_trash,
+            "delete_permanently": self._shortcut_delete,
+        }
+        # Reverse map used as a keyPressEvent fallback (same lookup that the
+        # ImageViewer uses), so the shortcuts keep working even if the widget
+        # that holds the focus forwards the key event to the dialog.
+        self._menu_shortcut_keys = {
+            key_combo: action
+            for action, key_combo in self._menu_action_shortcuts.items()
+        }
+        for action, handler in self._menu_handlers.items():
+            key_combo = self._menu_action_shortcuts.get(action)
+            if key_combo is None:
+                continue
+            key, mods = key_combo
+            try:
+                mod_val = int(mods)
+            except TypeError:
+                mod_val = mods.value
+            shortcut = QShortcut(
+                QKeySequence(mod_val | key), self)
+            shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(handler)
+            self._shortcut_objects.append(shortcut)
+
+    def _show_properties_current(self):
+        """Shows the properties dialog for the currently previewed image."""
+        path = (self.preview_pane.controller.get_current_path()
+                if self.preview_pane else None)
+        if path:
+            self._show_properties(path)
+
+    def _shortcut_trash(self):
+        """Moves the currently previewed image to the trash."""
+        path = (self.preview_pane.controller.get_current_path()
+                if self.preview_pane else None)
+        if path:
+            self._handle_deletion(path, permanent=False)
+
+    def _shortcut_delete(self):
+        """Permanently deletes the currently previewed image."""
+        path = (self.preview_pane.controller.get_current_path()
+                if self.preview_pane else None)
+        if path:
+            self._handle_permanent_delete(path)
+
     def _open_location_in_bagheeraview(self, path):
         """
-        Opens the folder containing the given file in the main window.
+        Opens the folder containing the given file in the main window and
+        positions the thumbnail grid on that image.
 
         Args:
             path (str): Path of the file whose location is opened.
         """
-        folder_path = os.path.dirname(path)
-        self.main_win.start_scan([folder_path])
-        self.main_win.show()
-        self.main_win.raise_()
-        self.main_win.activateWindow()
+        self.main_win.locate_path_in_view(path)
 
     def _run_region_detection(self, detect_type):
         """
@@ -656,20 +831,133 @@ class SimilarImagesDialog(QDialog):
 
     def _get_clicked_face_for_pane(self, pane, pos):
         """
-        Returns the face clicked on the given pane.
+        Returns the face region under the given canvas position, if any.
 
         Args:
-            pane (ImagePane): Unused, kept for API compatibility.
-            pos (QPoint): Unused, kept for API compatibility.
+            pane (ImagePane): The pane whose regions are inspected.
+            pos (QPoint): Position in canvas coordinates.
 
         Returns:
-            None: This dialog never returns a clicked face.
+            dict or None: The clicked face/pet region or ``None``.
         """
+        if pane is None:
+            return None
+        for face in pane.controller.faces:
+            rect = pane.canvas.map_from_source(face)
+            if rect.contains(pos):
+                return face
         return None
 
-    def rename_face(self, face):
-        """No-op implementation required by the ImagePane API."""
+    def _get_clicked_face(self, pos):
+        """
+        Returns the face region under the given preview canvas position.
+
+        This method completes the ImagePane/ImageViewer API expected by the
+        FaceCanvas so that double-clicking a region can zoom to it.
+
+        Args:
+            pos (QPoint): Position in canvas coordinates.
+
+        Returns:
+            dict or None: The clicked face/pet region or ``None``.
+        """
+        return self._get_clicked_face_for_pane(self.preview_pane, pos)
+
+    @property
+    def zoom_manager(self):
+        """
+        Zoom manager of the preview pane (ImagePane API compatibility).
+
+        Returns:
+            ZoomManager or None: The preview pane zoom manager.
+        """
+        return self.preview_pane.zoom_manager if self.preview_pane else None
+
+    def _update_person_recognition_for_face(self, face_region, new_tag):
+        """
+        No-op implementation required by the FaceCanvas drawing flow.
+
+        Person recognition is a viewer-level feature; the Similar Images
+        dialog relies on the main window for that workflow.
+
+        Args:
+            face_region (dict): The face region data.
+            new_tag (str): The name assigned to the face.
+        """
         pass
+
+    def rename_face(self, face):
+        """
+        Opens a dialog to rename a specific region of the preview image.
+
+        The region type determines which name history is used, and the
+        resulting tag is stored in the image metadata.
+
+        Args:
+            face (dict): Region whose name will be changed.
+        """
+        if not face:
+            return
+
+        from .imageviewer import FaceNameDialog
+
+        controller = self.preview_pane.controller
+        canvas = self.preview_pane.canvas
+        region_type = face.get('type', 'Face')
+
+        history_list = []
+        if self.main_win:
+            if region_type == "Pet":
+                history_list = self.main_win.pet_names_history
+            elif region_type == "Body":
+                history_list = self.main_win.body_names_history
+            elif region_type == "Object":
+                history_list = self.main_win.object_names_history
+            elif region_type == "Landmark":
+                history_list = self.main_win.landmark_names_history
+            else:  # Face
+                history_list = self.main_win.face_names_history
+
+        history = history_list if self.main_win else []
+        current_name = face.get('name', '')
+
+        new_full_tag, updated_history, ok = FaceNameDialog.get_name(
+            self, history, current_name, main_win=self.main_win,
+            region_type=region_type, title=UITexts.RENAME_REGION)
+
+        if not (ok and new_full_tag) or new_full_tag == current_name:
+            return
+
+        # Remove the old tag if it is not used by any other region.
+        if current_name:
+            has_other = any(f.get('name') == current_name
+                            for f in controller.faces if f is not face)
+            if not has_other:
+                controller.toggle_tag(current_name, False)
+
+        face['name'] = new_full_tag
+        if self.main_win:
+            if region_type == "Pet":
+                self.main_win.pet_names_history = updated_history
+            elif region_type == "Body":
+                self.main_win.body_names_history = updated_history
+            elif region_type == "Object":
+                self.main_win.object_names_history = updated_history
+            elif region_type == "Landmark":
+                self.main_win.landmark_names_history = updated_history
+            else:  # Face
+                self.main_win.face_names_history = updated_history
+
+        try:
+            controller.save_faces()
+            controller.toggle_tag(new_full_tag, True)
+            if region_type == "Face":
+                self._update_person_recognition_for_face(face, new_full_tag)
+        except Exception as e:
+            QMessageBox.critical(self, UITexts.ERROR, str(e))
+
+        if canvas:
+            canvas.update()
 
     def toggle_fullscreen(self):
         """No-op implementation required by the ImagePane API."""
@@ -694,10 +982,13 @@ class SimilarImagesDialog(QDialog):
 
     def keyPressEvent(self, event):
         """
-        Handles the keyboard shortcuts used for zooming the preview image.
+        Handles the keyboard shortcuts used for zooming the preview image
+        and for the context-menu actions.
 
         Supported keys: ``+``/``=`` (zoom in), ``-`` (zoom out), ``0`` (reset
-        zoom) and ``Z`` (toggle fit-to-screen).
+        zoom) and ``Z`` (toggle fit-to-screen). The context-menu actions
+        (quick tags, detection, show faces, properties and trash/delete) use
+        the viewer shortcuts configured in the main window.
 
         Args:
             event (QKeyEvent): The key event to handle.
@@ -720,7 +1011,16 @@ class SimilarImagesDialog(QDialog):
                 self.preview_pane.zoom_manager.toggle_fit_to_screen()
             event.accept()
         else:
-            super().keyPressEvent(event)
+            modifiers = event.modifiers() & (
+                Qt.ShiftModifier | Qt.ControlModifier |
+                Qt.AltModifier | Qt.MetaModifier)
+            action = self._menu_shortcut_keys.get((key, modifiers))
+            handler = self._menu_handlers.get(action)
+            if handler is not None:
+                handler()
+                event.accept()
+            else:
+                super().keyPressEvent(event)
 
     def done(self, r):
         """
