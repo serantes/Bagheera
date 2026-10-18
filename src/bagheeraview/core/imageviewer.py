@@ -803,9 +803,9 @@ class FaceCanvas(QLabel):
             self.dragging = True
             self.drag_start_pos = event.globalPosition().toPoint()
             self.drag_start_scroll_x = \
-                self.viewer.scroll_area.horizontalScrollBar().value()
+                self.image_panel.scroll_area.horizontalScrollBar().value()
             self.drag_start_scroll_y = \
-                self.viewer.scroll_area.verticalScrollBar().value()
+                self.image_panel.scroll_area.verticalScrollBar().value()
             self.setCursor(Qt.ClosedHandCursor)
             event.accept()
         else:
@@ -1092,7 +1092,6 @@ class FaceCanvas(QLabel):
                             'h': norm_h,
                             'type': 'Face'
                         }
-                        # self.viewer._update_person_recognition_for_face(new_face_dict, full_tag)
                         self.image_panel.viewer._update_person_recognition_for_face(new_face_dict, full_tag)
                     self.update()  # Repaint to show the new face with its name
 
