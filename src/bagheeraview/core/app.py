@@ -551,12 +551,13 @@ class AppShortcutController(QObject):
                               if isinstance(w, ImageViewer)
                               and w.isActiveWindow()), None)
         if active_viewer:
-            if key == Qt.Key_End:
-                active_viewer.controller.last()
-            else:
+            if key == Qt.Key_Home:
                 active_viewer.controller.first()
+            else:
+                active_viewer.controller.last()
             active_viewer.load_and_fit_image()
-        elif self.main_win.proxy_model.rowCount() > 0:
+
+        if self.main_win.proxy_model.rowCount() > 0:
             if key == Qt.Key_End \
                and self.main_win._scanner_last_index < \
                self.main_win._scanner_total_files:
