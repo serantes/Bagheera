@@ -575,6 +575,7 @@ _UI_TEXTS = {
         "for KDE with Baloo support.<br><br>Created by {2} with the help of AI, but "
         "mostly thanks to the job of the good people at KDE and Qt.",
         "MENU_CACHE": "Cache",
+        "MENU_CACHE_MAINTENANCE": "Cache Maintenance",
         "MENU_CLEAR_CACHE": "Clear cache ({} items, {:.1f} MB, {:.1f} MB on disk)",
         "MENU_CLEAN_CACHE": "Clean up invalid cache entries",
         "MENU_CLEAN_METADATA_CACHE": "Clean up stale metadata cache",
@@ -605,6 +606,7 @@ _UI_TEXTS = {
         "MENU_FORCE_FULL_ALL_ANALYSIS": "All files detection ignoring cache",
         "MENU_FORCE_FULL_ANALYSIS": "Current search detection ignoring cache",
         "MENU_REVIEW_IGNORED": "Review ignored pairs",
+        "MENU_HASHES_MAINTENANCE": "Hashes maintenance",
         "MENU_CLEAN_UP_HASHES": "Clean up",
         "MENU_REPAIR_DATABASE": "Repair index",
         "MENU_CLEAR_EXCEPTIONS": "Delete all ignored pairs",
@@ -1173,6 +1175,7 @@ _UI_TEXTS = {
         "simple para KDE con soporte para Baloo.<br><br>Creado por {2} con la ayuda de "
         "la IA, pero mayormente gracias al trabajo de la buena gente de KDE y Qt.",
         "MENU_CACHE": "Caché",
+        "MENU_CACHE_MAINTENANCE": "Mantenimiento de caché",
         "MENU_CLEAR_CACHE": "Limpiar caché ({} ítems, {:.1f} MB, {:.1f} MB en disco)",
         "MENU_CLEAN_CACHE": "Limpiar entradas de caché inválidas",
         "MENU_CLEAN_METADATA_CACHE": "Limpiar caché de metadatos obsoletos",
@@ -1203,6 +1206,7 @@ _UI_TEXTS = {
         "MENU_FORCE_FULL_ALL_ANALYSIS": "Detectar en todos los archivos ignorando la caché",
         "MENU_FORCE_FULL_ANALYSIS": "Detectar en búsqueda actual ignorando la caché",
         "MENU_REVIEW_IGNORED": "Revisar parejas ignoradas",
+        "MENU_HASHES_MAINTENANCE": "Mantenimiento de hashes",
         "MENU_CLEAN_UP_HASHES": "Limpiar",
         "MENU_REPAIR_DATABASE": "Reparar índice",
         "MENU_CLEAR_EXCEPTIONS": "Borrar parejas ignoradas",
@@ -1778,6 +1782,7 @@ _UI_TEXTS = {
         "sinxelo para KDE con soporte para Baloo.<br><br>Creado por {2} coa axuda da "
         " IA, pero maiormente gracias ó traballo da boa xente de KDE e Qt.",
         "MENU_CACHE": "Caché",
+        "MENU_CACHE_MAINTENANCE": "Mantemento de caché",
         "MENU_CLEAR_CACHE": "Limpar caché ({} elementos, {:.1f} MB, {:.1f} MB en "
         "disco)",
         "MENU_CLEAN_METADATA_CACHE": "Limpar caché de metadatos obsoletos",
@@ -1809,6 +1814,7 @@ _UI_TEXTS = {
         "MENU_FORCE_FULL_ALL_ANALYSIS": "Detectar en todos os arquivos ignorando a caché",
         "MENU_FORCE_FULL_ANALYSIS": "Detectar na procura actual ignorando a caché",
         "MENU_REVIEW_IGNORED": "Revisar ignorados",
+        "MENU_HASHES_MAINTENANCE": "Manteñemento de hashes",
         "MENU_CLEAN_UP_HASHES": "Limpar",
         "MENU_REPAIR_DATABASE": "Reparar índice",
         "MENU_CLEAR_EXCEPTIONS": "Borrar todas asparellas ignoradas",

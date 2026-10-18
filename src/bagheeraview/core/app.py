@@ -1940,17 +1940,21 @@ class MainWindow(QMainWindow):
 
         cache_menu = menu.addMenu(QIcon.fromTheme("drive-harddisk"), UITexts.MENU_CACHE)
 
-        clean_cache_action = cache_menu.addAction(QIcon.fromTheme("edit-clear-all"),
-                                                  UITexts.MENU_CLEAN_CACHE)
-        clean_cache_action.triggered.connect(self.clean_thumbnail_cache)
+        cache_maintenance_action = cache_menu.addAction(QIcon.fromTheme("edit-clear-all"),
+                                                        UITexts.MENU_CACHE_MAINTENANCE)
+        cache_maintenance_action.triggered.connect(self.cache_maintenance)
 
-        clean_metadata_action = cache_menu.addAction(
-            QIcon.fromTheme("edit-clear"), UITexts.MENU_CLEAN_METADATA_CACHE)
-        clean_metadata_action.triggered.connect(self.clean_stale_metadata_cache)
+        # clean_cache_action = cache_menu.addAction(QIcon.fromTheme("edit-clear-all"),
+        #                                           UITexts.MENU_CLEAN_CACHE)
+        # clean_cache_action.triggered.connect(self.clean_thumbnail_cache)
 
-        clean_directory_action = cache_menu.addAction(
-            QIcon.fromTheme("edit-clear"), UITexts.MENU_CLEAN_DIRECTORY_CACHE)
-        clean_directory_action.triggered.connect(self.clean_stale_directory_cache)
+        # clean_metadata_action = cache_menu.addAction(
+        #     QIcon.fromTheme("edit-clear"), UITexts.MENU_CLEAN_METADATA_CACHE)
+        # clean_metadata_action.triggered.connect(self.clean_stale_metadata_cache)
+
+        # clean_directory_action = cache_menu.addAction(
+        #     QIcon.fromTheme("edit-clear"), UITexts.MENU_CLEAN_DIRECTORY_CACHE)
+        # clean_directory_action.triggered.connect(self.clean_stale_directory_cache)
 
         cache_menu.addSeparator()
 
@@ -1995,13 +1999,19 @@ class MainWindow(QMainWindow):
 
         duplicates_menu.addSeparator()
 
-        clean_hashes_action = duplicates_menu.addAction(
-            QIcon.fromTheme("edit-clear-all"), UITexts.MENU_CLEAN_UP_HASHES)
-        clean_hashes_action.triggered.connect(self.clean_duplicate_hashes)
+        hashes_maintenance_action = duplicates_menu.addAction(
+            QIcon.fromTheme("edit-clear-all"), UITexts.MENU_HASHES_MAINTENANCE)
+        hashes_maintenance_action.triggered.connect(self.hashes_maintenance)
 
-        repair_index_action = duplicates_menu.addAction(
-            QIcon.fromTheme("run-clean"), UITexts.MENU_REPAIR_DATABASE)
-        repair_index_action.triggered.connect(self.repair_duplicate_index)
+        # clean_hashes_action = duplicates_menu.addAction(
+        #     QIcon.fromTheme("edit-clear-all"), UITexts.MENU_CLEAN_UP_HASHES)
+        # clean_hashes_action.triggered.connect(self.clean_duplicate_hashes)
+
+        # repair_index_action = duplicates_menu.addAction(
+        #     QIcon.fromTheme("run-clean"), UITexts.MENU_REPAIR_DATABASE)
+        # repair_index_action.triggered.connect(self.repair_duplicate_index)
+
+        duplicates_menu.addSeparator()
 
         if self.duplicate_cache:
             count, size_bytes = self.duplicate_cache.get_hash_stats()
@@ -2106,12 +2116,23 @@ class MainWindow(QMainWindow):
                             all_paths.append(full_p)
         return all_paths
 
-    def clean_duplicate_hashes(self):
+    def hashes_maintenance(self):
+        """Performs maintenance tasks on the duplicate hash cache."""
+        if not self.duplicate_cache:
+            return
+
+        self.status_lbl.setText(UITexts.REPAIRING_DATABASE)
+        count = self.clean_duplicate_hashes(notify_user=False)
+        self.repair_duplicate_index(notify_user=False)
+        self.status_lbl.setText(UITexts.READY + f" (Cleaned {count} stale hash entries)")
+
+    def clean_duplicate_hashes(self, notify_user: bool = True):
         if self.duplicate_cache:
             count = self.duplicate_cache.clean_stale_hashes()
-            self.status_lbl.setText(f"Cleaned up {count} stale hash entries.")
+            if notify_user:
+                self.status_lbl.setText(f"Cleaned up {count} stale hash entries.")
 
-    def repair_duplicate_index(self):
+    def repair_duplicate_index(self, notify_user: bool = True):
         """Regenerates the BK-Tree and reverse index."""
         if not self.duplicate_cache:
             return
@@ -2121,11 +2142,13 @@ class MainWindow(QMainWindow):
                                     UITexts.DUPLICATE_ALREADY_RUNNING)
             return
 
-        self.status_lbl.setText(UITexts.REPAIRING_DATABASE)
+        if notify_user:
+            self.status_lbl.setText(UITexts.REPAIRING_DATABASE)
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             self.duplicate_cache.regenerate_bktree()
-            self.status_lbl.setText(UITexts.READY)
+            if notify_user:
+                self.status_lbl.setText(UITexts.READY)
         finally:
             QApplication.restoreOverrideCursor()
 
@@ -2238,6 +2261,15 @@ class MainWindow(QMainWindow):
             except RuntimeError:
                 continue
 
+    def cache_maintenance(self):
+        """Performs maintenance tasks on the cache."""
+        removed_count = self.clean_stale_directory_cache(rebuild_view=False, notify_user=False)
+        removed_count += self.clean_stale_metadata_cache(rebuild_view=False, notify_user=False)
+        self.status_lbl.setText(f"Cleaned {removed_count} stale metadata and directory entries.")
+        self.rebuild_view()
+        self.clean_thumbnail_cache()
+        pass
+
     def clean_thumbnail_cache(self):
         """Starts a background thread to clean invalid entries from the cache."""
         self.status_lbl.setText(UITexts.CACHE_CLEANING)
@@ -2246,19 +2278,25 @@ class MainWindow(QMainWindow):
         self.cache_cleaner.finished.connect(self._on_cache_cleaner_finished)
         self.cache_cleaner.start()
 
-    def clean_stale_metadata_cache(self):
+    def clean_stale_metadata_cache(self, rebuild_view: bool = True, notify_user: bool = True):
         """Starts a background thread to clean stale metadata entries."""
         self.status_lbl.setText("Cleaning stale metadata...")
         removed_count = self.cache.clean_stale_metadata()
-        self.status_lbl.setText(f"Cleaned {removed_count} stale metadata entries.")
-        self.rebuild_view()
+        if notify_user:
+            self.status_lbl.setText(f"Cleaned {removed_count} stale metadata entries.")
+        if rebuild_view:
+            self.rebuild_view()
+        return removed_count
 
-    def clean_stale_directory_cache(self):
+    def clean_stale_directory_cache(self, rebuild_view: bool = True, notify_user: bool = True):
         """Starts a background thread to clean stale directory entries."""
         self.status_lbl.setText("Cleaning stale directory cache...")
         removed_count = self.cache.clean_stale_directories()
-        self.status_lbl.setText(f"Cleaned {removed_count} stale directory cache entries.")
-        self.rebuild_view()
+        if notify_user:
+            self.status_lbl.setText(f"Cleaned {removed_count} stale directory cache entries.")
+        if rebuild_view:
+            self.rebuild_view()
+        return removed_count
 
     def on_cache_cleaned(self, count):
         """Slot for when the cache cleaning is finished."""
