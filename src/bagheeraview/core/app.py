@@ -2122,6 +2122,7 @@ class MainWindow(QMainWindow):
             return
 
         self.status_lbl.setText(UITexts.REPAIRING_DATABASE)
+        QApplication.processEvents()
         count = self.clean_duplicate_hashes(notify_user=False)
         self.repair_duplicate_index(notify_user=False)
         self.status_lbl.setText(UITexts.READY + f" (Cleaned {count} stale hash entries)")
