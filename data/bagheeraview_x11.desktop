@@ -1,0 +1,24 @@
+[Desktop Entry]
+Categories=Graphics;RasterGraphics;Viewer;
+Comment[en_US]=Bagheera Image Viewer with X11 forced
+Comment=Bagheera Image Viewer with X11 forced
+Encoding=UTF-8
+Exec=bagheeraview --x11 %u
+GenericName[en_US]=Bagheera Image Viewer (X11)
+GenericName=Bagheera Image Viewer (X11)
+Icon=bagheeraview
+MimeType=inode/directory;image/x-xbitmap;image/x-tga;image/x-portable-pixmap;image/x-portable-graymap;image/x-portable-bitmap;image/x-pict;image/webp;image/vnd.zbrush.pcx;image/vnd.adobe.photoshop;image/tiff;image/png;image/jpeg;image/gif;image/bmp;
+Name[en_US]=Bagheera Image Viewer (X11)
+Name=Bagheera Image Viewer (X11)
+NoDisplay=false
+Path=
+StartupNotify=true
+StartupWMClass=bagheeraview
+Terminal=false
+TerminalOptions=
+Type=Application
+X-DBUS-ServiceName=
+X-DBUS-StartupType=
+X-DCOP-ServiceType=
+X-KDE-SubstituteUID=false
+X-KDE-Username=
