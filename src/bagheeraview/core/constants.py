@@ -33,6 +33,8 @@ PROG_ID = "bagheeraview"
 PROG_VERSION = "1.0.0"
 PROG_AUTHOR = "Ignacio Serantes"
 PROG_FILE_NAME = "bagheeraview"  # Executable name for launching new instances
+PROG_ORGANIZATION_NAME = 'serantes'
+PROG_ORGANIZATION_DOMAIN = 'github.com/serantes'
 
 # --- CACHE SETTINGS ---
 # Maximum number of paths to track in the in-memory cache.
