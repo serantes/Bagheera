@@ -4842,8 +4842,9 @@ class MainWindow(QMainWindow):
             text = h.replace("search:/", "").replace("file:/", "")
 
             if h.startswith("file:/"):
-                path = h[6:]
-                if os.path.isdir(os.path.expanduser(path)):
+                path = os.path.expanduser(h[6:])
+                if os.path.isdir(path):
+                    text = path
                     icon = QIcon.fromTheme("folder")
                 else:
                     icon = QIcon.fromTheme("image-x-generic")
