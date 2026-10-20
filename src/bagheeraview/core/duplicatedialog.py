@@ -22,7 +22,9 @@ from PySide6.QtGui import (
 )
 from PySide6.QtCore import Qt, QTimer, QUrl
 from .imageviewer import ImagePane
-from .constants import APP_CONFIG, UITexts
+from .constants import (
+    APP_CONFIG, UITexts, DEFAULT_DIALOG_SHORTCUTS
+)
 from .propertiesdialog import PropertiesDialog
 
 
@@ -145,10 +147,16 @@ class DuplicateManagerDialog(QDialog):
         self.btn_del_left = QPushButton(
             QIcon.fromTheme("user-trash"), UITexts.DUPLICATE_DELETE_LEFT)
         self.btn_del_left.clicked.connect(self._delete_left)
+        self._set_button_shortcut_tooltip(self.btn_del_left,
+                                          UITexts.DUPLICATE_DELETE_LEFT,
+                                          "dup_delete_left")
 
         self.btn_del_right = QPushButton(
             QIcon.fromTheme("user-trash"), UITexts.DUPLICATE_DELETE_RIGHT)
         self.btn_del_right.clicked.connect(self._delete_right)
+        self._set_button_shortcut_tooltip(self.btn_del_right,
+                                          UITexts.DUPLICATE_DELETE_RIGHT,
+                                          "dup_delete_right")
 
         self.btn_link_panes = QPushButton(
             QIcon.fromTheme("object-link"), UITexts.VIEWER_MENU_LINK_PANES)
@@ -159,9 +167,15 @@ class DuplicateManagerDialog(QDialog):
         self.btn_keep_both = QPushButton(
             QIcon.fromTheme("emblem-important"), UITexts.DUPLICATE_KEEP_BOTH)
         self.btn_keep_both.clicked.connect(self._keep_both)
+        self._set_button_shortcut_tooltip(self.btn_keep_both,
+                                          UITexts.DUPLICATE_KEEP_BOTH,
+                                          "dup_keep_both")
 
         self.btn_skip = QPushButton(UITexts.DUPLICATE_SKIP)
         self.btn_skip.clicked.connect(self._skip)
+        self._set_button_shortcut_tooltip(self.btn_skip,
+                                          UITexts.DUPLICATE_SKIP,
+                                          "dup_skip")
 
         btn_layout.addWidget(self.btn_del_left)
         btn_layout.addWidget(self.btn_del_right)
@@ -332,32 +346,85 @@ class DuplicateManagerDialog(QDialog):
         else:
             super().wheelEvent(event)
 
+    def _dialog_key_matches(self, event, action):
+        """Checks whether a key event matches the configured dialog shortcut.
+
+        The shortcut is read from the main window configuration (falling back
+        to the defaults when no main window is present), so the dialog keys
+        stay configurable through the "Configure keyboard shortcuts" dialog.
+
+        Args:
+            event (QKeyEvent): The key event to test.
+            action (str): One of the keys in ``DIALOG_ACTIONS``.
+
+        Returns:
+            bool: ``True`` when the event's key and modifiers match the
+            configured shortcut.
+        """
+        key, mods = self._dialog_shortcut(action)
+        mods_mask = (Qt.ShiftModifier | Qt.ControlModifier
+                     | Qt.AltModifier | Qt.MetaModifier)
+        return (event.key() == key
+                and event.modifiers() & mods_mask == mods)
+
+    def _dialog_shortcut(self, action):
+        """Returns the ``(key, modifiers)`` tuple configured for an action."""
+        main_win = getattr(self, "main_win", None)
+        getter = getattr(main_win, "get_dialog_shortcut", None)
+        if getter is not None:
+            return getter(action)
+        return DEFAULT_DIALOG_SHORTCUTS.get(
+            action, (Qt.Key_unknown, Qt.NoModifier))
+
+    def _set_button_shortcut_tooltip(self, button, base_text, action):
+        """Appends the configured shortcut to a button's tooltip.
+
+        Args:
+            button (QPushButton): The button whose tooltip is updated.
+            base_text (str): The descriptive text shown before the shortcut.
+            action (str): The dialog action whose shortcut is displayed.
+        """
+        key, mods = self._dialog_shortcut(action)
+        try:
+            mod_val = int(mods)
+        except TypeError:
+            mod_val = mods.value
+        seq = QKeySequence(mod_val | key)
+        shortcut_str = seq.toString(QKeySequence.NativeText)
+        if shortcut_str:
+            button.setToolTip(f"{base_text} ({shortcut_str})")
+
     def keyPressEvent(self, event):
         """
         Handles keyboard shortcuts for navigation and actions.
 
-        Provides quick access to deletion (U/I), ignore (O), and skip (P),
-        as well as standard zoom controls (Z/+/ -). ``Delete``/``Shift+Delete``
-        move the active pane's image to the trash or delete it permanently.
+        Provides quick access to deletion (``dup_delete_left`` /
+        ``dup_delete_right``), keep-both (``dup_keep_both``) and skip
+        (``dup_skip``), as well as standard zoom controls
+        (``dup_zoom_in``/``dup_zoom_out``/``dup_reset_zoom``). All of these
+        keys are configurable through the "Configure keyboard shortcuts"
+        dialog. ``Delete``/``Shift+Delete`` move the active pane's image to
+        the trash or delete it permanently, reusing the global shortcuts.
+        ``=`` is kept as a hard-coded alias of the zoom-in key.
 
         Args:
             event (QKeyEvent): The key event to handle.
         """
         key = event.key()
-        if key == Qt.Key_U:
+        if self._dialog_key_matches(event, "dup_delete_left"):
             self._delete_left()
             event.accept()
             return
-        elif key == Qt.Key_I:
+        elif self._dialog_key_matches(event, "dup_delete_right"):
             self._delete_right()
             event.accept()
             return
-        elif key == Qt.Key_O:
+        elif self._dialog_key_matches(event, "dup_keep_both"):
             if not self.review_mode:
                 self._keep_both()
                 event.accept()
             return
-        elif key == Qt.Key_P:
+        elif self._dialog_key_matches(event, "dup_skip"):
             self._skip()
             event.accept()
             return
@@ -373,11 +440,12 @@ class DuplicateManagerDialog(QDialog):
             super().keyPressEvent(event)
             return
 
-        if key == Qt.Key_Plus or key == Qt.Key_Equal:
+        if self._dialog_key_matches(event, "dup_zoom_in") \
+                or key == Qt.Key_Equal:
             self.active_pane.zoom_manager.zoom(1.1)
-        elif key == Qt.Key_Minus:
+        elif self._dialog_key_matches(event, "dup_zoom_out"):
             self.active_pane.zoom_manager.zoom(0.9)
-        elif key == Qt.Key_Z:
+        elif self._dialog_key_matches(event, "dup_reset_zoom"):
             self.active_pane.zoom_manager.zoom(reset=True)
         else:
             super().keyPressEvent(event)

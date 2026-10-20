@@ -49,8 +49,9 @@ from PySide6.QtDBus import QDBusConnection, QDBusMessage, QDBus
 from pathlib import Path
 
 from .constants import (
-    APP_CONFIG, CACHE_PATH, CONFIG_PATH, DEFAULT_GLOBAL_SHORTCUTS,
-    DEFAULT_LANGUAGE, DEFAULT_VIEWER_SHORTCUTS, GLOBAL_ACTIONS,
+    APP_CONFIG, CACHE_PATH, CONFIG_PATH, DEFAULT_DIALOG_SHORTCUTS,
+    DEFAULT_GLOBAL_SHORTCUTS, DEFAULT_LANGUAGE, DEFAULT_VIEWER_SHORTCUTS,
+    DIALOG_ACTIONS, GLOBAL_ACTIONS,
     HISTORY_PATH, ICON_THEME, ICON_THEME_FALLBACK, SCANNER_GENERATE_SIZES,
     IMAGE_MIME_TYPES, IMAGE_EXTENSIONS, LAYOUTS_DIR, FAVORITES_PATH,
     PROG_AUTHOR, PROG_ID, PROG_NAME, PROG_VERSION, PROG_ORGANIZATION_NAME,
@@ -136,10 +137,12 @@ def _extract_resolution(args):
 
 class ShortcutHelpDialog(QDialog):
     """A dialog to display, filter, and edit keyboard shortcuts."""
-    def __init__(self, global_shortcuts, viewer_shortcuts, main_win):
+    def __init__(self, global_shortcuts, viewer_shortcuts, dialog_shortcuts,
+                 main_win):
         super().__init__(main_win)
         self.global_shortcuts = global_shortcuts
         self.viewer_shortcuts = viewer_shortcuts
+        self.dialog_shortcuts = dialog_shortcuts
         self.main_win = main_win
 
         self.setWindowTitle(UITexts.SHORTCUTS_TITLE)
@@ -207,6 +210,17 @@ class ShortcutHelpDialog(QDialog):
             shortcuts_list.append(
                 {'cat': "Viewer", 'desc': desc, 'sc': shortcut_str,
                  'key': (key, mods), 'src': self.viewer_shortcuts})
+
+        # Dialog Shortcuts (duplicate/similar manager dialogs)
+        for action, (key, mods) in self.dialog_shortcuts.items():
+            if action not in DIALOG_ACTIONS:
+                continue
+            desc, category = DIALOG_ACTIONS[action]
+            seq = QKeySequence(get_int_modifiers(mods) | key)
+            shortcut_str = seq.toString(QKeySequence.NativeText)
+            shortcuts_list.append(
+                {'cat': category, 'desc': desc, 'sc': shortcut_str,
+                 'key': action, 'src': self.dialog_shortcuts})
 
         # Sort by Category then Description
         shortcuts_list.sort(key=lambda x: (x['cat'], x['desc']))
@@ -320,7 +334,20 @@ class ShortcutHelpDialog(QDialog):
 
             is_same = (new_key_tuple == original_key_combo)
 
-            if conflict_desc and not is_same:
+            if source_dict is self.dialog_shortcuts:
+                # Dialog shortcuts are scoped to their own dialog category, so
+                # conflicts are only checked within the same category.
+                category = DIALOG_ACTIONS.get(original_key_combo, ("", ""))[1]
+                conflict_desc = self._dialog_conflict(
+                    original_key_combo, new_key_tuple, category)
+                if conflict_desc and not is_same:
+                    QMessageBox.warning(self, UITexts.SHORTCUT_CONFLICT_TITLE,
+                                        UITexts.SHORTCUT_CONFLICT_TEXT.format(
+                                            new_sequence.toString(
+                                                QKeySequence.NativeText),
+                                            conflict_desc))
+                    return
+            elif conflict_desc and not is_same:
                 QMessageBox.warning(self, UITexts.SHORTCUT_CONFLICT_TITLE,
                                     UITexts.SHORTCUT_CONFLICT_TEXT.format(
                                         new_sequence.toString(
@@ -328,14 +355,69 @@ class ShortcutHelpDialog(QDialog):
                                         conflict_desc))
                 return
 
-            shortcut_data = source_dict.pop(original_key_combo)
-            source_dict[new_key_tuple] = shortcut_data
+            if source_dict is self.dialog_shortcuts:
+                # Dialog shortcuts are keyed by action instead of key tuple.
+                source_dict[original_key_combo] = new_key_tuple
+            else:
+                shortcut_data = source_dict.pop(original_key_combo)
+                source_dict[new_key_tuple] = shortcut_data
 
             self.table.item(row, 1).setText(
                 new_sequence.toString(QKeySequence.NativeText))
-            new_data = (new_key_tuple, source_dict)
+            new_data = (original_key_combo, source_dict) \
+                if source_dict is self.dialog_shortcuts \
+                else (new_key_tuple, source_dict)
             self.table.item(row, 0).setData(Qt.UserRole, new_data)
             self.table.item(row, 1).setData(Qt.UserRole, new_data)
+
+            return True
+
+        return False
+
+    def _dialog_conflict(self, action, key_combo, category):
+        """Returns the description of a dialog action that already uses the
+        given key combination within the same category.
+
+        Args:
+            action (str): The action being edited (excluded from the search).
+            key_combo (tuple): The ``(key, modifiers)`` tuple being assigned.
+            category (str): The dialog category to restrict the search to.
+
+        Returns:
+            str: The description of the conflicting action or ``None``.
+        """
+        for other_action, (key, mods) in self.dialog_shortcuts.items():
+            if other_action == action:
+                continue
+            if DIALOG_ACTIONS.get(other_action, ("", ""))[1] != category:
+                continue
+            other_combo = self._normalized_key_combo((key, mods))
+            if self._normalized_key_combo(key_combo) == other_combo:
+                return DIALOG_ACTIONS[other_action][0]
+        return None
+
+    def _normalized_key_combo(self, key_combo):
+        """Normalizes a ``(key, modifiers)`` tuple to plain integers.
+
+        PySide6 stores single enum flags (``Qt.KeyboardModifier``) as floats
+        for some values, which makes ``int()`` fail. This helper consistently
+        exposes the numeric values regardless of the input types.
+
+        Args:
+            key_combo (tuple): A ``(key, modifiers)`` tuple.
+
+        Returns:
+            tuple: The same combination as ``(int, int)``.
+        """
+        try:
+            key = int(key_combo[0])
+        except TypeError:
+            key = key_combo[0].value
+        try:
+            mods = int(key_combo[1])
+        except TypeError:
+            mods = key_combo[1].value
+        return (key, mods)
 
 
 class AppShortcutController(QObject):
@@ -517,7 +599,9 @@ class AppShortcutController(QObject):
 
     def show_help(self):
         """Displays a dialog listing all registered shortcuts."""
-        dialog = ShortcutHelpDialog(self._shortcuts, self.main_win.viewer_shortcuts,
+        dialog = ShortcutHelpDialog(self._shortcuts,
+                                    self.main_win.viewer_shortcuts,
+                                    self.main_win.dialog_shortcuts,
                                     self.main_win)
         dialog.exec()
         self.main_win.refresh_shortcuts()
@@ -1176,6 +1260,7 @@ class MainWindow(QMainWindow):
         self.set_app_icon()
 
         self.viewer_shortcuts = {}
+        self.dialog_shortcuts = {}
         self.thread_pool_manager = thread_pool_manager
         self.full_history = []
         self.history = []
@@ -4973,7 +5058,8 @@ class MainWindow(QMainWindow):
                 QByteArray.fromBase64(d["window_state"].encode()))
 
     def _load_shortcuts_config(self, config_dict):
-        """Loads global and viewer shortcuts from the configuration dictionary."""
+        """Loads global, viewer and dialog shortcuts from the configuration
+        dictionary."""
         # Load global shortcuts
         self.loaded_global_shortcuts = config_dict.get("global_shortcuts")
 
@@ -5007,6 +5093,46 @@ class MainWindow(QMainWindow):
             # No user config for viewer shortcuts, just use the defaults.
             self.viewer_shortcuts = default_shortcuts
 
+        # Load dialog shortcuts (duplicate/similar manager dialogs). These
+        # are keyed by action name because the same key can be bound in
+        # different dialog contexts, so they cannot share the viewer or
+        # global shortcut dictionaries.
+        default_dialog_shortcuts = {
+            action: (int(key), Qt.KeyboardModifiers(mods))
+            for action, (key, mods) in DEFAULT_DIALOG_SHORTCUTS.items()
+        }
+        d_shortcuts = config_dict.get("dialog_shortcuts", [])
+        if d_shortcuts:
+            user_dialog_shortcuts = {
+                action: (k, Qt.KeyboardModifiers(m))
+                for action, (k, m) in d_shortcuts
+                if action in DIALOG_ACTIONS
+            }
+            # Start with the user's config, then add missing defaults.
+            for action, key_combo in default_dialog_shortcuts.items():
+                if action not in user_dialog_shortcuts:
+                    user_dialog_shortcuts[action] = key_combo
+            self.dialog_shortcuts = user_dialog_shortcuts
+        else:
+            # No user config for dialog shortcuts, just use the defaults.
+            self.dialog_shortcuts = default_dialog_shortcuts
+
+    def get_dialog_shortcut(self, action):
+        """Returns the configured shortcut for a dialog action.
+
+        Args:
+            action (str): One of the keys in ``DIALOG_ACTIONS``.
+
+        Returns:
+            tuple: A ``(key, modifiers)`` tuple with the configured shortcut,
+            falling back to the default binding when the action has no user
+            override.
+        """
+        if action in self.dialog_shortcuts:
+            return self.dialog_shortcuts[action]
+        return DEFAULT_DIALOG_SHORTCUTS.get(
+            action, (Qt.Key_unknown, Qt.NoModifier))
+
     def save_config(self):
         """Saves application settings to the JSON configuration file."""
         # Update the global APP_CONFIG with the current state of the MainWindow
@@ -5036,6 +5162,16 @@ class MainWindow(QMainWindow):
                 mod_int = m.value
             v_shortcuts_list.append([[k, mod_int], [act, desc]])
         APP_CONFIG["viewer_shortcuts"] = v_shortcuts_list
+
+        # Save dialog shortcuts as list for JSON serialization
+        d_shortcuts_list = []
+        for action, (k, m) in self.dialog_shortcuts.items():
+            try:
+                mod_int = int(m)
+            except TypeError:
+                mod_int = m.value
+            d_shortcuts_list.append([action, [int(k), mod_int]])
+        APP_CONFIG["dialog_shortcuts"] = d_shortcuts_list
 
         # Save global shortcuts
         if hasattr(self, 'shortcut_controller') and self.shortcut_controller:
@@ -5733,9 +5869,9 @@ class MainWindow(QMainWindow):
 
         # Schedule removal after a delay to allow all FS events to propagate
         QTimer.singleShot(
-            1000, lambda: self._paths_being_modified_by_app.discard(abs_path))
+            10000, lambda: self._paths_being_modified_by_app.discard(abs_path))
         QTimer.singleShot(
-            1000, lambda: self._paths_being_modified_by_app.discard(parent_path))
+            10000, lambda: self._paths_being_modified_by_app.discard(parent_path))
 
     def on_fs_watcher_status_changed(self, is_monitoring):
         """Updates the UI indicator for the FileSystemWatcher."""

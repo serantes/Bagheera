@@ -441,6 +441,38 @@ DEFAULT_VIEWER_SHORTCUTS = {
 }
 
 
+DEFAULT_DIALOG_SHORTCUTS = {
+    # action_name: (key, mods)
+    # ``Qt.Key_Equal`` is kept as a hard-coded alias of ``dup_zoom_in`` and
+    # ``sim_zoom_in`` (it is the unshifted '+' key on most layouts) and is
+    # therefore not part of the configurable shortcuts.
+    "dup_delete_left": (Qt.Key_U, Qt.NoModifier),
+    "dup_delete_right": (Qt.Key_I, Qt.NoModifier),
+    "dup_keep_both": (Qt.Key_O, Qt.NoModifier),
+    "dup_skip": (Qt.Key_P, Qt.NoModifier),
+    "dup_zoom_in": (Qt.Key_Plus, Qt.NoModifier),
+    "dup_zoom_out": (Qt.Key_Minus, Qt.NoModifier),
+    "dup_reset_zoom": (Qt.Key_Z, Qt.NoModifier),
+    "sim_zoom_in": (Qt.Key_Plus, Qt.NoModifier),
+    "sim_zoom_out": (Qt.Key_Minus, Qt.NoModifier),
+    "sim_reset_zoom": (Qt.Key_0, Qt.NoModifier),
+    "sim_toggle_fit": (Qt.Key_Z, Qt.NoModifier),
+}
+
+DIALOG_ACTIONS = {
+    "dup_delete_left": ("Delete Left Image", "Duplicates"),
+    "dup_delete_right": ("Delete Right Image", "Duplicates"),
+    "dup_keep_both": ("Keep Both", "Duplicates"),
+    "dup_skip": ("Skip", "Duplicates"),
+    "dup_zoom_in": ("Zoom In", "Duplicates"),
+    "dup_zoom_out": ("Zoom Out", "Duplicates"),
+    "dup_reset_zoom": ("Reset Zoom", "Duplicates"),
+    "sim_zoom_in": ("Zoom In", "Similar"),
+    "sim_zoom_out": ("Zoom Out", "Similar"),
+    "sim_reset_zoom": ("Reset Zoom", "Similar"),
+    "sim_toggle_fit": ("Toggle Fit to Screen", "Similar"),
+}
+
 # --- TEXT CONSTANTS ---
 
 # Supported languages

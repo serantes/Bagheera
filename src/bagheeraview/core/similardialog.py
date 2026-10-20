@@ -22,7 +22,10 @@ from PySide6.QtGui import (
     QDesktopServices, QIcon, QImage, QKeySequence, QShortcut
 )
 from PySide6.QtCore import Qt, QUrl
-from .constants import UITexts, APP_CONFIG, AVAILABLE_FACE_ENGINES, AVAILABLE_PET_ENGINES
+from .constants import (
+    UITexts, APP_CONFIG, AVAILABLE_FACE_ENGINES, AVAILABLE_PET_ENGINES,
+    DEFAULT_DIALOG_SHORTCUTS
+)
 from .faiss_worker import FAISSSimilarSearchWorker
 from .imageviewer import ImagePane
 from .propertiesdialog import PropertiesDialog
@@ -980,33 +983,67 @@ class SimilarImagesDialog(QDialog):
         else:
             super().wheelEvent(event)
 
+    def _dialog_key_matches(self, event, action):
+        """Checks whether a key event matches the configured dialog shortcut.
+
+        The shortcut is read from the main window configuration (falling back
+        to the defaults when no main window is present), so the dialog keys
+        stay configurable through the "Configure keyboard shortcuts" dialog.
+
+        Args:
+            event (QKeyEvent): The key event to test.
+            action (str): One of the keys in ``DIALOG_ACTIONS``.
+
+        Returns:
+            bool: ``True`` when the event's key and modifiers match the
+            configured shortcut.
+        """
+        key, mods = self._dialog_shortcut(action)
+        mods_mask = (Qt.ShiftModifier | Qt.ControlModifier
+                     | Qt.AltModifier | Qt.MetaModifier)
+        return (event.key() == key
+                and event.modifiers() & mods_mask == mods)
+
+    def _dialog_shortcut(self, action):
+        """Returns the ``(key, modifiers)`` tuple configured for an action."""
+        main_win = getattr(self, "main_win", None)
+        getter = getattr(main_win, "get_dialog_shortcut", None)
+        if getter is not None:
+            return getter(action)
+        return DEFAULT_DIALOG_SHORTCUTS.get(
+            action, (Qt.Key_unknown, Qt.NoModifier))
+
     def keyPressEvent(self, event):
         """
         Handles the keyboard shortcuts used for zooming the preview image
         and for the context-menu actions.
 
-        Supported keys: ``+``/``=`` (zoom in), ``-`` (zoom out), ``0`` (reset
-        zoom) and ``Z`` (toggle fit-to-screen). The context-menu actions
-        (quick tags, detection, show faces, properties and trash/delete) use
-        the viewer shortcuts configured in the main window.
+        Supported keys: ``sim_zoom_in``/``sim_zoom_out``/``sim_reset_zoom``
+        (zoom in, zoom out and reset zoom) and ``sim_toggle_fit`` (toggle
+        fit-to-screen), all configurable through the "Configure keyboard
+        shortcuts" dialog. ``=`` is kept as a hard-coded alias of the zoom-in
+        key. The context-menu actions (quick tags, detection, show faces,
+        properties and trash/delete) use the viewer shortcuts configured in
+        the main window.
 
         Args:
             event (QKeyEvent): The key event to handle.
         """
         key = event.key()
-        if key in (Qt.Key_Plus, Qt.Key_Equal):
+        if self._dialog_key_matches(event, "sim_zoom_in") \
+                or key == Qt.Key_Equal:
             if self.preview_pane:
                 self.preview_pane.zoom_manager.zoom(1.1)
             event.accept()
-        elif key == Qt.Key_Minus:
+        elif self._dialog_key_matches(event, "sim_zoom_out"):
             if self.preview_pane:
                 self.preview_pane.zoom_manager.zoom(0.9)
             event.accept()
-        elif key == Qt.Key_0:
+        elif self._dialog_key_matches(event, "sim_reset_zoom"):
             if self.preview_pane:
                 self.preview_pane.zoom_manager.zoom(1.0, reset=True)
             event.accept()
-        elif key == Qt.Key_Z:
+        elif self._dialog_key_matches(event, "sim_toggle_fit"):
             if self.preview_pane:
                 self.preview_pane.zoom_manager.toggle_fit_to_screen()
             event.accept()
