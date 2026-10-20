@@ -14,14 +14,17 @@ import subprocess
 from datetime import datetime
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QSplitter, QWidget, QMessageBox, QApplication, QMenu,
-    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView
+    QWidget, QMessageBox, QApplication, QMenu,
+    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
+    QTabWidget, QSlider, QSizePolicy
 )
 from PySide6.QtGui import (
-    QDesktopServices, QIcon, QImage, QImageReader, QKeySequence, QShortcut
+    QDesktopServices, QIcon, QImage, QImageReader, QKeySequence, QShortcut,
+    QPixmap
 )
 from PySide6.QtCore import Qt, QTimer, QUrl
 from .imageviewer import ImagePane
+from .overlaycanvas import OverlayCanvas
 from .constants import (
     APP_CONFIG, UITexts, DEFAULT_DIALOG_SHORTCUTS
 )
@@ -63,6 +66,9 @@ class DuplicateManagerDialog(QDialog):
         self.panes_linked = True  # Default to linked
         self._user_link_preference = True  # Persists user intent
         self._is_syncing = False  # Guard to prevent recursion during synchronization
+        self._can_link = True  # Whether linking is allowed for the current pair
+        self._dirty = {"side": True, "overlay": True}  # Lazy update flags
+        self._tab_shortcut = None  # Tab shortcut for the Overlay toggle mode
 
         self.setWindowTitle(UITexts.DUPLICATE_MANAGER_TITLE)
         self.resize(1000, 700)
@@ -84,8 +90,9 @@ class DuplicateManagerDialog(QDialog):
         """Sets up the user interface components for the duplicate manager."""
         layout = QHBoxLayout(self)
 
-        # Left side: List of pairs
+        # Left side: List of pairs (always visible, outside any tab widget)
         left_panel = QWidget()
+        left_panel.setMinimumWidth(260)
         left_layout = QVBoxLayout(left_panel)
 
         header_layout = QHBoxLayout()
@@ -125,25 +132,52 @@ class DuplicateManagerDialog(QDialog):
         self.table_widget.setSortingEnabled(True)
         left_layout.addWidget(self.table_widget)
 
-        # Right side: Comparison area
-        self.splitter = QSplitter(Qt.Vertical)
+        # Right side: Main tabs + bottom action bar
+        self.main_tabs = QTabWidget()
+        self.main_tabs.setDocumentMode(True)
 
-        # Top area: Side by side images
+        # Tab 1: Side by Side comparison (existing panes)
         self.comparison_widget = QWidget()
         comp_layout = QHBoxLayout(self.comparison_widget)
-
-        # Left Image Panel
         self.left_pane_widget = self._create_comparison_pane_widget()
         comp_layout.addWidget(self.left_pane_widget)
-
-        # Right Image Panel
         self.right_pane_widget = self._create_comparison_pane_widget()
         comp_layout.addWidget(self.right_pane_widget)
+        self.main_tabs.addTab(self.comparison_widget,
+                              UITexts.DUPLICATE_TAB_SIDE_BY_SIDE)
 
-        # Buttons Area
-        button_widget = QWidget()
-        btn_layout = QHBoxLayout(button_widget)
+        # Tab 2: Overlay comparison modes
+        self.main_tabs.addTab(self._create_overlay_page(),
+                              UITexts.DUPLICATE_TAB_OVERLAY)
+        self.main_tabs.currentChanged.connect(self._on_main_tab_changed)
 
+        # Right side: Comparison area
+        # Top toolbar: Link Panes button (Side by Side only) + similarity badge
+        self.btn_link_panes = QPushButton(
+            QIcon.fromTheme("object-link"), UITexts.VIEWER_MENU_LINK_PANES)
+        self.btn_link_panes.setCheckable(True)
+        self.btn_link_panes.setChecked(self.panes_linked)
+        self.btn_link_panes.setToolTip(UITexts.DUPLICATE_LINK_PANES_TOOLTIP)
+        self.btn_link_panes.clicked.connect(self._toggle_link_panes)
+
+        self.similarity_lbl = QLabel()
+        self.similarity_lbl.setAlignment(Qt.AlignCenter)
+        self.similarity_lbl.setMinimumHeight(30)
+        self.similarity_lbl.setStyleSheet(
+            "font-weight: bold; color: #f39c12; font-size: 15px; "
+            "background-color: #222; border: 1px solid #444; border-radius: 4px;")
+
+        top_toolbar = QWidget()
+        toolbar_layout = QHBoxLayout(top_toolbar)
+        toolbar_layout.setContentsMargins(0, 0, 0, 0)
+        toolbar_layout.addWidget(self.btn_link_panes)
+        toolbar_layout.addStretch()
+        toolbar_layout.addWidget(self.similarity_lbl)
+
+        toolbar_layout.addStretch()
+        toolbar_layout.addWidget(self.similarity_lbl)
+
+        # Bottom action bar: fixed, independent of the active tab
         self.btn_del_left = QPushButton(
             QIcon.fromTheme("user-trash"), UITexts.DUPLICATE_DELETE_LEFT)
         self.btn_del_left.clicked.connect(self._delete_left)
@@ -158,12 +192,6 @@ class DuplicateManagerDialog(QDialog):
                                           UITexts.DUPLICATE_DELETE_RIGHT,
                                           "dup_delete_right")
 
-        self.btn_link_panes = QPushButton(
-            QIcon.fromTheme("object-link"), UITexts.VIEWER_MENU_LINK_PANES)
-        self.btn_link_panes.setCheckable(True)
-        self.btn_link_panes.setChecked(self.panes_linked)
-        self.btn_link_panes.clicked.connect(self._toggle_link_panes)
-
         self.btn_keep_both = QPushButton(
             QIcon.fromTheme("emblem-important"), UITexts.DUPLICATE_KEEP_BOTH)
         self.btn_keep_both.clicked.connect(self._keep_both)
@@ -177,9 +205,12 @@ class DuplicateManagerDialog(QDialog):
                                           UITexts.DUPLICATE_SKIP,
                                           "dup_skip")
 
+        bottom_bar = QWidget()
+        bottom_bar.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        btn_layout = QHBoxLayout(bottom_bar)
+        btn_layout.setContentsMargins(0, 0, 0, 0)
         btn_layout.addWidget(self.btn_del_left)
         btn_layout.addWidget(self.btn_del_right)
-        btn_layout.addWidget(self.btn_link_panes)
         btn_layout.addStretch()
         btn_layout.addWidget(self.btn_keep_both)
         btn_layout.addWidget(self.btn_skip)
@@ -189,17 +220,10 @@ class DuplicateManagerDialog(QDialog):
             self.btn_skip.setText(UITexts.DUPLICATE_REMOVE_IGNORED)
             self.btn_skip.setIcon(QIcon.fromTheme("list-remove"))
 
-        self.similarity_lbl = QLabel()
-        self.similarity_lbl.setAlignment(Qt.AlignCenter)
-        self.similarity_lbl.setMinimumHeight(30)
-        self.similarity_lbl.setStyleSheet(
-            "font-weight: bold; color: #f39c12; font-size: 15px; "
-            "background-color: #222; border: 1px solid #444; border-radius: 4px;")
-
         main_right_layout = QVBoxLayout()
-        main_right_layout.addWidget(self.comparison_widget, 1)
-        main_right_layout.addWidget(self.similarity_lbl)
-        main_right_layout.addWidget(button_widget)
+        main_right_layout.addWidget(top_toolbar)
+        main_right_layout.addWidget(self.main_tabs, 1)
+        main_right_layout.addWidget(bottom_bar)
 
         right_container = QWidget()
         right_container.setLayout(main_right_layout)
@@ -245,17 +269,23 @@ class DuplicateManagerDialog(QDialog):
             self.left_pane.cleanup()
         if hasattr(self, 'right_pane') and self.right_pane:
             self.right_pane.cleanup()
+        if hasattr(self, 'overlay_canvas'):
+            self.overlay_canvas.set_pixmaps(QPixmap(), QPixmap())
         super().closeEvent(event)
 
     def resizeEvent(self, event):
         """
         Handles the dialog resize event.
 
-        Triggers a recalculation of the image scaling to ensure they fit
-        optimally within the new available space.
+        Triggers a recalculation of the image scaling only when the Side by
+        Side tab is active; otherwise the view is marked dirty and refreshed
+        lazily when the tab becomes active again.
         """
         super().resizeEvent(event)  # Call base class resizeEvent
-        self._apply_linked_scaling()
+        if self.main_tabs.currentIndex() == 0:
+            self._apply_linked_scaling()
+        else:
+            self._dirty["side"] = True
 
     def _apply_linked_scaling(self):
         """Applies custom linked scaling logic to both panels."""
@@ -332,10 +362,13 @@ class DuplicateManagerDialog(QDialog):
         """
         Handles mouse wheel events for zooming.
 
-        If the Control modifier is held, zooms the active image pane
-        centered on the mouse cursor position.
+        If the Control modifier is held and the visible tab is Side by Side,
+        zooms the active image pane centered on the mouse cursor position.
+        The Overlay tab handles its own wheel events inside the canvas.
         """
-        if event.modifiers() & Qt.ControlModifier and self.active_pane:
+        if (event.modifiers() & Qt.ControlModifier
+                and self.active_pane
+                and self.main_tabs.currentIndex() == 0):
             # Calculate the focus point relative to the active pane.
             focus_pos = self.active_pane.mapFromGlobal(event.globalPosition().toPoint())
             if event.angleDelta().y() > 0:
@@ -428,6 +461,18 @@ class DuplicateManagerDialog(QDialog):
             self._skip()
             event.accept()
             return
+        elif self._dialog_key_matches(event, "dup_toggle_fit"):
+            if self.main_tabs.currentIndex() == 1:
+                self.overlay_canvas.toggle_fit_actual()
+            elif self.active_pane:
+                self.active_pane.zoom_manager.toggle_fit_to_screen()
+            event.accept()
+            return
+        elif self._dialog_key_matches(event, "dup_swap_layers"):
+            if self.main_tabs.currentIndex() == 1:
+                self._swap_overlay_layers()
+            event.accept()
+            return
         elif key == Qt.Key_Delete:
             if event.modifiers() & Qt.ShiftModifier:
                 self._shortcut_delete()
@@ -442,11 +487,20 @@ class DuplicateManagerDialog(QDialog):
 
         if self._dialog_key_matches(event, "dup_zoom_in") \
                 or key == Qt.Key_Equal:
-            self.active_pane.zoom_manager.zoom(1.1)
+            if self.main_tabs.currentIndex() == 1:
+                self.overlay_canvas.zoom_view(1.1)
+            else:
+                self.active_pane.zoom_manager.zoom(1.1)
         elif self._dialog_key_matches(event, "dup_zoom_out"):
-            self.active_pane.zoom_manager.zoom(0.9)
+            if self.main_tabs.currentIndex() == 1:
+                self.overlay_canvas.zoom_view(0.9)
+            else:
+                self.active_pane.zoom_manager.zoom(0.9)
         elif self._dialog_key_matches(event, "dup_reset_zoom"):
-            self.active_pane.zoom_manager.zoom(reset=True)
+            if self.main_tabs.currentIndex() == 1:
+                self.overlay_canvas.reset_view()
+            else:
+                self.active_pane.zoom_manager.zoom(reset=True)
         else:
             super().keyPressEvent(event)
 
@@ -476,12 +530,13 @@ class DuplicateManagerDialog(QDialog):
             path (str): The file path.
             metadata (dict, optional): The updated metadata.
         """
-        # Find the widget displaying this path and update its info
+        # Find the widget displaying this path and update its labels
         for pw in [self.left_pane_widget, self.right_pane_widget]:
             if pw.pane.controller.get_current_path() == path:
                 size_str = self._format_size(os.path.getsize(path))
-                pw.info_lbl.setText(UITexts.DUPLICATE_INFO_FORMAT.format(
-                    size=size_str,
+                pw.size_lbl.setText(
+                    UITexts.DUPLICATE_SIZE_LABEL.format(size=size_str))
+                pw.res_lbl.setText(UITexts.DUPLICATE_RESOLUTION_LABEL.format(
                     width=pw.pane.controller.pixmap_original.width(),
                     height=pw.pane.controller.pixmap_original.height()))
 
@@ -614,41 +669,265 @@ class DuplicateManagerDialog(QDialog):
 
     def _create_comparison_pane_widget(self):
         """
-        Factory method to create a pane widget containing an ImagePane and info labels.
+        Factory method to create a pane widget containing an ImagePane and
+        metadata labels arranged below the image (size, resolution, filename,
+        directory).
         """
         widget = QWidget()
         v_layout = QVBoxLayout(widget)
         v_layout.setContentsMargins(0, 0, 0, 0)
+        v_layout.setSpacing(2)
 
-        info_lbl = QLabel()
-        info_lbl.setAlignment(Qt.AlignCenter)
-        info_lbl.setStyleSheet("font-weight: bold; color: #aaa;")
-        v_layout.addWidget(info_lbl)
-
-        # Create ImagePane
+        # Create ImagePane (image area at the top)
         pane = ImagePane(self, self.main_win.cache, [], 0, None, 0)
         pane.setContextMenuPolicy(Qt.CustomContextMenu)
         pane.controller.show_faces = False  # Disable showing and adding areas
         pane.customContextMenuRequested.connect(self._show_pane_context_menu)
-        v_layout.addWidget(pane)
+        v_layout.addWidget(pane, 1)
+
+        # Metadata labels below the image, above the directory path
+        size_lbl = QLabel()
+        size_lbl.setAlignment(Qt.AlignCenter)
+        size_lbl.setStyleSheet("font-size: 11px; font-weight: bold; color: #aaa;")
+        v_layout.addWidget(size_lbl)
+
+        res_lbl = QLabel()
+        res_lbl.setAlignment(Qt.AlignCenter)
+        res_lbl.setStyleSheet("font-size: 11px; font-weight: bold; color: #aaa;")
+        v_layout.addWidget(res_lbl)
+
+        filename_lbl = QLabel()
+        filename_lbl.setAlignment(Qt.AlignCenter)
+        filename_lbl.setStyleSheet("font-size: 11px; font-weight: bold;")
+        v_layout.addWidget(filename_lbl)
+
+        dir_lbl = QLabel()
+        dir_lbl.setAlignment(Qt.AlignCenter)
+        dir_lbl.setStyleSheet("font-size: 9px; color: #888;")
+        v_layout.addWidget(dir_lbl)
 
         # Attach references
-        widget.info_lbl = info_lbl
         widget.pane = pane
-        widget.filename_lbl = QLabel()
-        widget.filename_lbl.setAlignment(Qt.AlignCenter)
-        widget.filename_lbl.setStyleSheet("font-size: 11px; font-weight: bold;")
-        v_layout.addWidget(widget.filename_lbl)
-        widget.dir_lbl = QLabel()
-        widget.dir_lbl.setAlignment(Qt.AlignCenter)
-        widget.dir_lbl.setStyleSheet("font-size: 9px; color: #888;")
-        v_layout.addWidget(widget.dir_lbl)
+        widget.size_lbl = size_lbl
+        widget.res_lbl = res_lbl
+        widget.filename_lbl = filename_lbl
+        widget.dir_lbl = dir_lbl
 
         # Connect signals for synchronization
         pane.scrolled.connect(self._sync_scroll)
         pane.zoom_manager.zoomed.connect(self._sync_zoom)
         pane.activated.connect(self._on_pane_activated)
         return widget
+
+    def _create_overlay_page(self):
+        """
+        Builds the Overlay page: mode tabs, alignment tools and the shared
+        OverlayCanvas used by all overlay sub-modes.
+        """
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(4)
+
+        # Controls bar
+        controls_bar = QWidget()
+        controls_layout = QHBoxLayout(controls_bar)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.btn_overlay_switch = QPushButton(
+            QIcon.fromTheme("layer-visible"), UITexts.DUPLICATE_OVERLAY_SWITCH_LAYER)
+        self.btn_overlay_switch.setToolTip(UITexts.DUPLICATE_OVERLAY_SWITCH_TOOLTIP)
+        controls_layout.addWidget(self.btn_overlay_switch)
+
+        self.btn_overlay_reset = QPushButton(
+            QIcon.fromTheme("view-restore"), UITexts.DUPLICATE_OVERLAY_RESET)
+        self.btn_overlay_reset.setToolTip(UITexts.DUPLICATE_OVERLAY_RESET_TOOLTIP)
+        controls_layout.addWidget(self.btn_overlay_reset)
+
+        self.btn_overlay_swap = QPushButton(
+            QIcon.fromTheme("object-flip-horizontal"),
+            UITexts.DUPLICATE_OVERLAY_SWAP)
+        self.btn_overlay_swap.setToolTip(UITexts.DUPLICATE_OVERLAY_SWAP_TOOLTIP)
+        controls_layout.addWidget(self.btn_overlay_swap)
+
+        self.opacity_slider = QSlider(Qt.Horizontal)
+        self.opacity_slider.setRange(0, 100)
+        self.opacity_slider.setValue(50)
+        self.opacity_slider.setFixedWidth(220)
+        self.opacity_slider.setToolTip(UITexts.DUPLICATE_TOGGLE_FIT_TOOLTIP)
+        controls_layout.addWidget(self.opacity_slider)
+
+        self.opacity_lbl = QLabel()
+        self.opacity_lbl.setStyleSheet("color: #bbbbbb;")
+        self.opacity_lbl.setText(
+            UITexts.DUPLICATE_OVERLAY_OPACITY_LABEL.format(value=50))
+        controls_layout.addWidget(self.opacity_lbl)
+
+        controls_layout.addStretch()
+
+        # Secondary document-style tabs: only the tab bar is visible, the
+        # canvas below is shared by all sub-modes.
+        self.overlay_tabs = QTabWidget()
+        self.overlay_tabs.setDocumentMode(True)
+        self.overlay_tabs.addTab(QWidget(), UITexts.DUPLICATE_OVERLAY_TOGGLE)
+        self.overlay_tabs.addTab(QWidget(), UITexts.DUPLICATE_OVERLAY_SPLIT)
+        self.overlay_tabs.addTab(QWidget(),
+                                 UITexts.DUPLICATE_OVERLAY_DIFFERENCE)
+        self.overlay_tabs.addTab(QWidget(), UITexts.DUPLICATE_OVERLAY_OPACITY)
+        tab_bar_height = self.overlay_tabs.tabBar().sizeHint().height()
+        self.overlay_tabs.setMaximumHeight(tab_bar_height + 2)
+
+        self.overlay_canvas = OverlayCanvas()
+        self.overlay_canvas.setToolTip(UITexts.DUPLICATE_TOGGLE_FIT_TOOLTIP)
+
+        self.overlay_legend_lbl = QLabel()
+        self.overlay_legend_lbl.setAlignment(Qt.AlignCenter)
+        self.overlay_legend_lbl.setStyleSheet(
+            "font-size: 10px; color: #888;")
+
+        page_layout.addWidget(controls_bar)
+        page_layout.addWidget(self.overlay_tabs)
+        page_layout.addWidget(self.overlay_canvas, 1)
+        page_layout.addWidget(self.overlay_legend_lbl)
+
+        # Connections
+        self.overlay_tabs.currentChanged.connect(self._on_overlay_tab_changed)
+        self.btn_overlay_switch.clicked.connect(self.overlay_canvas.toggle_layer)
+        self.btn_overlay_reset.clicked.connect(self.overlay_canvas.reset_view)
+        self.btn_overlay_swap.clicked.connect(self._swap_overlay_layers)
+        self.opacity_slider.valueChanged.connect(self._on_opacity_changed)
+        return page
+
+    def _on_main_tab_changed(self, index):
+        """
+        Reacts to main tab switches, linking the Link Panes button state to
+        the Side by Side tab and refreshing the newly shown view lazily.
+
+        Args:
+            index (int): The newly active main tab index (0 = Side by Side,
+                1 = Overlay).
+        """
+        is_side = index == 0
+        self.btn_link_panes.setEnabled(is_side and self._can_link)
+        if is_side:
+            self.panes_linked = self._user_link_preference and self._can_link
+        else:
+            self.panes_linked = False
+            self._update_overlay_legend()
+        self.btn_link_panes.setChecked(self.panes_linked and is_side)
+        self._refresh_active_view()
+
+    def _on_overlay_tab_changed(self, index):
+        """
+        Reacts to overlay sub-tab switches: applies the new mode, shows the
+        mode-specific controls and refreshes the canvas only if it is dirty.
+
+        Args:
+            index (int): The newly active overlay mode tab index.
+        """
+        self.overlay_canvas.set_mode(index)
+        is_toggle = index == OverlayCanvas.MODE_TOGGLE
+        is_opacity = index == OverlayCanvas.MODE_OPACITY
+        self.btn_overlay_switch.setVisible(is_toggle)
+        self.opacity_slider.setVisible(is_opacity)
+        self.opacity_lbl.setVisible(is_opacity)
+        self._refresh_active_view()
+
+    def _refresh_active_view(self):
+        """
+        Refreshes only the currently visible view, honoring lazy updates.
+
+        Hidden views keep their in-memory cache (the loaded Controller
+        pixmaps) and are only updated when their tab becomes active again.
+        """
+        if self.main_tabs.currentIndex() == 1 and self._dirty["overlay"]:
+            p_l = self.left_pane.controller.pixmap_original
+            p_r = self.right_pane.controller.pixmap_original
+            self.overlay_canvas.set_pixmaps(p_l, p_r)
+            self.overlay_canvas.set_mode(self.overlay_tabs.currentIndex())
+            self._dirty["overlay"] = False
+        elif self.main_tabs.currentIndex() == 0 and self._dirty["side"]:
+            self._apply_linked_scaling()
+            self._dirty["side"] = False
+
+    def _apply_comparison_colors(self):
+        """
+        Colors the size and resolution labels independently to indicate which
+        side wins each comparison (green for best, red for worst, neutral
+        grey for ties).
+        """
+        neutral = "#aaa"
+        green = "#2ecc71"
+        red = "#e74c3c"
+
+        def style(color):
+            """Returns a stylesheet string with the given label color."""
+            return f"font-weight: bold; color: {color};"
+
+        p_l = self.left_pane.controller.pixmap_original
+        p_r = self.right_pane.controller.pixmap_original
+        if p_l.isNull() or p_r.isNull():
+            self.left_pane_widget.size_lbl.setStyleSheet(style(neutral))
+            self.left_pane_widget.res_lbl.setStyleSheet(style(neutral))
+            self.right_pane_widget.size_lbl.setStyleSheet(style(neutral))
+            self.right_pane_widget.res_lbl.setStyleSheet(style(neutral))
+            return
+
+        res_l = p_l.width() * p_l.height()
+        res_r = p_r.width() * p_r.height()
+        if res_l > res_r:
+            self.left_pane_widget.res_lbl.setStyleSheet(style(green))
+            self.right_pane_widget.res_lbl.setStyleSheet(style(red))
+        elif res_r > res_l:
+            self.right_pane_widget.res_lbl.setStyleSheet(style(green))
+            self.left_pane_widget.res_lbl.setStyleSheet(style(red))
+        else:
+            self.left_pane_widget.res_lbl.setStyleSheet(style(neutral))
+            self.right_pane_widget.res_lbl.setStyleSheet(style(neutral))
+
+        try:
+            size_l = os.path.getsize(self.left_pane.controller.get_current_path())
+            size_r = os.path.getsize(self.right_pane.controller.get_current_path())
+        except (OSError, AttributeError):
+            size_l = size_r = 0
+        if size_l > size_r:
+            self.left_pane_widget.size_lbl.setStyleSheet(style(green))
+            self.right_pane_widget.size_lbl.setStyleSheet(style(red))
+        elif size_r > size_l:
+            self.right_pane_widget.size_lbl.setStyleSheet(style(green))
+            self.left_pane_widget.size_lbl.setStyleSheet(style(red))
+        else:
+            self.left_pane_widget.size_lbl.setStyleSheet(style(neutral))
+            self.right_pane_widget.size_lbl.setStyleSheet(style(neutral))
+
+    def _swap_overlay_layers(self):
+        """Swaps the overlay layers and refreshes the legend."""
+        self.overlay_canvas.swap_layers()
+        self._update_overlay_legend()
+
+    def _on_opacity_changed(self, value):
+        """
+        Applies a new top-layer opacity from the slider to the canvas.
+
+        Args:
+            value (int): The new opacity value in the 0-100 range.
+        """
+        self.opacity_lbl.setText(
+            UITexts.DUPLICATE_OVERLAY_OPACITY_LABEL.format(value=value))
+        self.overlay_canvas.set_opacity(value)
+
+    def _update_overlay_legend(self):
+        """
+        Refreshes the overlay legend with the filenames of the current top
+        and bottom layers.
+        """
+        top_path = self.left_pane.controller.get_current_path()
+        bottom_path = self.right_pane.controller.get_current_path()
+        top_name = os.path.basename(top_path) if top_path else "N/A"
+        bottom_name = os.path.basename(bottom_path) if bottom_path else "N/A"
+        self.overlay_legend_lbl.setText(
+            f"{UITexts.DUPLICATE_OVERLAY_TOP_LEGEND.format(name=top_name)}    "
+            f"{UITexts.DUPLICATE_OVERLAY_BOTTOM_LEGEND.format(name=bottom_name)}")
 
     def _populate_list(self):
         """Fills the table widget with the list of duplicate results."""
@@ -769,63 +1048,19 @@ class DuplicateManagerDialog(QDialog):
                 dir_color, filename_left, dir_left)
 
         can_link = not (dis_l or dis_r)
+        self._can_link = can_link
         self.panes_linked = self._user_link_preference and can_link
-        self.btn_link_panes.setEnabled(can_link)
-        self.btn_link_panes.setChecked(self.panes_linked)
+        self.btn_link_panes.setEnabled(
+            can_link and self.main_tabs.currentIndex() == 0)
+        self.btn_link_panes.setChecked(
+            self.panes_linked and self.main_tabs.currentIndex() == 0)
 
-        # Compare resolutions and highlight the best one
-        p_l = self.left_pane.controller.pixmap_original
-        p_r = self.right_pane.controller.pixmap_original
-        if not p_l.isNull() and not p_r.isNull():
-            res_l = p_l.width() * p_l.height()
-            res_r = p_r.width() * p_r.height()
+        self._apply_comparison_colors()
 
-            winner = 0  # 0: none, 1: left, 2: right
-            if res_l > res_r:
-                winner = 1
-            elif res_r > res_l:
-                winner = 2
-            else:
-                # Same resolution, compare file sizes
-                try:
-                    path_l = self.left_pane.controller.get_current_path()
-                    path_r = self.right_pane.controller.get_current_path()
-                    size_l = os.path.getsize(path_l)
-                    size_r = os.path.getsize(path_r)
-                    if size_l > size_r:
-                        winner = 1
-                    elif size_r > size_l:
-                        winner = 2
-                except (OSError, AttributeError):
-                    pass
-
-            if winner == 1:
-                self.left_pane_widget.info_lbl.setStyleSheet(
-                    "font-weight: bold; color: #2ecc71;")
-                self.left_pane_widget.info_lbl.setText(
-                    "✓ " + self.left_pane_widget.info_lbl.text())
-                self.right_pane_widget.info_lbl.setStyleSheet(
-                    "font-weight: bold; color: #aaa;")
-            elif winner == 2:
-                self.right_pane_widget.info_lbl.setStyleSheet(
-                    "font-weight: bold; color: #2ecc71;")
-                self.right_pane_widget.info_lbl.setText(
-                    "✓ " + self.right_pane_widget.info_lbl.text())
-                self.left_pane_widget.info_lbl.setStyleSheet(
-                    "font-weight: bold; color: #aaa;")
-            else:
-                self.left_pane_widget.info_lbl.setStyleSheet(
-                    "font-weight: bold; color: #aaa;")
-                self.right_pane_widget.info_lbl.setStyleSheet(
-                    "font-weight: bold; color: #aaa;")
-        else:
-            self.left_pane_widget.info_lbl.setStyleSheet(
-                "font-weight: bold; color: #aaa;")
-            self.right_pane_widget.info_lbl.setStyleSheet(
-                "font-weight: bold; color: #aaa;")
-
-        # Force view update and proportional scaling
-        self._apply_linked_scaling()
+        # Mark both views dirty and refresh only the active one (lazy update)
+        self._dirty["side"] = True
+        self._dirty["overlay"] = True
+        self._refresh_active_view()
 
     def _set_pane_data(self, pane_widget, path, filename_color, dir_color,
                        filename_text, dir_text) -> bool:
@@ -844,12 +1079,14 @@ class DuplicateManagerDialog(QDialog):
             bool: True if linked scaling should be disabled (e.g., animation).
         """
         pane = pane_widget.pane
-        info_lbl = pane_widget.info_lbl
+        size_lbl = pane_widget.size_lbl
+        res_lbl = pane_widget.res_lbl
         filename_lbl = pane_widget.filename_lbl
         dir_lbl = pane_widget.dir_lbl
 
         if not os.path.exists(path):
-            info_lbl.setText(UITexts.FILE_NOT_FOUND)
+            size_lbl.setText(UITexts.FILE_NOT_FOUND)
+            res_lbl.setText("N/A")
             pane.controller.update_list([], 0)  # Clear pane
             pane.controller.load_image()
             filename_lbl.setText("N/A")
@@ -871,14 +1108,14 @@ class DuplicateManagerDialog(QDialog):
                       not pane.controller.pixmap_original.size().isValid())
         disable_linking = is_animated or is_invalid
 
-        # Update info labels
-        if not pane.controller.pixmap_original.isNull():
-            info_lbl.setText(UITexts.DUPLICATE_INFO_FORMAT.format(
-                size=size_str,
-                width=pane.controller.pixmap_original.width(),
-                height=pane.controller.pixmap_original.height()))
+        # Update size and resolution labels independently
+        size_lbl.setText(UITexts.DUPLICATE_SIZE_LABEL.format(size=size_str))
+        pixmap = pane.controller.pixmap_original
+        if not pixmap.isNull():
+            res_lbl.setText(UITexts.DUPLICATE_RESOLUTION_LABEL.format(
+                width=pixmap.width(), height=pixmap.height()))
         else:
-            info_lbl.setText(f"{size_str} - N/A")
+            res_lbl.setText("N/A")
 
         filename_lbl.setText(filename_text)
         filename_lbl.setStyleSheet(
@@ -1030,6 +1267,23 @@ class DuplicateManagerDialog(QDialog):
             shortcut.activated.connect(handler)
             self._shortcut_objects.append(shortcut)
 
+        # Tab toggles the shown layer while the Overlay Toggle mode is active.
+        self._tab_shortcut = QShortcut(QKeySequence(Qt.Key_Tab), self)
+        self._tab_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self._tab_shortcut.activated.connect(self._on_toggle_shortcut)
+        self._shortcut_objects.append(self._tab_shortcut)
+
+    def _on_toggle_shortcut(self):
+        """
+        Toggles the overlay layer only when the Overlay Toggle mode is active.
+
+        Kept as a no-op in any other context so Tab keeps its normal focus
+        traversal behaviour outside the dedicated Toggle sub-mode.
+        """
+        if (self.main_tabs.currentIndex() == 1
+                and self.overlay_tabs.currentIndex() == OverlayCanvas.MODE_TOGGLE):
+            self.overlay_canvas.toggle_layer()
+
     def _active_pane_path(self):
         """
         Returns the path shown by the currently focused pane, if any.
@@ -1102,7 +1356,7 @@ class DuplicateManagerDialog(QDialog):
         Ensures that the activated pane becomes the leader for synchronization.
         """
         # When a pane is activated, ensure its zoom/scroll is the reference for linking
-        if self.panes_linked:
+        if self.panes_linked and self.main_tabs.currentIndex() == 0:
             active_pane = self.sender()  # The pane that emitted activated signal
             other_pane = self.left_pane \
                 if active_pane == self.right_pane else self.right_pane
@@ -1122,7 +1376,7 @@ class DuplicateManagerDialog(QDialog):
             x_pct (float): Horizontal scroll percentage.
             y_pct (float): Vertical scroll percentage.
         """
-        if not self.panes_linked:
+        if not self.panes_linked or self.main_tabs.currentIndex() != 0:
             return
         source_pane = self.sender()
         if source_pane == self.left_pane:
@@ -1138,7 +1392,8 @@ class DuplicateManagerDialog(QDialog):
             factor (float): New zoom factor.
             source_pane (ImagePane, optional): The leader pane.
         """
-        if not self.panes_linked or self._is_syncing:
+        if not self.panes_linked or self._is_syncing \
+                or self.main_tabs.currentIndex() != 0:
             return
         if source_pane is None:
             # Emitter is ZoomManager, its parent is ImagePane
