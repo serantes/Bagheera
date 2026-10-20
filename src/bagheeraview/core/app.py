@@ -2941,44 +2941,153 @@ class MainWindow(QMainWindow):
             else:
                 # Use 'gio trash' for moving to trash can on Linux
                 subprocess.run(["gio", "trash", path])
-
-            # Notify open viewers of the deletion
-            for w in QApplication.topLevelWidgets():
-                if isinstance(w, ImageViewer):
-                    if path in w.controller.image_list:
-                        try:
-                            deleted_idx = w.controller.image_list.index(path)
-                            new_list = list(w.controller.image_list)
-                            new_list.remove(path)
-                            w.refresh_after_delete(new_list, deleted_idx)
-                        except (ValueError, RuntimeError):
-                            pass  # Viewer might be closing or list out of sync
-
-            if path in self._path_to_model_index:
-                p_idx = self._path_to_model_index[path]
-                if p_idx.isValid():
-                    self.thumbnail_model.removeRow(p_idx.row())
-
-            if path in self._path_to_model_index:
-                del self._path_to_model_index[path]
-
-            self.duplicate_cache.remove_hash_for_path(path)
-            # Remove from found_items_data to ensure consistency
-            self.found_items_data = [x for x in self.found_items_data if x[0] != path]
-            self._known_paths.discard(path)
-            # Clean up group cache
-            keys_to_remove = [k for k in self._group_info_cache if k[0] == path]
-            for k in keys_to_remove:
-                del self._group_info_cache[k]
-
-            # Clean up proxy model cache
-            if path in self.proxy_model._data_cache:
-                del self.proxy_model._data_cache[path]
-
-            self._visible_paths_cache = None
+            self._forget_path(path)
         except Exception as e:
             QMessageBox.critical(
                 self, UITexts.SYSTEM_ERROR, UITexts.ERROR_DELETING_FILE.format(e))
+
+    def _forget_path(self, path):
+        """
+        Removes every internal reference to a path without touching the disk.
+
+        Used when a file is deleted or replaced from within the application:
+        the open viewers, thumbnail model, caches and tracking sets are all
+        updated so no stale entry remains.
+
+        Args:
+            path (str): The path being removed from the application state.
+        """
+        path = os.path.abspath(path)
+
+        # Notify open viewers of the deletion
+        for w in QApplication.topLevelWidgets():
+            if isinstance(w, ImageViewer) and not w.isVisible():
+                continue
+            if not isinstance(w, ImageViewer):
+                continue
+            if path in w.controller.image_list:
+                try:
+                    deleted_idx = w.controller.image_list.index(path)
+                    new_list = list(w.controller.image_list)
+                    new_list.remove(path)
+                    w.refresh_after_delete(new_list, deleted_idx)
+                except (ValueError, RuntimeError):
+                    pass  # Viewer might be closing or list out of sync
+
+        if path in self._path_to_model_index:
+            p_idx = self._path_to_model_index[path]
+            if p_idx.isValid():
+                self.thumbnail_model.removeRow(p_idx.row())
+
+        if path in self._path_to_model_index:
+            del self._path_to_model_index[path]
+
+        self.duplicate_cache.remove_hash_for_path(path)
+        # Remove from found_items_data to ensure consistency
+        self.found_items_data = [x for x in self.found_items_data if x[0] != path]
+        self._known_paths.discard(path)
+        # Clean up group cache
+        keys_to_remove = [k for k in self._group_info_cache if k[0] == path]
+        for k in keys_to_remove:
+            del self._group_info_cache[k]
+
+        # Clean up proxy model cache
+        if path in self.proxy_model._data_cache:
+            del self.proxy_model._data_cache[path]
+
+        self._visible_paths_cache = None
+
+    def resolve_overwrite_target(self, source, target):
+        """
+        Computes the final file path for an overwrite operation.
+
+        When the extensions differ, the final path keeps the source extension
+        so the file content always matches its name; the old target file is
+        then trashed separately by the caller.
+
+        Args:
+            source (str): Path of the selected image.
+            target (str): Path of the image being replaced.
+
+        Returns:
+            str: The final path the source will be renamed/copied to.
+
+        Raises:
+            ValueError: When source and target are the same path.
+            FileExistsError: When the resolved path already exists and it is
+                not the target itself.
+        """
+        source = os.path.abspath(source)
+        target = os.path.abspath(target)
+        if source == target:
+            raise ValueError("Source and target must be different paths")
+
+        src_ext = os.path.splitext(source)[1].lower()
+        dst_ext = os.path.splitext(target)[1].lower()
+        if src_ext == dst_ext:
+            return target
+
+        target_stem = os.path.splitext(os.path.basename(target))[0]
+        final = os.path.join(os.path.dirname(target), target_stem + src_ext)
+        if os.path.exists(final):
+            raise FileExistsError(f"{final} already exists")
+        return final
+
+    def overwrite_image_file(self, source, target):
+        """
+        Renames the source image onto the target, overwriting it.
+
+        If the direct rename is impossible (cross-device move or any OSError),
+        the source is copied over the target instead. The application state is
+        updated consistently with the mode used.
+
+        Args:
+            source (str): Path of the selected image.
+            target (str): Path of the image being replaced.
+
+        Returns:
+            str: "renamed" when the source replaced the target, "copied" when
+            the overwrite fell back to a copy.
+
+        Raises:
+            OSError: When both the rename and the copy fail.
+        """
+        source = os.path.abspath(source)
+        target = os.path.abspath(target)
+        final = self.resolve_overwrite_target(source, target)
+        ext_mismatch = final != target
+
+        if ext_mismatch:
+            # The old target can no longer keep its name (its extension would
+            # not match), so it goes to the trash for recovery.
+            self.delete_file_by_path(target, permanent=False)
+            if os.path.exists(target):
+                raise OSError(f"Could not trash {target}")
+
+        self._mark_path_as_app_modified(source)
+        self._mark_path_as_app_modified(final)
+
+        try:
+            os.replace(source, final)
+            mode = "renamed"
+        except OSError:
+            # Cross-device or permission fallback: copy overwriting the target.
+            try:
+                shutil.copy2(source, final)
+            except OSError:
+                raise
+            mode = "copied"
+            self._paths_being_modified_by_app.discard(final)
+            self.cache.invalidate_path(final)
+            self.duplicate_cache.remove_hash_for_path(final)
+            self.on_fs_file_modified(final)
+
+        if mode == "renamed" and not ext_mismatch:
+            self._forget_path(final)
+        if mode == "renamed":
+            self.propagate_rename(source, final)
+
+        return mode
 
     def move_current_image(self):
         """Moves the selected image(s) to another directory."""

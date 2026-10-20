@@ -9,6 +9,7 @@ zooming and scrolling.
 Classes:
     DuplicateManagerDialog: A dialog to review and manage duplicate image pairs.
 """
+import html
 import os
 import subprocess
 from datetime import datetime
@@ -19,8 +20,8 @@ from PySide6.QtWidgets import (
     QTabWidget, QSlider, QSizePolicy
 )
 from PySide6.QtGui import (
-    QDesktopServices, QIcon, QImage, QImageReader, QKeySequence, QShortcut,
-    QPixmap
+    QBrush, QColor, QDesktopServices, QIcon, QImage, QImageReader,
+    QKeySequence, QShortcut, QPixmap
 )
 from PySide6.QtCore import Qt, QTimer, QUrl
 from .imageviewer import ImagePane
@@ -152,32 +153,16 @@ class DuplicateManagerDialog(QDialog):
         self.main_tabs.currentChanged.connect(self._on_main_tab_changed)
 
         # Right side: Comparison area
-        # Top toolbar: Link Panes button (Side by Side only) + similarity badge
+        # Bottom action bar: fixed, independent of the active tab
         self.btn_link_panes = QPushButton(
             QIcon.fromTheme("object-link"), UITexts.VIEWER_MENU_LINK_PANES)
         self.btn_link_panes.setCheckable(True)
         self.btn_link_panes.setChecked(self.panes_linked)
-        self.btn_link_panes.setToolTip(UITexts.DUPLICATE_LINK_PANES_TOOLTIP)
         self.btn_link_panes.clicked.connect(self._toggle_link_panes)
+        self._set_button_shortcut_tooltip(self.btn_link_panes,
+                                          UITexts.DUPLICATE_LINK_PANES_TOOLTIP,
+                                          "dup_link_panes")
 
-        self.similarity_lbl = QLabel()
-        self.similarity_lbl.setAlignment(Qt.AlignCenter)
-        self.similarity_lbl.setMinimumHeight(30)
-        self.similarity_lbl.setStyleSheet(
-            "font-weight: bold; color: #f39c12; font-size: 15px; "
-            "background-color: #222; border: 1px solid #444; border-radius: 4px;")
-
-        top_toolbar = QWidget()
-        toolbar_layout = QHBoxLayout(top_toolbar)
-        toolbar_layout.setContentsMargins(0, 0, 0, 0)
-        toolbar_layout.addWidget(self.btn_link_panes)
-        toolbar_layout.addStretch()
-        toolbar_layout.addWidget(self.similarity_lbl)
-
-        toolbar_layout.addStretch()
-        toolbar_layout.addWidget(self.similarity_lbl)
-
-        # Bottom action bar: fixed, independent of the active tab
         self.btn_del_left = QPushButton(
             QIcon.fromTheme("user-trash"), UITexts.DUPLICATE_DELETE_LEFT)
         self.btn_del_left.clicked.connect(self._delete_left)
@@ -191,6 +176,13 @@ class DuplicateManagerDialog(QDialog):
         self._set_button_shortcut_tooltip(self.btn_del_right,
                                           UITexts.DUPLICATE_DELETE_RIGHT,
                                           "dup_delete_right")
+
+        self.btn_overwrite = QPushButton(
+            QIcon.fromTheme("document-save-as"), UITexts.DUPLICATE_OVERWRITE)
+        self.btn_overwrite.clicked.connect(self._overwrite_selected)
+        self._set_button_shortcut_tooltip(self.btn_overwrite,
+                                          UITexts.DUPLICATE_OVERWRITE_TOOLTIP,
+                                          "dup_overwrite")
 
         self.btn_keep_both = QPushButton(
             QIcon.fromTheme("emblem-important"), UITexts.DUPLICATE_KEEP_BOTH)
@@ -209,8 +201,10 @@ class DuplicateManagerDialog(QDialog):
         bottom_bar.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         btn_layout = QHBoxLayout(bottom_bar)
         btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.addWidget(self.btn_link_panes)
         btn_layout.addWidget(self.btn_del_left)
         btn_layout.addWidget(self.btn_del_right)
+        btn_layout.addWidget(self.btn_overwrite)
         btn_layout.addStretch()
         btn_layout.addWidget(self.btn_keep_both)
         btn_layout.addWidget(self.btn_skip)
@@ -219,9 +213,11 @@ class DuplicateManagerDialog(QDialog):
             self.btn_keep_both.hide()
             self.btn_skip.setText(UITexts.DUPLICATE_REMOVE_IGNORED)
             self.btn_skip.setIcon(QIcon.fromTheme("list-remove"))
+            self._set_button_shortcut_tooltip(self.btn_skip,
+                                              UITexts.DUPLICATE_REMOVE_IGNORED,
+                                              "dup_skip")
 
         main_right_layout = QVBoxLayout()
-        main_right_layout.addWidget(top_toolbar)
         main_right_layout.addWidget(self.main_tabs, 1)
         main_right_layout.addWidget(bottom_bar)
 
@@ -426,6 +422,8 @@ class DuplicateManagerDialog(QDialog):
         shortcut_str = seq.toString(QKeySequence.NativeText)
         if shortcut_str:
             button.setToolTip(f"{base_text} ({shortcut_str})")
+        else:
+            button.setToolTip(base_text)
 
     def keyPressEvent(self, event):
         """
@@ -473,6 +471,15 @@ class DuplicateManagerDialog(QDialog):
                 self._swap_overlay_layers()
             event.accept()
             return
+        elif self._dialog_key_matches(event, "dup_link_panes"):
+            if self.main_tabs.currentIndex() == 0 and self.btn_link_panes.isEnabled():
+                self.btn_link_panes.click()
+            event.accept()
+            return
+        elif self._dialog_key_matches(event, "dup_overwrite"):
+            self._overwrite_selected()
+            event.accept()
+            return
         elif key == Qt.Key_Delete:
             if event.modifiers() & Qt.ShiftModifier:
                 self._shortcut_delete()
@@ -481,26 +488,30 @@ class DuplicateManagerDialog(QDialog):
             event.accept()
             return
 
+        # In the Overlay tab the zoom shortcuts do not depend on a pane.
+        if self.main_tabs.currentIndex() == 1:
+            if self._dialog_key_matches(event, "dup_zoom_in") \
+                    or key == Qt.Key_Equal:
+                self.overlay_canvas.zoom_view(1.1)
+            elif self._dialog_key_matches(event, "dup_zoom_out"):
+                self.overlay_canvas.zoom_view(0.9)
+            elif self._dialog_key_matches(event, "dup_reset_zoom"):
+                self._on_overlay_reset()
+            else:
+                super().keyPressEvent(event)
+            return
+
         if not self.active_pane:
             super().keyPressEvent(event)
             return
 
         if self._dialog_key_matches(event, "dup_zoom_in") \
                 or key == Qt.Key_Equal:
-            if self.main_tabs.currentIndex() == 1:
-                self.overlay_canvas.zoom_view(1.1)
-            else:
-                self.active_pane.zoom_manager.zoom(1.1)
+            self.active_pane.zoom_manager.zoom(1.1)
         elif self._dialog_key_matches(event, "dup_zoom_out"):
-            if self.main_tabs.currentIndex() == 1:
-                self.overlay_canvas.zoom_view(0.9)
-            else:
-                self.active_pane.zoom_manager.zoom(0.9)
+            self.active_pane.zoom_manager.zoom(0.9)
         elif self._dialog_key_matches(event, "dup_reset_zoom"):
-            if self.main_tabs.currentIndex() == 1:
-                self.overlay_canvas.reset_view()
-            else:
-                self.active_pane.zoom_manager.zoom(reset=True)
+            self.active_pane.zoom_manager.zoom(reset=True)
         else:
             super().keyPressEvent(event)
 
@@ -734,27 +745,27 @@ class DuplicateManagerDialog(QDialog):
         controls_layout = QHBoxLayout(controls_bar)
         controls_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.btn_overlay_switch = QPushButton(
-            QIcon.fromTheme("layer-visible"), UITexts.DUPLICATE_OVERLAY_SWITCH_LAYER)
-        self.btn_overlay_switch.setToolTip(UITexts.DUPLICATE_OVERLAY_SWITCH_TOOLTIP)
-        controls_layout.addWidget(self.btn_overlay_switch)
-
-        self.btn_overlay_reset = QPushButton(
-            QIcon.fromTheme("view-restore"), UITexts.DUPLICATE_OVERLAY_RESET)
-        self.btn_overlay_reset.setToolTip(UITexts.DUPLICATE_OVERLAY_RESET_TOOLTIP)
-        controls_layout.addWidget(self.btn_overlay_reset)
-
         self.btn_overlay_swap = QPushButton(
             QIcon.fromTheme("object-flip-horizontal"),
             UITexts.DUPLICATE_OVERLAY_SWAP)
-        self.btn_overlay_swap.setToolTip(UITexts.DUPLICATE_OVERLAY_SWAP_TOOLTIP)
+        self.btn_overlay_swap.clicked.connect(self._swap_overlay_layers)
+        self._set_button_shortcut_tooltip(self.btn_overlay_swap,
+                                          UITexts.DUPLICATE_OVERLAY_SWAP_TOOLTIP,
+                                          "dup_swap_layers")
         controls_layout.addWidget(self.btn_overlay_swap)
+
+        self.btn_overlay_reset = QPushButton(
+            QIcon.fromTheme("view-restore"), UITexts.DUPLICATE_OVERLAY_RESET)
+        self.btn_overlay_reset.clicked.connect(self._on_overlay_reset)
+        self._set_button_shortcut_tooltip(self.btn_overlay_reset,
+                                          UITexts.DUPLICATE_OVERLAY_RESET_TOOLTIP,
+                                          "dup_reset_zoom")
+        controls_layout.addWidget(self.btn_overlay_reset)
 
         self.opacity_slider = QSlider(Qt.Horizontal)
         self.opacity_slider.setRange(0, 100)
         self.opacity_slider.setValue(50)
         self.opacity_slider.setFixedWidth(220)
-        self.opacity_slider.setToolTip(UITexts.DUPLICATE_TOGGLE_FIT_TOOLTIP)
         controls_layout.addWidget(self.opacity_slider)
 
         self.opacity_lbl = QLabel()
@@ -778,10 +789,11 @@ class DuplicateManagerDialog(QDialog):
         self.overlay_tabs.setMaximumHeight(tab_bar_height + 2)
 
         self.overlay_canvas = OverlayCanvas()
-        self.overlay_canvas.setToolTip(UITexts.DUPLICATE_TOGGLE_FIT_TOOLTIP)
+        self.overlay_canvas.setToolTip(UITexts.DUPLICATE_OVERLAY_MOUSE_HINT)
 
         self.overlay_legend_lbl = QLabel()
         self.overlay_legend_lbl.setAlignment(Qt.AlignCenter)
+        self.overlay_legend_lbl.setTextFormat(Qt.RichText)
         self.overlay_legend_lbl.setStyleSheet(
             "font-size: 10px; color: #888;")
 
@@ -792,10 +804,12 @@ class DuplicateManagerDialog(QDialog):
 
         # Connections
         self.overlay_tabs.currentChanged.connect(self._on_overlay_tab_changed)
-        self.btn_overlay_switch.clicked.connect(self.overlay_canvas.toggle_layer)
-        self.btn_overlay_reset.clicked.connect(self.overlay_canvas.reset_view)
-        self.btn_overlay_swap.clicked.connect(self._swap_overlay_layers)
+        self.overlay_canvas.layer_changed.connect(self._update_overlay_legend)
         self.opacity_slider.valueChanged.connect(self._on_opacity_changed)
+
+        # The initial sub-tab is Toggle: hide the opacity controls right away,
+        # otherwise they would be visible until the user changes sub-tab.
+        self._update_overlay_controls(self.overlay_tabs.currentIndex())
         return page
 
     def _on_main_tab_changed(self, index):
@@ -813,7 +827,6 @@ class DuplicateManagerDialog(QDialog):
             self.panes_linked = self._user_link_preference and self._can_link
         else:
             self.panes_linked = False
-            self._update_overlay_legend()
         self.btn_link_panes.setChecked(self.panes_linked and is_side)
         self._refresh_active_view()
 
@@ -826,12 +839,58 @@ class DuplicateManagerDialog(QDialog):
             index (int): The newly active overlay mode tab index.
         """
         self.overlay_canvas.set_mode(index)
-        is_toggle = index == OverlayCanvas.MODE_TOGGLE
+        self._update_overlay_controls(index)
+        self._update_overlay_legend()
+        self._refresh_active_view()
+
+    def _update_overlay_controls(self, index):
+        """
+        Shows or hides the mode-specific overlay controls.
+
+        The opacity slider and its label are only visible in the Opacity
+        sub-tab, and the Reset tooltip explains the mode-specific behaviour.
+
+        Args:
+            index (int): The active overlay mode tab index.
+        """
         is_opacity = index == OverlayCanvas.MODE_OPACITY
-        self.btn_overlay_switch.setVisible(is_toggle)
         self.opacity_slider.setVisible(is_opacity)
         self.opacity_lbl.setVisible(is_opacity)
-        self._refresh_active_view()
+
+        if index == OverlayCanvas.MODE_SPLIT:
+            tooltip = UITexts.DUPLICATE_OVERLAY_RESET_SPLIT_TOOLTIP
+        elif index == OverlayCanvas.MODE_OPACITY:
+            tooltip = UITexts.DUPLICATE_OVERLAY_RESET_OPACITY_TOOLTIP
+        else:
+            tooltip = UITexts.DUPLICATE_OVERLAY_RESET_TOOLTIP
+        self._set_button_shortcut_tooltip(self.btn_overlay_reset, tooltip,
+                                          "dup_reset_zoom")
+
+    def _on_overlay_reset(self):
+        """
+        Resets the overlay view and the control of the active sub-mode.
+
+        In Split the divider returns to the middle; in Opacity the slider
+        returns to 50 %. In every mode the zoom and pan are reset as well.
+        """
+        self.overlay_canvas.reset_view()
+        if self.overlay_tabs.currentIndex() == OverlayCanvas.MODE_SPLIT:
+            self.overlay_canvas.reset_split()
+        elif self.overlay_tabs.currentIndex() == OverlayCanvas.MODE_OPACITY:
+            self.opacity_slider.setValue(50)
+
+    def _reset_overlay_controls(self):
+        """
+        Resets the overlay control widgets when the image pair changes.
+
+        The canvas itself is reset lazily by ``set_pixmaps`` when the Overlay
+        tab is visible; here only the dialog-owned widgets are restored.
+        """
+        self.opacity_slider.blockSignals(True)
+        self.opacity_slider.setValue(50)
+        self.opacity_slider.blockSignals(False)
+        self.opacity_lbl.setText(
+            UITexts.DUPLICATE_OVERLAY_OPACITY_LABEL.format(value=50))
 
     def _refresh_active_view(self):
         """
@@ -845,6 +904,8 @@ class DuplicateManagerDialog(QDialog):
             p_r = self.right_pane.controller.pixmap_original
             self.overlay_canvas.set_pixmaps(p_l, p_r)
             self.overlay_canvas.set_mode(self.overlay_tabs.currentIndex())
+            self.overlay_canvas.set_opacity(self.opacity_slider.value())
+            self._update_overlay_legend()
             self._dirty["overlay"] = False
         elif self.main_tabs.currentIndex() == 0 and self._dirty["side"]:
             self._apply_linked_scaling()
@@ -901,9 +962,8 @@ class DuplicateManagerDialog(QDialog):
             self.right_pane_widget.size_lbl.setStyleSheet(style(neutral))
 
     def _swap_overlay_layers(self):
-        """Swaps the overlay layers and refreshes the legend."""
+        """Swaps the overlay layers; the legend updates via layer_changed."""
         self.overlay_canvas.swap_layers()
-        self._update_overlay_legend()
 
     def _on_opacity_changed(self, value):
         """
@@ -918,16 +978,39 @@ class DuplicateManagerDialog(QDialog):
 
     def _update_overlay_legend(self):
         """
-        Refreshes the overlay legend with the filenames of the current top
-        and bottom layers.
+        Refreshes the overlay legend with the current top and bottom layers.
+
+        In Toggle mode the visible layer is highlighted; after a swap the
+        names follow the swapped roles.
         """
-        top_path = self.left_pane.controller.get_current_path()
-        bottom_path = self.right_pane.controller.get_current_path()
-        top_name = os.path.basename(top_path) if top_path else "N/A"
-        bottom_name = os.path.basename(bottom_path) if bottom_path else "N/A"
+        left_path = self.left_pane.controller.get_current_path()
+        right_path = self.right_pane.controller.get_current_path()
+        left_name = os.path.basename(left_path) if left_path else "N/A"
+        right_name = os.path.basename(right_path) if right_path else "N/A"
+
+        swapped = self.overlay_canvas.is_swapped
+        top_name, bottom_name = (right_name, left_name) if swapped else \
+            (left_name, right_name)
+
+        active_name = top_name if self.overlay_canvas.shows_top else bottom_name
+        is_toggle = (self.overlay_tabs.currentIndex()
+                     == OverlayCanvas.MODE_TOGGLE)
+        plain = "color: #888;"
+        highlighted = "color: #e8e8e8; font-weight: bold;"
+
+        top_style = highlighted if (is_toggle and active_name == top_name) \
+            else plain
+        bottom_style = highlighted if (is_toggle and active_name == bottom_name) \
+            else plain
+        marker = "▶ " if is_toggle else ""
+
         self.overlay_legend_lbl.setText(
-            f"{UITexts.DUPLICATE_OVERLAY_TOP_LEGEND.format(name=top_name)}    "
-            f"{UITexts.DUPLICATE_OVERLAY_BOTTOM_LEGEND.format(name=bottom_name)}")
+            f"<span style='{top_style}'>{marker}"
+            f"{html.escape(UITexts.DUPLICATE_OVERLAY_TOP_LEGEND.format(name=top_name))}"
+            f"</span>&nbsp;&nbsp;"
+            f"<span style='{bottom_style}'>{marker}"
+            f"{html.escape(UITexts.DUPLICATE_OVERLAY_BOTTOM_LEGEND.format(name=bottom_name))}"
+            f"</span>")
 
     def _populate_list(self):
         """Fills the table widget with the list of duplicate results."""
@@ -955,11 +1038,15 @@ class DuplicateManagerDialog(QDialog):
             else:
                 col_offset = 0
 
-            # Similarity column (using DisplayRole with int for numerical sorting).
+            # Similarity column (using DisplayRole with int for numerical
+            # sorting, plus a color that mirrors the removed similarity badge).
             sim_item = QTableWidgetItem()
             sim_item.setData(Qt.DisplayRole, dup.similarity
                              if dup.similarity is not None else 0)
             sim_item.setTextAlignment(Qt.AlignCenter)
+            sim_color = self._similarity_color(dup.similarity)
+            if sim_color:
+                sim_item.setForeground(QBrush(QColor(sim_color)))
             if not self.review_mode:
                 sim_item.setData(Qt.UserRole, i)
 
@@ -979,6 +1066,28 @@ class DuplicateManagerDialog(QDialog):
         if row >= 0:
             self._load_pair(row)
 
+    @staticmethod
+    def _similarity_color(similarity):
+        """
+        Maps a similarity percentage to the color used in the % column.
+
+        Exact duplicates are green, matches below 80 % are red, anything in
+        between is amber, and unknown values keep the default color.
+
+        Args:
+            similarity (float or None): The similarity percentage.
+
+        Returns:
+            str or None: Hex color string, or None when similarity is None.
+        """
+        if similarity is None:
+            return None
+        if similarity == 100:
+            return "#2ecc71"
+        if similarity < 80:
+            return "#e74c3c"
+        return "#f39c12"
+
     def _load_pair(self, row):
         """
         Loads the duplicate pair corresponding to the specified table row.
@@ -995,21 +1104,8 @@ class DuplicateManagerDialog(QDialog):
         dup = self.duplicates[original_index]
         self.current_dup_pair = dup  # Store the original pair
 
-        # Update similarity label
-        similarity_color = "#f39c12"  # Default (amber)
-        if dup.similarity is not None:
-            if dup.similarity == 100:
-                similarity_color = "#2ecc71"  # Green
-            elif dup.similarity < 80:
-                similarity_color = "#e74c3c"  # Red
-
-            self.similarity_lbl.setText(f"{dup.similarity}% Similarity")
-            self.similarity_lbl.setStyleSheet(
-                f"font-weight: bold; color: {similarity_color}; "
-                "font-size: 12px; margin-top: 5px;")
-            self.similarity_lbl.show()
-        else:
-            self.similarity_lbl.hide()
+        # Reset all overlay controls before loading the new pair.
+        self._reset_overlay_controls()
 
         # Get paths and their components
         path_left = dup.path1
@@ -1489,6 +1585,66 @@ class DuplicateManagerDialog(QDialog):
             y_pct = v_bar.value() / v_bar.maximum() if v_bar.maximum() > 0 else 0
             self.right_pane.set_scroll_relative(x_pct, y_pct)
 
+    def _overwrite_selected(self):
+        """
+        Renames the selected image to the name of the other one, replacing it.
+
+        The whole flow is confirmed first with a dialog listing both full
+        paths. If the direct rename is not possible (e.g. cross-device), the
+        file is copied overwriting the target. On success the resolved pair is
+        removed from the list because its content (or the very file) changed.
+        """
+        source = self._active_pane_path()
+        if self.active_pane is self.right_pane:
+            target = self.left_pane.controller.get_current_path()
+        else:
+            target = self.right_pane.controller.get_current_path()
+
+        if not source or not target or not os.path.exists(source) \
+                or not os.path.exists(target):
+            QMessageBox.warning(
+                self, UITexts.WARNING, UITexts.DUPLICATE_OVERWRITE_NO_SELECTION)
+            return
+
+        try:
+            final = self.main_win.resolve_overwrite_target(source, target)
+        except AttributeError:
+            # Fall back to the plain target when the main window does not
+            # expose the helper (tests or partial environments).
+            final = target
+
+        text = UITexts.DUPLICATE_OVERWRITE_CONFIRM_TEXT.format(
+            source=source, target=target)
+        if os.path.splitext(source)[1].lower() != os.path.splitext(target)[1].lower():
+            text += "\n\n" + UITexts.DUPLICATE_OVERWRITE_CONFIRM_EXT_NOTE.format(
+                final=final, target=target)
+
+        reply = QMessageBox.question(
+            self, UITexts.DUPLICATE_OVERWRITE_CONFIRM_TITLE, text,
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
+
+        current_row = self.table_widget.currentRow()
+        affected = [d for d in self.duplicates
+                    if d.path1 in (source, target) or d.path2 in (source, target)]
+        for p in affected:
+            self.cache.mark_as_pending(p.path1, p.path2, False)
+
+        try:
+            self.main_win.overwrite_image_file(source, target)
+        except Exception as e:
+            # Restore the pending marks so the pair can be resolved later.
+            for p in affected:
+                self.cache.mark_as_pending(p.path1, p.path2, True)
+            QMessageBox.critical(
+                self, UITexts.ERROR,
+                UITexts.DUPLICATE_OVERWRITE_ERROR.format(error=e))
+            return
+
+        self.duplicates = [d for d in self.duplicates if d not in affected]
+        self._reselect_after_change(current_row)
+
     def _on_file_deleted_externally(self, path):
         """
         Handles file deletion events from the FileSystemWatcher.
@@ -1637,9 +1793,16 @@ class DuplicateManagerDialog(QDialog):
 
         # Repopulate list widget to ensure all indices are correct and counter is
         # updated
-        self._populate_list()
+        self._reselect_after_change(current_row)
 
-        # Try to restore selection to same position (or last item)
+    def _reselect_after_change(self, current_row):
+        """
+        Repopulates the duplicates list and restores the selection position.
+
+        Args:
+            current_row (int): The row that was selected before the change.
+        """
+        self._populate_list()
         if self.duplicates:
             new_row = min(current_row, self.table_widget.rowCount() - 1)
             self.table_widget.selectRow(new_row)

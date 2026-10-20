@@ -156,14 +156,93 @@ def test_i18n_keys_parity():
         "DUPLICATE_TAB_SIDE_BY_SIDE", "DUPLICATE_TAB_OVERLAY",
         "DUPLICATE_OVERLAY_TOGGLE", "DUPLICATE_OVERLAY_SPLIT",
         "DUPLICATE_OVERLAY_DIFFERENCE", "DUPLICATE_OVERLAY_OPACITY",
-        "DUPLICATE_OVERLAY_SWITCH_LAYER", "DUPLICATE_OVERLAY_SWITCH_TOOLTIP",
         "DUPLICATE_OVERLAY_OPACITY_LABEL", "DUPLICATE_OVERLAY_RESET",
-        "DUPLICATE_OVERLAY_RESET_TOOLTIP", "DUPLICATE_OVERLAY_SWAP",
-        "DUPLICATE_OVERLAY_SWAP_TOOLTIP", "DUPLICATE_OVERLAY_TOP_LEGEND",
-        "DUPLICATE_OVERLAY_BOTTOM_LEGEND", "DUPLICATE_TOGGLE_FIT_TOOLTIP",
+        "DUPLICATE_OVERLAY_RESET_TOOLTIP",
+        "DUPLICATE_OVERLAY_RESET_SPLIT_TOOLTIP",
+        "DUPLICATE_OVERLAY_RESET_OPACITY_TOOLTIP",
+        "DUPLICATE_OVERLAY_SWAP", "DUPLICATE_OVERLAY_SWAP_TOOLTIP",
+        "DUPLICATE_OVERLAY_MOUSE_HINT", "DUPLICATE_OVERLAY_TOP_LEGEND",
+        "DUPLICATE_OVERLAY_BOTTOM_LEGEND",
         "DUPLICATE_LINK_PANES_TOOLTIP", "DUPLICATE_SIZE_LABEL",
-        "DUPLICATE_RESOLUTION_LABEL",
+        "DUPLICATE_RESOLUTION_LABEL", "DUPLICATE_OVERWRITE",
+        "DUPLICATE_OVERWRITE_TOOLTIP", "DUPLICATE_OVERWRITE_CONFIRM_TITLE",
+        "DUPLICATE_OVERWRITE_CONFIRM_TEXT",
+        "DUPLICATE_OVERWRITE_CONFIRM_EXT_NOTE",
+        "DUPLICATE_OVERWRITE_NO_SELECTION", "DUPLICATE_OVERWRITE_ERROR",
     ]
     for lang, texts in constants._UI_TEXTS.items():
         for key in keys:
             assert key in texts, f"{key} missing in language '{lang}'"
+
+
+def test_similarity_label_removed_and_column_colored(dialog):
+    """The % label is gone and the % column carries the color code."""
+    assert not hasattr(dialog, "similarity_lbl")
+    sim_item = dialog.table_widget.item(dialog.table_widget.currentRow(), 0)
+    assert sim_item.foreground().color().name() in (
+        "#2ecc71", "#e74c3c", "#f39c12")
+
+
+def test_bottom_bar_order(dialog):
+    """The action buttons follow the documented layout order."""
+    layout = dialog.btn_link_panes.parentWidget().layout()
+    widgets = []
+    for i in range(layout.count()):
+        item = layout.itemAt(i)
+        if item.widget() is not None:
+            widgets.append(item.widget())
+    index = {w: i for i, w in enumerate(widgets)}
+    assert index[dialog.btn_link_panes] < index[dialog.btn_del_left] < \
+        index[dialog.btn_del_right] < index[dialog.btn_overwrite] < \
+        index[dialog.btn_keep_both] < index[dialog.btn_skip]
+
+
+def test_opacity_slider_hidden_until_opacity_tab(dialog):
+    """The slider is only visible when the Opacity sub-tab is active."""
+    dialog.main_tabs.setCurrentIndex(1)  # Overlay
+    assert dialog.opacity_slider.isHidden()
+    assert dialog.opacity_lbl.isHidden()
+    dialog.overlay_tabs.setCurrentIndex(OverlayCanvas.MODE_OPACITY)
+    assert not dialog.opacity_slider.isHidden()
+    assert not dialog.opacity_lbl.isHidden()
+    dialog.overlay_tabs.setCurrentIndex(OverlayCanvas.MODE_TOGGLE)
+    assert dialog.opacity_slider.isHidden()
+
+
+def test_no_switch_layer_button(dialog):
+    """The redundant Switch Layer button no longer exists."""
+    assert not hasattr(dialog, "btn_overlay_switch")
+
+
+def test_overlay_buttons_order(dialog):
+    """Swap Layers comes before Reset View in the overlay controls bar."""
+    layout = dialog.btn_overlay_swap.parentWidget().layout()
+    widgets = []
+    for i in range(layout.count()):
+        item = layout.itemAt(i)
+        if item.widget() is not None:
+            widgets.append(item.widget())
+    index = {w: i for i, w in enumerate(widgets)}
+    assert index[dialog.btn_overlay_swap] < index[dialog.btn_overlay_reset]
+
+
+def test_overlay_buttons_have_hotkey_tooltips(dialog):
+    """Overlay action buttons advertise their associated hotkey."""
+    assert "S" in dialog.btn_overlay_swap.toolTip()
+    assert "Z" in dialog.btn_overlay_reset.toolTip()
+
+
+def test_reset_per_subtab(dialog):
+    """Reset re-centers Split and resets Opacity to 50 %."""
+    dialog.main_tabs.setCurrentIndex(1)
+
+    dialog.overlay_tabs.setCurrentIndex(OverlayCanvas.MODE_SPLIT)
+    dialog.overlay_canvas.reset_all()
+    dialog.overlay_canvas._split = 0.2
+    dialog._on_overlay_reset()
+    assert abs(dialog.overlay_canvas._split - 0.5) < 1e-9
+
+    dialog.overlay_tabs.setCurrentIndex(OverlayCanvas.MODE_OPACITY)
+    dialog.opacity_slider.setValue(80)
+    dialog._on_overlay_reset()
+    assert dialog.opacity_slider.value() == 50

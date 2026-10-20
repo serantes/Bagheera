@@ -264,6 +264,41 @@ The main menu is accessed via the application menu button (usually a  three poin
 * **Clear ignored pairs**: Clears the list of all ignored duplicate pairs.
 * **Clear hashes (X items, Y MB on disk)**: Deletes the entire duplicate hash database. This action is irreversible.
 
+### 6.2.1. Duplicate Manager dialog
+
+When a duplicate pair is open for resolution, the dialog presents two tabs:
+
+* **Side by Side**: displays both images with synchronized zoom and scroll when
+  the **Link Panes** button is enabled (default). The **L** hotkey toggles it.
+* **Overlay**: compares both images in one of four sub-modes:
+  * **Toggle**: shows one image at a time; press **Tab** or double click to
+    switch layers.
+  * **Split**: a draggable vertical divider reveals one image on each side.
+  * **Difference**: real-time pixel difference between the two images.
+  * **Opacity**: a slider (0-100 %) controls the transparency of the top layer.
+
+Overlay navigation:
+
+* **Mouse wheel / drag**: moves both layers together.
+* **Shift + wheel / drag**: only the top layer.
+* **Ctrl + wheel / drag**: only the bottom layer.
+* **Double click**: toggles between fit-to-window and 1:1 (real pixels).
+* **Z**: resets the view (+ re-centers the splitter or sets the opacity to 50 %
+  in the corresponding sub-mode); S swaps the layers.
+
+Bottom action bar (always visible):
+
+* **Trash Left / Trash Right** (U / I): sends the image of the pane to trash.
+* **Overwrite** (W): renames the selected image to the name of the other one,
+  replacing it (a copy is used when the rename is not possible). A
+  confirmation dialog always shows both full paths first.
+* **Keep Both** (O) and **Skip** (P) resolve the current pair.
+* In **Review ignored** mode, the Skip button becomes **Remove from ignored**.
+
+The size and resolution labels below each image are colored independently to
+show which file wins each comparison, and the percentage column of the list
+applies the same color coding to every row.
+
 ### 6.3. Settings
 
 Opens the Settings dialog (see Section 7).
