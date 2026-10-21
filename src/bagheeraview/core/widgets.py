@@ -60,6 +60,8 @@ class TagTreeView(QTreeView):
     add_or_requested = Signal(object)
     rename_all_requested = Signal(object)
     rename_viewed_requested = Signal(object)
+    add_to_quick_tags_requested = Signal(object)
+    remove_from_quick_tags_requested = Signal(object)
 
     def mousePressEvent(self, event):
         """Handles mouse press events to implement Ctrl+Click toggling.
@@ -115,6 +117,13 @@ class TagTreeView(QTreeView):
 
                 menu.addSeparator()
 
+                add_to_quick_tags_action = menu.addAction(
+                    QIcon.fromTheme("bookmark-new"), UITexts.ADD_TAG_TO_QUICK_TAGS)
+                remove_from_quick_tags_action = menu.addAction(
+                    QIcon.fromTheme("bookmark-remove"), UITexts.REMOVE_TAG_FROM_QUICK_TAGS)
+
+                menu.addSeparator()
+
                 rename_all_action = menu.addAction(
                     QIcon.fromTheme("edit-rename"), UITexts.RENAME_TAGS_ALL)
                 rename_viewed_action = menu.addAction(
@@ -129,6 +138,10 @@ class TagTreeView(QTreeView):
                     self.add_and_requested.emit(index)
                 elif action == add_or_action:
                     self.add_or_requested.emit(index)
+                elif action == add_to_quick_tags_action:
+                    self.add_to_quick_tags_requested.emit(index)
+                elif action == remove_from_quick_tags_action:
+                    self.remove_from_quick_tags_requested.emit(index)
                 elif action == rename_all_action:
                     self.rename_all_requested.emit(index)
                 elif action == rename_viewed_action:
@@ -409,6 +422,8 @@ class TagEditWidget(QWidget):
         self.tree_view.add_or_requested.connect(self.on_add_or_requested)
         self.tree_view.rename_all_requested.connect(self.on_rename_all_requested)
         self.tree_view.rename_viewed_requested.connect(self.on_rename_viewed_requested)
+        self.tree_view.add_to_quick_tags_requested.connect(self.on_add_to_quick_tags_requested)
+        self.tree_view.remove_from_quick_tags_requested.connect(self.on_remove_from_quick_tags_requested)
 
     def set_files_data(self, files_data):
         """Sets the files whose tags are to be edited.
@@ -824,6 +839,41 @@ class TagEditWidget(QWidget):
     @Slot(object)
     def on_rename_viewed_requested(self, proxy_index):
         self.on_rename_requested(proxy_index, all_files=False)
+
+    def _get_tag_path_from_proxy_index(self, proxy_index):
+        """Reconstructs the full tag path from a proxy model index."""
+        source_index = self.proxy_model.mapToSource(proxy_index)
+        item = self.source_model.itemFromIndex(source_index)
+        if not item:
+            return ""
+        return self.reconstruct_path(item)
+
+    @Slot(object)
+    def on_add_to_quick_tags_requested(self, proxy_index):
+        """Handles request to add a tag to the quick tags (mru_tags) list."""
+        tag = self._get_tag_path_from_proxy_index(proxy_index)
+        if not tag or not self.main_win:
+            return
+        self.main_win.add_to_mru_tags(tag)
+        if hasattr(self.main_win, 'status_lbl'):
+            self.main_win.status_lbl.setText(UITexts.QUICK_TAG_ADDED.format(tag))
+
+    @Slot(object)
+    def on_remove_from_quick_tags_requested(self, proxy_index):
+        """Handles request to remove a tag from the quick tags (mru_tags) list."""
+        tag = self._get_tag_path_from_proxy_index(proxy_index)
+        if not tag or not self.main_win:
+            return
+        if not hasattr(self.main_win, 'mru_tags'):
+            return
+        if tag in self.main_win.mru_tags:
+            self.main_win.mru_tags.remove(tag)
+            self.main_win.save_config()
+            if hasattr(self.main_win, 'status_lbl'):
+                self.main_win.status_lbl.setText(UITexts.QUICK_TAG_REMOVED.format(tag))
+        else:
+            if hasattr(self.main_win, 'status_lbl'):
+                self.main_win.status_lbl.setText(UITexts.QUICK_TAG_NOT_FOUND.format(tag))
 
     def save_changes(self):
         """Applies the tracked tag changes to the selected files' xattrs."""
