@@ -1398,6 +1398,7 @@ _UI_TEXTS = {
         "DUPLICATE_LIST_HEADER": "Parejas Duplicadas",
         "IGNORED_DATE": "Fecha Ignorado",
         "SETTINGS_GROUP_SCANNER": "Escáner",
+        "SETTINGS_GROUP_AREAS": 'Regiones',
         "SETTINGS_GROUP_REGIONS": "Regiones",
         "SETTINGS_GROUP_THUMBNAILS": "Miniaturas",
         "SETTINGS_GROUP_VIEWER": "Visor de Imágenes",
