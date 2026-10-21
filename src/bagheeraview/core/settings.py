@@ -420,6 +420,33 @@ class SettingsDialog(QDialog):
         scanner_layout.addLayout(threads_layout)
 
         scanner_layout.addLayout(scan_full_on_start_layout)
+
+        # --- Show Hidden Directories ---
+        scan_hidden_dirs_layout = QHBoxLayout()
+        scan_hidden_dirs_label = QLabel(UITexts.SETTINGS_SCAN_HIDDEN_DIRS_LABEL)
+        self.scan_hidden_dirs_checkbox = QCheckBox()
+        self.scan_hidden_dirs_checkbox.setText("")
+        scan_hidden_dirs_layout.addWidget(scan_hidden_dirs_label)
+        scan_hidden_dirs_layout.addStretch()
+        scan_hidden_dirs_layout.addWidget(self.scan_hidden_dirs_checkbox)
+        scan_hidden_dirs_label.setToolTip(UITexts.SETTINGS_SCAN_HIDDEN_DIRS_TOOLTIP)
+        self.scan_hidden_dirs_checkbox.setToolTip(
+            UITexts.SETTINGS_SCAN_HIDDEN_DIRS_TOOLTIP)
+        scanner_layout.addLayout(scan_hidden_dirs_layout)
+
+        # --- Show Hidden Files ---
+        scan_hidden_files_layout = QHBoxLayout()
+        scan_hidden_files_label = QLabel(UITexts.SETTINGS_SCAN_HIDDEN_FILES_LABEL)
+        self.scan_hidden_files_checkbox = QCheckBox()
+        self.scan_hidden_files_checkbox.setText("")
+        scan_hidden_files_layout.addWidget(scan_hidden_files_label)
+        scan_hidden_files_layout.addStretch()
+        scan_hidden_files_layout.addWidget(self.scan_hidden_files_checkbox)
+        scan_hidden_files_label.setToolTip(UITexts.SETTINGS_SCAN_HIDDEN_FILES_TOOLTIP)
+        self.scan_hidden_files_checkbox.setToolTip(
+            UITexts.SETTINGS_SCAN_HIDDEN_FILES_TOOLTIP)
+        scanner_layout.addLayout(scan_hidden_files_layout)
+
         scanner_layout.addStretch()
 
         # --- Duplicates Tab ---
@@ -1156,6 +1183,14 @@ class SettingsDialog(QDialog):
 
         self.scan_full_on_start_checkbox.setChecked(scan_full_on_start)
 
+        scan_hidden_dirs = APP_CONFIG.get(
+            "scan_hidden_dirs", SCANNER_SETTINGS_DEFAULTS.get("scan_hidden_dirs", False))
+        self.scan_hidden_dirs_checkbox.setChecked(scan_hidden_dirs)
+
+        scan_hidden_files = APP_CONFIG.get(
+            "scan_hidden_files", SCANNER_SETTINGS_DEFAULTS.get("scan_hidden_files", False))
+        self.scan_hidden_files_checkbox.setChecked(scan_hidden_files)
+
         self.person_tags_edit.setText(person_tags)
         self.pet_tags_edit.setText(pet_tags)
         self.body_tags_edit.setText(body_tags)
@@ -1217,6 +1252,9 @@ class SettingsDialog(QDialog):
         self.show_filename_check.setChecked(show_filename)
         self.show_rating_check.setChecked(show_rating)
         self.show_tags_check.setChecked(show_tags)
+
+        self.scan_hidden_dirs_checkbox.setChecked(scan_hidden_dirs)
+        self.scan_hidden_files_checkbox.setChecked(scan_hidden_files)
 
         pos_map = {
             'bottom': UITexts.FILMSTRIP_BOTTOM,
@@ -1439,6 +1477,8 @@ class SettingsDialog(QDialog):
     def accept(self):
         """Saves settings and closes the dialog."""
         APP_CONFIG["scan_max_level"] = self.scan_max_level_spin.value()
+        APP_CONFIG["scan_hidden_dirs"] = self.scan_hidden_dirs_checkbox.isChecked()
+        APP_CONFIG["scan_hidden_files"] = self.scan_hidden_files_checkbox.isChecked()
         APP_CONFIG["generation_threads"] = self.threads_spin.value()
         APP_CONFIG["scan_batch_size"] = self.scan_batch_size_spin.value()
         if HAVE_BAGHEERASEARCH_LIB:

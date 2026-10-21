@@ -181,6 +181,8 @@ SCANNER_SETTINGS_DEFAULTS = {
     "person_recognition_enabled": False,
     "unrecognized_person_tag": "Unrecognized",
     "unrecognized_person_action": "ask",
+    "scan_hidden_dirs": False,   # Include hidden directories (starting with '.') in scans
+    "scan_hidden_files": False,  # Include hidden files (starting with '.') in scans
 }
 
 # --- IMAGE VIEWER DEFAULTS ---
@@ -849,6 +851,12 @@ _UI_TEXTS = {
         "SETTINGS_SCAN_BATCH_SIZE_TOOLTIP": "Number of images to load in each batch.",
         "SETTINGS_SCAN_FULL_ON_START_TOOLTIP": "Automatically scan all images in the "
         "folder on startup.",
+        "SETTINGS_SCAN_HIDDEN_DIRS_LABEL": "Scan hidden directories",
+        "SETTINGS_SCAN_HIDDEN_DIRS_TOOLTIP": "If enabled, directories whose name starts "
+        "with '.' will be entered and shown during scanning.",
+        "SETTINGS_SCAN_HIDDEN_FILES_LABEL": "Scan hidden files",
+        "SETTINGS_SCAN_HIDDEN_FILES_TOOLTIP": "If enabled, files whose name starts with "
+        "'.' will be included in the scan results.",
         "SETTINGS_PERSON_TAGS_TOOLTIP": "Default tags for people, separated by commas.",
         "SETTINGS_FACE_ENGINE_TOOLTIP": "Library used for face detection (MediaPipe "
         "recommended).",
@@ -1494,6 +1502,12 @@ _UI_TEXTS = {
         "SETTINGS_SCAN_BATCH_SIZE_TOOLTIP": "Número de imágenes a cargar en cada lote.",
         "SETTINGS_SCAN_FULL_ON_START_TOOLTIP": "Escanear automáticamente todas las "
         "imágenes de la carpeta al inicio.",
+        "SETTINGS_SCAN_HIDDEN_DIRS_LABEL": "Escanear directorios ocultos",
+        "SETTINGS_SCAN_HIDDEN_DIRS_TOOLTIP": "Si está activado, los directorios cuyo "
+        "nombre comienza con '.' serán explorados y mostrados durante el escaneo.",
+        "SETTINGS_SCAN_HIDDEN_FILES_LABEL": "Escanear ficheros ocultos",
+        "SETTINGS_SCAN_HIDDEN_FILES_TOOLTIP": "Si está activado, los ficheros cuyo "
+        "nombre comienza con '.' serán incluidos en los resultados del escaneo.",
         "SETTINGS_PERSON_TAGS_TOOLTIP": "Etiquetas predeterminadas para personas, "
         "separadas por comas.",
         "SETTINGS_FACE_ENGINE_TOOLTIP": "Librería utilizada para la detección de "
@@ -2137,6 +2151,12 @@ _UI_TEXTS = {
         "SETTINGS_SCAN_BATCH_SIZE_TOOLTIP": "Número de imaxes a cargar en cada lote.",
         "SETTINGS_SCAN_FULL_ON_START_TOOLTIP": "Escanear automaticamente todas as "
         "imaxes do cartafol ao inicio.",
+        "SETTINGS_SCAN_HIDDEN_DIRS_LABEL": "Escanear directorios ocultos",
+        "SETTINGS_SCAN_HIDDEN_DIRS_TOOLTIP": "Se está activado, os directorios cuxo "
+        "nome comeza con '.' serán explorados e mostrados durante o escaneo.",
+        "SETTINGS_SCAN_HIDDEN_FILES_LABEL": "Escanear ficheiros ocultos",
+        "SETTINGS_SCAN_HIDDEN_FILES_TOOLTIP": "Se está activado, os ficheiros cuxo "
+        "nome comeza con '.' serán incluídos nos resultados do escaneo.",
         "SETTINGS_PERSON_TAGS_TOOLTIP": "Etiquetas predeterminadas para persoas, "
         "separadas por comas.",
         "SETTINGS_FACE_ENGINE_TOOLTIP": "Libraría utilizada para a detección de "

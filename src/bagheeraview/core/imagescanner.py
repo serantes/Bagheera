@@ -1758,6 +1758,10 @@ class ImageScanner(QThread):
         self.force_thumbnail_refresh = force_thumbnail_refresh
         self._current_workers = []
         self._current_workers_mutex = QMutex()
+        self._scan_hidden_dirs = APP_CONFIG.get(
+            "scan_hidden_dirs", SCANNER_SETTINGS_DEFAULTS.get("scan_hidden_dirs", False))
+        self._scan_hidden_files = APP_CONFIG.get(
+            "scan_hidden_files", SCANNER_SETTINGS_DEFAULTS.get("scan_hidden_files", False))
 
         # Initial load
         self.pending_tasks.append((0, APP_CONFIG.get(
@@ -1849,12 +1853,12 @@ class ImageScanner(QThread):
                 expanded_path = os.path.expanduser(path)
                 if os.path.exists(expanded_path):
                     p = Path(os.path.abspath(expanded_path))
-                    if p.is_file():
+                    if p.is_file() and (self._scan_hidden_files or not p.name.startswith(".")):
                         p_str = str(p)
                         if p_str not in self._seen_files:
                             self.all_files.append(p_str)
                             self._seen_files.add(p_str)
-                    elif p.is_dir():
+                    elif p.is_dir() and (self._scan_hidden_dirs or not p.name.startswith(".")):
                         self._scan_directory(p, 0)
                         self._update_viewers()
                 else:
@@ -1896,7 +1900,7 @@ class ImageScanner(QThread):
                         for item in dir_path.iterdir():
                             if not self._is_running:
                                 return
-                            if item.is_dir():
+                            if item.is_dir() and (self._scan_hidden_dirs or not p.name.startswith(".")):
                                 self._scan_directory(item, current_depth + 1)
                     except (PermissionError, OSError):
                         pass
