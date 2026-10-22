@@ -3,7 +3,9 @@ Duplicate Cache and Detection Module for Bagheera.
 
 This module provides the core logic for detecting duplicate images using
 perceptual hashing (dHash) and managing a persistent cache of these hashes
-and their relationships using LMDB.
+and their relationships using LMDB. Candidate pairs that pass the perceptual
+hash threshold are additionally verified with an RGB color histogram
+comparison before being reported as duplicates.
 
 Classes:
     DuplicateCache: Manages the LMDB database for hashes and exceptions.
@@ -18,6 +20,7 @@ import shutil
 import lmdb
 from pathlib import Path
 import PIL.Image
+import numpy as np
 
 from PySide6.QtCore import (
     QObject, QThread, Signal, QMutex, QSemaphore, QReadWriteLock,
@@ -39,6 +42,97 @@ logger = logging.getLogger(__name__)
 DuplicateResult = collections.namedtuple(
     'DuplicateResult',
     ['path1', 'path2', 'hash_value', 'is_exception', 'similarity', 'timestamp'])
+
+# Color histogram verification for duplicate confirmation.
+# A candidate pair that passes the perceptual hash threshold is additionally
+# validated by comparing normalized RGB color histograms. This reduces false
+# positives caused by images that share a similar gradient structure (dHash)
+# but have clearly different color content.
+COLOR_HIST_BINS = 8  # Bins per RGB channel (8x8x8 = 512-dimensional)
+COLOR_HIST_THUMBNAIL_SIZE = (128, 128)
+COLOR_HIST_MIN_CORRELATION = 0.90
+
+
+def _blur_histogram_axis(hist3, axis):
+    """
+    Applies a lightweight [0.25, 0.5, 0.25] box blur along one histogram axis.
+
+    The blur makes the comparison tolerant to small color shifts that would
+    otherwise move mass across adjacent bin boundaries.
+
+    Args:
+        hist3 (numpy.ndarray): 3D color histogram.
+        axis (int): Axis (RGB channel) to blur along.
+
+    Returns:
+        numpy.ndarray: Blurred histogram with the same shape as ``hist3``.
+    """
+    pad_width = [(0, 0)] * hist3.ndim
+    pad_width[axis] = (1, 1)
+    padded = np.pad(hist3, pad_width, mode='edge')
+    blurred = 0.0
+    for offset, weight in zip((0, 1, 2), (0.25, 0.5, 0.25)):
+        sl = [slice(None)] * hist3.ndim
+        sl[axis] = slice(offset, offset + hist3.shape[axis])
+        blurred += weight * padded[tuple(sl)]
+    return blurred
+
+
+def compute_color_histogram(path):
+    """
+    Computes a normalized 3D RGB color histogram for an image file.
+
+    The image is downscaled to a small thumbnail before histogramming to keep
+    the computation fast while remaining robust to resolution differences. A
+    light box blur is applied so that colors close to a bin boundary still
+    produce meaningful similarity with their neighbours.
+
+    Args:
+        path (str): Absolute path to the image file.
+
+    Returns:
+        numpy.ndarray | None: Flattened, L1-normalized color histogram of shape
+            (COLOR_HIST_BINS ** 3,), or None if the image could not be read
+            or processed.
+    """
+    try:
+        with PIL.Image.open(path) as pil_img:
+            pil_img = pil_img.convert('RGB')
+            pil_img.thumbnail(
+                COLOR_HIST_THUMBNAIL_SIZE, PIL.Image.Resampling.BILINEAR)
+            data = np.asarray(pil_img, dtype=np.uint8)
+    except Exception as exc:
+        logger.warning(f"Color histogram failed for {path}: {exc}")
+        return None
+
+    hist, _ = np.histogramdd(
+        data.reshape(-1, 3),
+        bins=(COLOR_HIST_BINS,) * 3,
+        range=((0, 256),) * 3,
+        density=False
+    )
+    for axis in range(hist.ndim):
+        hist = _blur_histogram_axis(hist, axis)
+    hist = hist.ravel().astype(np.float64)
+    norm = hist.sum()
+    if norm <= 0:
+        return None
+    return hist / norm
+
+
+def compare_color_histograms(hist1, hist2):
+    """
+    Computes the Bhattacharyya similarity between two color histograms.
+
+    Args:
+        hist1 (numpy.ndarray): First normalized color histogram.
+        hist2 (numpy.ndarray): Second normalized color histogram.
+
+    Returns:
+        float: Similarity score in [0.0, 1.0], where 1.0 means identical
+            color distributions.
+    """
+    return float(np.sqrt(hist1 * hist2).sum())
 
 
 class HashWorker(QRunnable):
@@ -1008,6 +1102,11 @@ class DuplicateCache(QObject):
 class DuplicateDetector(QThread):
     """
     Worker thread for detecting duplicate images using perceptual hashing.
+
+    Candidate pairs that pass the perceptual hash threshold are additionally
+    verified by comparing their RGB color histograms (Bhattacharyya
+    similarity) before being reported as duplicates. This extra check can be
+    disabled with the ``color_check`` constructor argument.
     """
     progress_update = Signal(int, int, str)  # current, total, message
     duplicates_found = Signal(list)  # List of DuplicateResult
@@ -1015,7 +1114,9 @@ class DuplicateDetector(QThread):
 
     def __init__(self,
                  paths_to_scan, duplicate_cache, pool_manager,
-                 method="histogram_hashing", threshold=90, force_full=False):
+                 method="histogram_hashing", threshold=90, force_full=False,
+                 color_check=True,
+                 color_threshold=COLOR_HIST_MIN_CORRELATION):
         super().__init__()
         self.paths_to_scan = paths_to_scan
         self.duplicate_cache = duplicate_cache
@@ -1023,11 +1124,57 @@ class DuplicateDetector(QThread):
         self.method = method
         self.threshold = threshold  # Similarity percentage (50-100)
         self.force_full = force_full
+        self.color_check = color_check
+        self.color_threshold = color_threshold
+        self._hist_cache = {}  # path -> normalized color histogram or None
         self._is_running = True
 
     def stop(self):
         self._is_running = False
         self.wait()  # Add this line
+
+    def _get_color_histogram(self, path):
+        """
+        Returns the cached normalized color histogram for an image path.
+
+        Args:
+            path (str): Absolute path to the image file.
+
+        Returns:
+            numpy.ndarray | None: Normalized color histogram, or None when the
+                image could not be processed (also cached to avoid retries).
+        """
+        if path not in self._hist_cache:
+            self._hist_cache[path] = compute_color_histogram(path)
+        return self._hist_cache[path]
+
+    def _passes_color_check(self, path1, path2):
+        """
+        Verifies a candidate duplicate pair using RGB color histograms.
+
+        Args:
+            path1 (str): Absolute path of the first image.
+            path2 (str): Absolute path of the second image.
+
+        Returns:
+            bool: True when the pair is confirmed as a duplicate, or when the
+                color check is disabled or cannot be computed (fallback to the
+                perceptual hash result). False when the color difference is too
+                large to consider them duplicates.
+        """
+        if not self.color_check:
+            return True
+
+        hist1 = self._get_color_histogram(path1)
+        hist2 = self._get_color_histogram(path2)
+
+        if hist1 is None or hist2 is None:
+            # Do not reject the pair if the color histograms cannot be
+            # computed; fall back to the perceptual hash result.
+            return True
+
+        similarity = compare_color_histograms(hist1, hist2)
+        return similarity >= self.color_threshold
 
     def run(self):
         # Ensure all paths are absolute and normalized at the start
@@ -1365,6 +1512,13 @@ class DuplicateDetector(QThread):
                         # 5. Calculate actual similarity
                         sim = int((1.0 - (distance / MAX_DHASH_DISTANCE)) * 100)
                         if sim < self.threshold:
+                            continue
+
+                        # 6. Confirm the candidate with a color histogram check
+                        # to discard false positives that share the dHash but
+                        # have clearly different color content.
+                        if not self._passes_color_check(p1, p2):
+                            unique_inode_pairs.add(inode_pair)
                             continue
 
                         ts = int(time_module.time())
