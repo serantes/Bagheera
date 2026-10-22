@@ -7,8 +7,8 @@ from bagheeraview.core.imageviewer import FaceCanvas
 def test_facecanvas_middle_button_region_selection(qapp):
     viewer = MagicMock()
     viewer.controller = MagicMock()
-    viewer.controller.show_faces = True
-    viewer.controller.faces = []
+    viewer.controller.show_regions = True
+    viewer.controller.regions = []
     viewer.crop_mode = False
     viewer.viewer = MagicMock()
     viewer.viewer._next_region_type = "Face"
@@ -71,14 +71,14 @@ def test_facecanvas_middle_button_region_selection(qapp):
 
         assert mock_qmenu_cls.called
         assert mock_menu.exec.called
-        assert viewer.controller.add_face.called
+        assert viewer.controller.add_region.called
 
 
 def test_facecanvas_left_button_without_ctrl(qapp):
     viewer = MagicMock()
     viewer.controller = MagicMock()
-    viewer.controller.show_faces = True
-    viewer.controller.faces = []
+    viewer.controller.show_regions = True
+    viewer.controller.regions = []
     viewer.crop_mode = False
     viewer.viewer = MagicMock()
     viewer.viewer._next_region_type = "Face"
@@ -132,4 +132,4 @@ def test_facecanvas_left_button_without_ctrl(qapp):
         canvas.mouseReleaseEvent(release_event)
 
         assert not mock_qmenu_cls.called
-        assert viewer.controller.add_face.called
+        assert viewer.controller.add_region.called

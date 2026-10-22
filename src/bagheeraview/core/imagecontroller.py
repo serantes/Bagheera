@@ -203,12 +203,12 @@ class ImageController(QObject):
         self.flip_h = False
         self.flip_v = False
         self.pixmap_original = QPixmap()
-        self.faces = []
+        self.regions = []
         self._current_tags = initial_tags if initial_tags is not None else []
         self._current_rating = initial_rating
         self._current_metadata_path = None
         self._loaded_path = None
-        self.show_faces = False
+        self.show_regions = False
 
         # Preloading
         self.preloader = ImagePreloader()
@@ -293,7 +293,7 @@ class ImageController(QObject):
         self.rotation = 0
         self.flip_h = False
         self.flip_v = False
-        self.faces = []
+        self.regions = []
 
         if not path:
             return False, False
@@ -325,38 +325,38 @@ class ImageController(QObject):
                 self._current_metadata_path = path
 
         self._loaded_path = path
-        self.load_faces()
+        self.load_regions()
         self._trigger_preload()
         return True, True
 
-    def load_faces(self):
+    def load_regions(self):
         """
-        Loads face regions from XMP metadata and resolves short names to full
+        Loads region definitions from XMP metadata and resolves short names to full
         tag paths.
         """
         path = self.get_current_path()
-        faces_from_xmp = XmpManager.load_regions(path)
+        regions_from_xmp = XmpManager.load_regions(path)
 
-        if not faces_from_xmp:
-            self.faces = []
+        if not regions_from_xmp:
+            self.regions = []
             return
 
-        resolved_faces = []
-        seen_faces = set()
+        resolved_regions = []
+        seen_regions = set()
 
-        for face in faces_from_xmp:
+        for region in regions_from_xmp:
             # Validate geometry to discard malformed regions
-            if not self._clamp_and_validate_face(face):
+            if not self._clamp_and_validate_region(region):
                 continue
 
             # Check for exact duplicates based on geometry and name
-            face_sig = (face.get('x'), face.get('y'), face.get('w'),
-                        face.get('h'), face.get('name'))
-            if face_sig in seen_faces:
+            region_sig = (region.get('x'), region.get('y'), region.get('w'),
+                          region.get('h'), region.get('name'))
+            if region_sig in seen_regions:
                 continue
-            seen_faces.add(face_sig)
+            seen_regions.add(region_sig)
 
-            short_name = face.get('name', '')
+            short_name = region.get('name', '')
             # If name is a short name (no slash) and we have tags on the image
             if short_name and '/' not in short_name and self._current_tags:
                 # Find all full tags on the image that match this short name
@@ -369,61 +369,61 @@ class ImageController(QObject):
                     # If multiple matches, pick the first. This is an ambiguity,
                     # but it's the best we can do. e.g. if image has both
                     # 'Person/Joe' and 'Friends/Joe' and face is named 'Joe'.
-                    face['name'] = possible_matches[0]
+                    region['name'] = possible_matches[0]
 
-            resolved_faces.append(face)
+            resolved_regions.append(region)
 
-        self.faces = resolved_faces
+        self.regions = resolved_regions
 
-    def save_faces(self):
+    def save_regions(self):
         """
-        Saves the current faces list to XMP metadata, storing only the short name.
+        Saves the current regions list to XMP metadata, storing only the short name.
         """
         path = self.get_current_path()
         if not path:
             return
 
-        # Create a temporary list of faces with short names for saving to XMP
-        faces_to_save = []
-        seen_faces = set()
+        # Create a temporary list of regions with short names for saving to XMP
+        regions_to_save = []
+        seen_regions = set()
 
-        for face in self.faces:
-            face_copy = face.copy()
+        for region in self.regions:
+            region_copy = region.copy()
             # If the name is a hierarchical tag, save only the last part
-            if 'name' in face_copy and face_copy['name']:
-                face_copy['name'] = face_copy['name'].split('/')[-1]
+            if 'name' in region_copy and region_copy['name']:
+                region_copy['name'] = region_copy['name'].split('/')[-1]
 
             # Deduplicate to prevent file bloat
-            face_sig = (
-                face_copy.get('x'), face_copy.get('y'),
-                face_copy.get('w'), face_copy.get('h'),
-                face_copy.get('name')
+            region_sig = (
+                region_copy.get('x'), region_copy.get('y'),
+                region_copy.get('w'), region_copy.get('h'),
+                region_copy.get('name')
             )
-            if face_sig in seen_faces:
+            if region_sig in seen_regions:
                 continue
-            seen_faces.add(face_sig)
+            seen_regions.add(region_sig)
 
-            faces_to_save.append(face_copy)
+            regions_to_save.append(region_copy)
 
-        return XmpManager.save_regions(path, faces_to_save)
+        return XmpManager.save_regions(path, regions_to_save)
 
-    def add_face(self, name, x, y, w, h, region_type="Face"):
-        """Adds a new face. The full tag path should be passed as 'name'."""
-        new_face = {
+    def add_region(self, name, x, y, w, h, region_type="Face"):
+        """Adds a new region. The full tag path should be passed as 'name'."""
+        new_region = {
             'name': name,  # Expecting full tag path
             'x': x, 'y': y, 'w': w, 'h': h,
             'type': region_type
         }
-        validated_face = self._clamp_and_validate_face(new_face)
-        if validated_face:
-            self.faces.append(validated_face)
-            self.save_faces()
+        validated_region = self._clamp_and_validate_region(new_region)
+        if validated_region:
+            self.regions.append(validated_region)
+            self.save_regions()
 
-    def remove_face(self, face):
-        """Removes a face and saves metadata."""
-        if face in self.faces:
-            self.faces.remove(face)
-            self.save_faces()
+    def remove_region(self, region):
+        """Removes a region and saves metadata."""
+        if region in self.regions:
+            self.regions.remove(region)
+            self.save_regions()
 
     def toggle_tag(self, tag_name, add_tag):
         """Adds or removes a tag from the current image's xattrs."""
@@ -466,15 +466,15 @@ class ImageController(QObject):
         except IOError as e:
             print(f"Error setting tags for {current_path}: {e}")
 
-    def _clamp_and_validate_face(self, face_data):
+    def _clamp_and_validate_region(self, region_data):
         """
-        Clamps face coordinates to be within the [0, 1] range and ensures validity.
-        Returns a validated face dictionary or None if invalid.
+        Clamps region coordinates to be within the [0, 1] range and ensures validity.
+        Returns a validated region dictionary or None if invalid.
         """
-        x = face_data.get('x', 0.5)
-        y = face_data.get('y', 0.5)
-        w = face_data.get('w', 0.0)
-        h = face_data.get('h', 0.0)
+        x = region_data.get('x', 0.5)
+        y = region_data.get('y', 0.5)
+        w = region_data.get('w', 0.0)
+        h = region_data.get('h', 0.0)
 
         # Ensure all values are finite numbers to prevent propagation of NaN/Inf
         if not all(math.isfinite(val) for val in (x, y, w, h)):
@@ -489,11 +489,11 @@ class ImageController(QObject):
         h = min(h, 1.0)
 
         # Clamp center coordinates to ensure the box is fully within the image
-        face_data['x'] = max(w / 2.0, min(x, 1.0 - w / 2.0))
-        face_data['y'] = max(h / 2.0, min(y, 1.0 - h / 2.0))
-        face_data['w'] = w
-        face_data['h'] = h
-        return face_data
+        region_data['x'] = max(w / 2.0, min(x, 1.0 - w / 2.0))
+        region_data['y'] = max(h / 2.0, min(y, 1.0 - h / 2.0))
+        region_data['w'] = w
+        region_data['h'] = h
+        return region_data
 
     def _create_region_from_pixels(self, x, y, w, h, img_w, img_h, region_type):
         """
@@ -525,7 +525,7 @@ class ImageController(QObject):
             'h': h / img_h,
             'type': region_type
         }
-        return self._clamp_and_validate_face(new_region)
+        return self._clamp_and_validate_region(new_region)
 
     def _detect_faces_face_recognition(self, path):
         """Detects faces using the 'face_recognition' library."""

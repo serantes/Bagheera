@@ -525,7 +525,7 @@ class FaceCanvas(QLabel):
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        if not self.controller.show_faces and not self.image_panel.crop_mode and not self.drawing:
+        if not self.controller.show_regions and not self.image_panel.crop_mode and not self.drawing:
             return
 
         painter = QPainter(self)
@@ -544,8 +544,8 @@ class FaceCanvas(QLabel):
                                             DEFAULT_LANDMARK_BOX_COLOR)
         landmark_color = QColor(landmark_color_str)
 
-        if self.controller.show_faces:
-            for face in self.controller.faces:
+        if self.controller.show_regions:
+            for face in self.controller.regions:
                 rect = self.map_from_source(face)
 
                 is_pet = face.get('type') == 'Pet'
@@ -655,15 +655,15 @@ class FaceCanvas(QLabel):
 
     def _hit_test(self, pos):
         """Determines if the mouse is over a name, handle, or body."""
-        if not self.controller.show_faces:
+        if not self.controller.show_regions:
             return -1, None
 
         margin = self.resize_margin
         fm = self.fontMetrics()
 
         # Iterate in reverse to pick top-most face if overlapping
-        for i in range(len(self.controller.faces) - 1, -1, -1):
-            face = self.controller.faces[i]
+        for i in range(len(self.controller.regions) - 1, -1, -1):
+            face = self.controller.regions[i]
             rect = self.map_from_source(face)
 
             # Check if click is on the name label first
@@ -772,21 +772,21 @@ class FaceCanvas(QLabel):
         if hasattr(self.image_panel, 'activate'):
             self.image_panel.activate()
 
-        if self.controller.show_faces and event.button() == Qt.LeftButton:
+        if self.controller.show_regions and event.button() == Qt.LeftButton:
             self.start_pos = event.position().toPoint()
 
             # Check if we clicked on an existing face to edit
             idx, handle = self._hit_test(self.start_pos)
             if idx != -1:
                 if handle == 'NAME':
-                    self.image_panel.rename_face(self.controller.faces[idx])
+                    self.image_panel.rename_face(self.controller.regions[idx])
                     event.accept()
                     return
 
                 self.editing = True
                 self.edit_index = idx
                 self.edit_handle = handle
-                self.edit_start_rect = self.map_from_source(self.controller.faces[idx])
+                self.edit_start_rect = self.map_from_source(self.controller.regions[idx])
                 event.accept()
             else:
                 self.drawing = True
@@ -941,12 +941,12 @@ class FaceCanvas(QLabel):
             nx, ny, nw, nh = self.map_to_source(new_rect)
 
             # Update the face in the controller in real-time
-            face = self.controller.faces[self.edit_index]
+            face = self.controller.regions[self.edit_index]
             face['x'], face['y'], face['w'], face['h'] = nx, ny, nw, nh
 
             self.update()
             event.accept()
-        elif not self.drawing and not self.dragging and self.controller.show_faces:
+        elif not self.drawing and not self.dragging and self.controller.show_regions:
             # Update cursor based on hover
             _, handle = self._hit_test(event.position().toPoint())
             if handle in ['TL', 'BR']:
@@ -1067,13 +1067,13 @@ class FaceCanvas(QLabel):
                                 self.image_panel.main_win.face_names_history = updated_history
 
                 if ok and full_tag:
-                    if not self.controller.show_faces:
+                    if not self.controller.show_regions:
                         self.image_panel.viewer.toggle_faces()
 
                     center_x, center_y, norm_w, norm_h = self.map_to_source(
                         self.current_rect)
 
-                    self.controller.add_face(
+                    self.controller.add_region(
                         full_tag, center_x, center_y, norm_w, norm_h,
                         region_type=region_type)
 
@@ -1103,7 +1103,7 @@ class FaceCanvas(QLabel):
             self.editing = False
             self.edit_index = -1
             self.edit_handle = None
-            self.controller.save_faces()
+            self.controller.save_regions()
             event.accept()
         elif self.dragging:
             self.dragging = False
@@ -1113,8 +1113,8 @@ class FaceCanvas(QLabel):
             event.ignore()
 
     def mouseDoubleClickEvent(self, event):
-        """Zooms to a face on double-click."""
-        if self.controller.show_faces and event.button() == Qt.LeftButton:
+        """Zooms to a region on double-click."""
+        if self.controller.show_regions and event.button() == Qt.LeftButton:
             # The event position is already local to the canvas
             clicked_face = self.image_panel.viewer._get_clicked_face(event.position().toPoint())
             if clicked_face:
@@ -1390,7 +1390,7 @@ class ImagePane(QWidget):
         self.controller = ImageController(image_list, index, initial_tags,
                                           initial_rating)
         if self.main_win:
-            self.controller.show_faces = self.main_win.show_faces
+            self.controller.show_regions = self.main_win.show_faces
 
         # Connect signals
         self.controller.metadata_changed.connect(self.viewer.on_metadata_changed)
@@ -2227,8 +2227,8 @@ class ImageViewer(QWidget):
         if restore_config:
             pane.controller.zoom_factor = restore_config.get("zoom", 1.0)
             pane.controller.rotation = restore_config.get("rotation", 0)
-            pane.controller.show_faces = restore_config.get(
-                "show_faces", pane.controller.show_faces)
+            pane.controller.show_regions = restore_config.get(
+                "show_faces", pane.controller.show_regions)
             self.status_bar_container.setVisible(
                 restore_config.get("status_bar_visible", False))
             self.filmstrip.setVisible(
@@ -2618,7 +2618,7 @@ class ImageViewer(QWidget):
             info_text += UITexts.COMPARE_LINKED \
                 if self.panes_linked else UITexts.COMPARE_UNLINKED
 
-        if self.controller.show_faces and hasattr(self, '_next_region_type') \
+        if self.controller.show_regions and hasattr(self, '_next_region_type') \
            and self._next_region_type:
             type_text = getattr(UITexts, f"TYPE_{self._next_region_type.upper()}")
             info_text += f"  |  {UITexts.NEXT_AREA.format(type_text)}"
@@ -2755,7 +2755,7 @@ class ImageViewer(QWidget):
             },
             "zoom": self.controller.zoom_factor,
             "rotation": self.controller.rotation,
-            "show_faces": self.controller.show_faces,
+            "show_faces": self.controller.show_regions,
             "flip_h": self.controller.flip_h,
             "flip_v": self.controller.flip_v,
             "scroll_x": self.scroll_area.horizontalScrollBar().value()
@@ -2839,7 +2839,7 @@ class ImageViewer(QWidget):
 
     def _get_clicked_face_for_pane(self, pane, pos):
         """Checks if a click position is inside any face bounding box."""
-        for face in pane.controller.faces:
+        for face in pane.controller.regions:
             rect = pane.canvas.map_from_source(face)
             if rect.contains(pos):
                 return face
@@ -2850,7 +2850,7 @@ class ImageViewer(QWidget):
         Shows a context menu for a clicked face region.
         Returns True if a menu was shown, False otherwise.
         """
-        if not self.controller.show_faces:
+        if not self.controller.show_regions:
             return False
 
         pos = self.canvas.mapFromGlobal(event.globalPos()) if self.canvas else QPoint()
@@ -2867,10 +2867,10 @@ class ImageViewer(QWidget):
 
         if res == action_del:
             face_name = clicked_face.get('name', '')
-            self.controller.remove_face(clicked_face)
+            self.remove_region(clicked_face)
             if face_name:
                 has_other = any(f.get('name') == face_name
-                                for f in self.controller.faces)
+                                for f in self.controller.regions)
                 if not has_other:
                     self.controller.toggle_tag(face_name, False)
             if self.canvas:
@@ -2878,6 +2878,32 @@ class ImageViewer(QWidget):
         elif res == action_ren:
             self.rename_face(clicked_face)
         return True
+
+    def remove_region(self, region_to_remove):
+        """Opens a dialog to rename a specific face/area."""
+        if not region_to_remove:
+            return
+
+        self.controller.remove_region(region_to_remove)
+
+        region_type = region_to_remove.get('type', 'Face') \
+            if isinstance(region_to_remove, dict) else ''
+        if region_type != 'Face':
+            return
+
+        current_path = self.controller.get_current_path()
+        if not current_path:
+            return
+
+        rec_db = PersonRecognitionDB.get_instance()
+        source = {
+            "path": current_path,
+            "x": region_to_remove.get("x"),
+            "y": region_to_remove.get("y"),
+            "w": region_to_remove.get("w"),
+            "h": region_to_remove.get("h"),
+        }
+        rec_db.remove_face_by_source(current_path, source)
 
     def rename_face(self, face_to_rename):
         """Opens a dialog to rename a specific face/area."""
@@ -2909,7 +2935,7 @@ class ImageViewer(QWidget):
             # Remove old tag if it's not used by other faces
             if current_name:
                 has_other = any(f.get('name') == current_name
-                                for f in self.controller.faces
+                                for f in self.controller.regions
                                 if f is not face_to_rename)
                 if not has_other:
                     self.controller.toggle_tag(current_name, False)
@@ -2930,7 +2956,7 @@ class ImageViewer(QWidget):
 
             # Save changes and add new tag
             try:
-                self.controller.save_faces()
+                self.controller.save_regions()
                 self.controller.toggle_tag(new_full_tag, True)
                 if region_type == "Face":
                     self._update_person_recognition_for_face(
@@ -3151,7 +3177,7 @@ class ImageViewer(QWidget):
                 {"text": UITexts.SHOW_FACES,
                  "action": "toggle_faces", "icon": "edit-image-face-show",
                  "checkable": True,
-                 "checked": self.controller.show_faces if self.controller else False},
+                 "checked": self.controller.show_regions if self.controller else False},
                 {"text": UITexts.VIEWER_MENU_SHOW_FILMSTRIP,
                  "action": "toggle_filmstrip", "icon": "view-filmstrip",
                  "checkable": True, "checked": self.filmstrip.isVisible()},
@@ -3228,7 +3254,7 @@ class ImageViewer(QWidget):
             APP_CONFIG["next_region_type"] = region_type
             APP_CONFIG["last_region_name"] = ""
             self.update_status_bar()
-        if not self.controller.show_faces:
+        if not self.controller.show_regions:
             self.toggle_faces()
 
     def contextMenuEvent(self, event):
@@ -3277,7 +3303,7 @@ class ImageViewer(QWidget):
 
         for new_face in new_faces:
             is_duplicate = False
-            for existing_face in self.controller.faces:
+            for existing_face in self.controller.regions:
                 iou = self._calculate_iou(new_face, existing_face)
                 if iou > IOU_THRESHOLD:
                     is_duplicate = True
@@ -3286,10 +3312,10 @@ class ImageViewer(QWidget):
             if is_duplicate:
                 continue
 
-            if not self.controller.show_faces:
+            if not self.controller.show_regions:
                 self.toggle_faces()
 
-            self.controller.faces.append(new_face)
+            self.controller.regions.append(new_face)
             if self.canvas:
                 self.canvas.update()
 
@@ -3347,13 +3373,13 @@ class ImageViewer(QWidget):
 
                 else:
                     # If user cancels, remove the face that was temporarily added
-                    self.controller.faces.pop()
+                    self.controller.regions.pop()
                     if self.canvas:
                         self.canvas.update()
 
         if added_count > 0:
             try:
-                self.controller.save_faces()
+                self.controller.save_regions()
             except Exception as e:
                 QMessageBox.critical(self, UITexts.ERROR, str(e))
 
@@ -3372,7 +3398,7 @@ class ImageViewer(QWidget):
         added_count = 0
         for new_pet in new_pets:
             is_duplicate = False
-            for existing_face in self.controller.faces:
+            for existing_face in self.controller.regions:
                 iou = self._calculate_iou(new_pet, existing_face)
                 if iou > IOU_THRESHOLD:
                     is_duplicate = True
@@ -3381,10 +3407,10 @@ class ImageViewer(QWidget):
             if is_duplicate:
                 continue
 
-            if not self.controller.show_faces:
+            if not self.controller.show_regions:
                 self.toggle_faces()
 
-            self.controller.faces.append(new_pet)
+            self.controller.regions.append(new_pet)
             if self.canvas:
                 self.canvas.update()
 
@@ -3409,13 +3435,13 @@ class ImageViewer(QWidget):
                     self.main_win.pet_names_history = updated_history
                 added_count += 1
             else:
-                self.controller.faces.pop()
+                self.controller.regions.pop()
                 if self.canvas:
                     self.canvas.update()
 
         if added_count > 0:
             try:
-                self.controller.save_faces()
+                self.controller.save_regions()
             except Exception as e:
                 QMessageBox.critical(self, UITexts.ERROR, str(e))
 
@@ -3434,7 +3460,7 @@ class ImageViewer(QWidget):
         added_count = 0
         for new_body in new_bodies:
             is_duplicate = False
-            for existing_face in self.controller.faces:
+            for existing_face in self.controller.regions:
                 iou = self._calculate_iou(new_body, existing_face)
                 if iou > IOU_THRESHOLD:
                     is_duplicate = True
@@ -3443,10 +3469,10 @@ class ImageViewer(QWidget):
             if is_duplicate:
                 continue
 
-            if not self.controller.show_faces:
+            if not self.controller.show_regions:
                 self.toggle_faces()
 
-            self.controller.faces.append(new_body)
+            self.controller.regions.append(new_body)
             if self.canvas:
                 self.canvas.update()
 
@@ -3473,13 +3499,13 @@ class ImageViewer(QWidget):
                     self.main_win.body_names_history = updated_history
                 added_count += 1
             else:
-                self.controller.faces.pop()
+                self.controller.regions.pop()
                 if self.canvas:
                     self.canvas.update()
 
         if added_count > 0:
             try:
-                self.controller.save_faces()
+                self.controller.save_regions()
             except Exception as e:
                 QMessageBox.critical(self, UITexts.ERROR, str(e))
 
@@ -3504,12 +3530,12 @@ class ImageViewer(QWidget):
     def toggle_faces(self):
         """Toggles the display of face regions."""
         for pane in self.panes:
-            pane.controller.show_faces = not pane.controller.show_faces
+            pane.controller.show_regions = not pane.controller.show_regions
             pane.canvas.update()
 
         if self.main_win:
             if self.active_pane:
-                self.main_win.show_faces = self.active_pane.controller.show_faces
+                self.main_win.show_faces = self.active_pane.controller.show_regions
             self.main_win.save_config()
         self.update_status_bar()
 

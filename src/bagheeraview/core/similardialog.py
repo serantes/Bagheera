@@ -144,7 +144,7 @@ class SimilarImagesDialog(QDialog):
 
         pane = ImagePane(self, self.main_win.cache, [], 0, None, 0)
         pane.setContextMenuPolicy(Qt.CustomContextMenu)
-        pane.controller.show_faces = False
+        pane.controller.show_regions = False
         pane.customContextMenuRequested.connect(self._show_pane_context_menu)
         v_layout.addWidget(pane)
 
@@ -420,7 +420,7 @@ class SimilarImagesDialog(QDialog):
             QIcon.fromTheme("edit-image-face-show"),
             self._menu_text(UITexts.SHOW_FACES, "toggle_faces"))
         action_show_faces.setCheckable(True)
-        action_show_faces.setChecked(self.preview_pane.controller.show_faces)
+        action_show_faces.setChecked(self.preview_pane.controller.show_regions)
         action_show_faces.triggered.connect(self.toggle_faces)
 
         menu.addSeparator()
@@ -462,7 +462,7 @@ class SimilarImagesDialog(QDialog):
             bool: True if a region was clicked and its menu was shown.
         """
         controller = self.preview_pane.controller
-        if not controller.show_faces:
+        if not controller.show_regions:
             return False
 
         canvas = self.preview_pane.canvas
@@ -482,10 +482,10 @@ class SimilarImagesDialog(QDialog):
 
         if res == action_delete:
             face_name = clicked_face.get('name', '')
-            controller.remove_face(clicked_face)
+            controller.remove_region(clicked_face)
             if face_name:
                 has_other = any(f.get('name') == face_name
-                                for f in controller.faces)
+                                for f in controller.regions)
                 if not has_other:
                     controller.toggle_tag(face_name, False)
             canvas.update()
@@ -567,13 +567,13 @@ class SimilarImagesDialog(QDialog):
             region_type (str): Region type identifier (e.g. "Face", "Pet").
         """
         self._next_region_type = region_type
-        if not self.preview_pane.controller.show_faces:
-            self.preview_pane.controller.show_faces = True
+        if not self.preview_pane.controller.show_regions:
+            self.preview_pane.controller.show_regions = True
             self.preview_pane.canvas.update()
 
     def toggle_faces(self):
         """Toggles the display of face regions on the preview image."""
-        self.preview_pane.controller.show_faces = not self.preview_pane.controller.show_faces
+        self.preview_pane.controller.show_regions = not self.preview_pane.controller.show_regions
         self.preview_pane.canvas.update()
 
     def _show_fast_tags(self):
@@ -730,7 +730,7 @@ class SimilarImagesDialog(QDialog):
         added_count = 0
         for new_reg in new_regions:
             is_duplicate = False
-            for existing_reg in controller.faces:
+            for existing_reg in controller.regions:
                 iou = self._calculate_iou(new_reg, existing_reg)
                 if iou > IOU_THRESHOLD:
                     is_duplicate = True
@@ -739,11 +739,11 @@ class SimilarImagesDialog(QDialog):
             if is_duplicate:
                 continue
 
-            if not controller.show_faces:
-                controller.show_faces = True
+            if not controller.show_regions:
+                controller.show_regions = True
                 canvas.update()
 
-            controller.faces.append(new_reg)
+            controller.regions.append(new_reg)
             canvas.update()
 
             w = canvas.width() if canvas else 0
@@ -767,12 +767,12 @@ class SimilarImagesDialog(QDialog):
                     self.main_win.face_names_history = updated_history
                 added_count += 1
             else:
-                controller.faces.pop()
+                controller.regions.pop()
                 canvas.update()
 
         if added_count > 0:
             try:
-                controller.save_faces()
+                controller.save_regions()
             except Exception as e:
                 QMessageBox.critical(self, UITexts.ERROR, str(e))
 
@@ -861,7 +861,7 @@ class SimilarImagesDialog(QDialog):
         """
         if pane is None:
             return None
-        for face in pane.controller.faces:
+        for face in pane.controller.regions:
             rect = pane.canvas.map_from_source(face)
             if rect.contains(pos):
                 return face
@@ -950,7 +950,7 @@ class SimilarImagesDialog(QDialog):
         # Remove the old tag if it is not used by any other region.
         if current_name:
             has_other = any(f.get('name') == current_name
-                            for f in controller.faces if f is not face)
+                            for f in controller.regions if f is not face)
             if not has_other:
                 controller.toggle_tag(current_name, False)
 
@@ -968,7 +968,7 @@ class SimilarImagesDialog(QDialog):
                 self.main_win.face_names_history = updated_history
 
         try:
-            controller.save_faces()
+            controller.save_regions()
             controller.toggle_tag(new_full_tag, True)
             if region_type == "Face":
                 self._update_person_recognition_for_face(face, new_full_tag)

@@ -4360,7 +4360,7 @@ class MainWindow(QMainWindow):
         for viewer in list(self.viewers):
             try:
                 if isinstance(viewer, ImageViewer) and viewer.isVisible():
-                    viewer.controller.show_faces = self.show_faces
+                    viewer.controller.show_regions = self.show_faces
                     viewer.update_view(resize_win=False)
             except RuntimeError:
                 continue

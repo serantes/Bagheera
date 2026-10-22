@@ -10,8 +10,8 @@ def test_facecanvas_left_click_with_shift_uses_last_name(qapp):
 
     viewer = MagicMock()
     viewer.controller = MagicMock()
-    viewer.controller.show_faces = True
-    viewer.controller.faces = []
+    viewer.controller.show_regions = True
+    viewer.controller.regions = []
     viewer.crop_mode = False
     viewer.viewer = MagicMock()
     viewer.viewer._next_region_type = "Face"
@@ -59,8 +59,8 @@ def test_facecanvas_left_click_with_shift_uses_last_name(qapp):
         canvas.mouseReleaseEvent(release_event)
 
         assert not mock_dialog.called
-        viewer.controller.add_face.assert_called_once()
-        args, kwargs = viewer.controller.add_face.call_args
+        viewer.controller.add_region.assert_called_once()
+        args, kwargs = viewer.controller.add_region.call_args
         assert args[0] == "StoredName"
 
 
@@ -69,8 +69,8 @@ def test_facecanvas_left_click_with_shift_no_last_name_asks_dialog(qapp):
 
     viewer = MagicMock()
     viewer.controller = MagicMock()
-    viewer.controller.show_faces = True
-    viewer.controller.faces = []
+    viewer.controller.show_regions = True
+    viewer.controller.regions = []
     viewer.crop_mode = False
     viewer.viewer = MagicMock()
     viewer.viewer._next_region_type = "Face"
@@ -119,8 +119,8 @@ def test_facecanvas_left_click_with_shift_no_last_name_asks_dialog(qapp):
 
         assert mock_dialog.called
         assert APP_CONFIG["last_region_name"] == "NewName"
-        viewer.controller.add_face.assert_called_once()
-        args, kwargs = viewer.controller.add_face.call_args
+        viewer.controller.add_region.assert_called_once()
+        args, kwargs = viewer.controller.add_region.call_args
         assert args[0] == "NewName"
 
 
@@ -129,8 +129,8 @@ def test_facecanvas_middle_click_resets_last_name(qapp):
 
     viewer = MagicMock()
     viewer.controller = MagicMock()
-    viewer.controller.show_faces = True
-    viewer.controller.faces = []
+    viewer.controller.show_regions = True
+    viewer.controller.regions = []
     viewer.crop_mode = False
     viewer.viewer = MagicMock()
     viewer.viewer._next_region_type = "Face"

@@ -611,7 +611,7 @@ class DuplicateManagerDialog(QDialog):
         """
         if pane is None:
             return None
-        for face in pane.controller.faces:
+        for face in pane.controller.regions:
             rect = pane.canvas.map_from_source(face)
             if rect.contains(pos):
                 return face
@@ -692,7 +692,7 @@ class DuplicateManagerDialog(QDialog):
         # Create ImagePane (image area at the top)
         pane = ImagePane(self, self.main_win.cache, [], 0, None, 0)
         pane.setContextMenuPolicy(Qt.CustomContextMenu)
-        pane.controller.show_faces = False  # Disable showing and adding areas
+        pane.controller.show_regions = False  # Disable showing and adding areas
         pane.customContextMenuRequested.connect(self._show_pane_context_menu)
         v_layout.addWidget(pane, 1)
 
