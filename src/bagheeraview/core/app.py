@@ -1161,6 +1161,27 @@ class ThumbnailSortFilterProxyModel(QSortFilterProxyModel):
         self._tag_matching_paths.discard(path)
         self._name_matching_paths.discard(path)
 
+    def get_visible_paths(self):
+        """
+        Returns the image paths currently shown in the thumbnail grid.
+
+        The proxy row order is the display order, so the returned list follows
+        the same ordering. Headers inserted by the grouping views are skipped;
+        only the thumbnail entries (whose path is exposed through PATH_ROLE)
+        are collected.
+
+        Returns:
+            list: Absolute paths of the visible thumbnails, in display order.
+        """
+        paths = []
+        for row in range(self.rowCount()):
+            index = self.index(row, 0)
+            if index.isValid() and index.data(ITEM_TYPE_ROLE) == 'thumbnail':
+                path = index.data(PATH_ROLE)
+                if path:
+                    paths.append(path)
+        return paths
+
     def filterAcceptsRow(self, source_row, source_parent):
         """Determines if a row should be visible based on current filters."""
         index = self.sourceModel().index(source_row, 0, source_parent)

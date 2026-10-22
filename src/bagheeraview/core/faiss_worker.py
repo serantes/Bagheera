@@ -32,10 +32,11 @@ class FAISSSimilarSearchWorker(QThread):
     """
     Worker thread that finds images similar to a target image.
 
-    The worker scans the whitelisted/blacklisted folders, updates the local
-    embedding cache (``faiss_embeddings.db``) using the MediaPipe MobileNet V3
-    Small image embedder, and searches an in-memory FAISS index to rank images
-    by cosine similarity against the target embedding.
+    The worker scans the whitelisted/blacklisted folders - or, when a set of
+    ``visible_paths`` is provided, only those - updates the local embedding
+    cache (``faiss_embeddings.db``) using the MediaPipe MobileNet V3 Small
+    image embedder, and searches an in-memory FAISS index to rank images by
+    cosine similarity against the target embedding.
 
     Signals:
         progress_update: Emitted with ``(current, total, message)`` progress.
@@ -46,7 +47,8 @@ class FAISSSimilarSearchWorker(QThread):
     results_found = Signal(list)  # List of (path, similarity)
     finished = Signal()
 
-    def __init__(self, target_path, threshold, whitelist_str, blacklist_str):
+    def __init__(self, target_path, threshold, whitelist_str, blacklist_str,
+                 visible_paths=None):
         """
         Initializes the FAISSSimilarSearchWorker.
 
@@ -57,6 +59,9 @@ class FAISSSimilarSearchWorker(QThread):
             whitelist_str (str): Comma separated list of allowed paths;
                 defaults to the target's directory when empty.
             blacklist_str (str): Comma separated list of excluded paths.
+            visible_paths (list, optional): When provided, only these paths are
+                searched instead of walking the whitelist/blacklist folders.
+                The original display order of the thumbnails is preserved.
         """
         super().__init__()
         self.target_path = os.path.abspath(os.path.normpath(target_path))
@@ -71,6 +76,20 @@ class FAISSSimilarSearchWorker(QThread):
         # Fallback if whitelist is empty
         if not self.whitelist:
             self.whitelist = [os.path.dirname(self.target_path)]
+
+        # When the search scope is restricted to the displayed thumbnails,
+        # keep the display order and drop duplicates while building a set for
+        # fast containment checks during the search pipeline.
+        self.visible_paths = []
+        self.visible_paths_set = set()
+        if visible_paths:
+            seen = set()
+            for path in visible_paths:
+                abs_path = os.path.abspath(os.path.normpath(path))
+                if abs_path not in seen:
+                    seen.add(abs_path)
+                    self.visible_paths.append(abs_path)
+            self.visible_paths_set = seen
 
     def stop(self):
         """Requests the worker to abort and waits until it has finished."""
@@ -103,12 +122,22 @@ class FAISSSimilarSearchWorker(QThread):
         """
         Collects all image files allowed under the whitelisted paths.
 
+        When the search scope was restricted through ``visible_paths``, the
+        folder walk is skipped and only those paths are collected (keeping
+        the original display order); files that no longer exist on disk or do
+        not have a supported image extension are skipped.
+
         Blacklisted subtrees are pruned in place during the directory walk;
         non-directory whitelist entries are included when they are images.
 
         Returns:
             list: Unique absolute paths of the allowed images.
         """
+        if self.visible_paths:
+            return [path for path in self.visible_paths
+                    if os.path.isfile(path) and
+                    os.path.splitext(path)[1].lower() in IMAGE_EXTENSIONS]
+
         images = []
         for root_path in self.whitelist:
             if not os.path.isdir(root_path):
@@ -190,8 +219,17 @@ class FAISSSimilarSearchWorker(QThread):
             db_entries = cursor.fetchall()
             db_mapping = {path: mtime for path, mtime in db_entries}
 
-            # 3. Transparently delete stale images from DB
-            stale_paths = [path for path in db_mapping if path not in disk_images_set]
+            # 3. Transparently delete stale images from DB. When the search is
+            # restricted to the displayed thumbnails only the cache entries of
+            # those paths are considered stale, so unrelated embeddings are
+            # never evicted.
+            if self.visible_paths_set:
+                stale_paths = [path for path in db_mapping
+                               if path in self.visible_paths_set
+                               and path not in disk_images_set]
+            else:
+                stale_paths = [path for path in db_mapping
+                               if path not in disk_images_set]
             if stale_paths:
                 cursor.executemany("DELETE FROM embeddings WHERE path = ?", [(p,) for p in stale_paths])
                 conn.commit()
@@ -253,9 +291,16 @@ class FAISSSimilarSearchWorker(QThread):
                         )
                 conn.commit()
 
-            # 6. Load all embeddings from DB to build FAISS index
+            # 6. Load the embeddings from DB to build FAISS index. When the
+            # search is restricted to the displayed thumbnails, only the
+            # entries belonging to that scope are taken into the index.
             cursor.execute("SELECT path, embedding FROM embeddings")
             all_db_records = cursor.fetchall()
+            if self.visible_paths_set:
+                all_db_records = [
+                    record for record in all_db_records
+                    if record[0] in self.visible_paths_set
+                ]
 
             paths_list = []
             embeddings_list = []

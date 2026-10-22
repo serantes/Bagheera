@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView,
     QSpinBox, QSplitter, QWidget, QMenu, QApplication, QAbstractItemView,
-    QMessageBox
+    QMessageBox, QCheckBox
 )
 from PySide6.QtGui import (
     QDesktopServices, QIcon, QImage, QKeySequence, QShortcut
@@ -93,6 +93,12 @@ class SimilarImagesDialog(QDialog):
         ctrl_layout.addWidget(self.btn_search)
         left_layout.addLayout(ctrl_layout)
 
+        self.visible_only_check = QCheckBox(UITexts.SIMILAR_SEARCH_VISIBLE_ONLY)
+        self.visible_only_check.setToolTip(
+            UITexts.SIMILAR_SEARCH_VISIBLE_ONLY_TOOLTIP)
+        self.visible_only_check.setChecked(True)
+        left_layout.addWidget(self.visible_only_check)
+
         # Progress area
         self.progress_bar = QProgressBar()
         self.progress_bar.hide()
@@ -161,6 +167,10 @@ class SimilarImagesDialog(QDialog):
         The search button is disabled and an indeterminate progress bar is
         shown while a FAISSSimilarSearchWorker runs in the background. If a
         search is already running, this method does nothing.
+
+        When the "search only in displayed images" checkbox is enabled, the
+        scope of the search is restricted to the thumbnails currently shown
+        in the main window grid, in their displayed order.
         """
         if self.worker and self.worker.isRunning():
             return
@@ -174,9 +184,15 @@ class SimilarImagesDialog(QDialog):
         whitelist = APP_CONFIG.get("duplicate_whitelist", "")
         blacklist = APP_CONFIG.get("duplicate_blacklist", "")
 
+        visible_paths = None
+        proxy_model = getattr(self.main_win, "proxy_model", None)
+        if (self.visible_only_check.isChecked() and proxy_model is not None):
+            visible_paths = proxy_model.get_visible_paths()
+
         self.worker = FAISSSimilarSearchWorker(
             self.target_path,
-            self.threshold_spin.value(), whitelist, blacklist)
+            self.threshold_spin.value(), whitelist, blacklist,
+            visible_paths=visible_paths)
 
         self.worker.progress_update.connect(self.on_progress)
         self.worker.results_found.connect(self.on_results_found)

@@ -543,6 +543,9 @@ _UI_TEXTS = {
         "SIMILAR_SEARCH_TITLE": "Similar images to '{}'",
         "SIMILAR_SEARCH_PROGRESS": "Searching similar images: {} found...",
         "RESCAN": "Rescan",
+        "SIMILAR_SEARCH_VISIBLE_ONLY": "Search only in displayed images",
+        "SIMILAR_SEARCH_VISIBLE_ONLY_TOOLTIP": "When checked, the search is "
+        "restricted to the images currently shown in the thumbnail grid.",
         "VIEW_MODE_MONTH": "Separate by Month",
         "VIEW_MODE_YEAR": "Separate by Year",
         "VIEW_MODE_RATING": "Separate by Rating",
@@ -1185,6 +1188,9 @@ _UI_TEXTS = {
         "SIMILAR_SEARCH_TITLE": "Imágenes similares a '{}'",
         "SIMILAR_SEARCH_PROGRESS": "Buscando imágenes similares: {} encontradas...",
         "RESCAN": "Buscar de nuevo",
+        "SIMILAR_SEARCH_VISIBLE_ONLY": "Buscar solo en las imágenes mostradas",
+        "SIMILAR_SEARCH_VISIBLE_ONLY_TOOLTIP": "Si está marcado, la búsqueda se "
+        "limita a las imágenes mostradas actualmente en la cuadrícula de miniaturas.",
         "VIEW_MODE_MONTH": "Separar por Mes",
         "VIEW_MODE_YEAR": "Separar por Año",
         "VIEW_MODE_RATING": "Separar por Valoración",
@@ -1835,6 +1841,9 @@ _UI_TEXTS = {
         "SIMILAR_SEARCH_TITLE": "Imaxes similares a '{}'",
         "SIMILAR_SEARCH_PROGRESS": "Buscando imaxes similares: {} atopadas...",
         "RESCAN": "Buscar de novo",
+        "SIMILAR_SEARCH_VISIBLE_ONLY": "Buscar só nas imaxes mostradas",
+        "SIMILAR_SEARCH_VISIBLE_ONLY_TOOLTIP": "Se está marcado, a busca "
+        "limítase ás imaxes mostradas actualmente na cuadrícula de miniaturas.",
         "VIEW_MODE_MONTH": "Separar por Mes",
         "VIEW_MODE_YEAR": "Separar por Ano",
         "VIEW_MODE_RATING": "Separar por Valoración",
