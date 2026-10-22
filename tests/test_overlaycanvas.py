@@ -152,8 +152,15 @@ def test_zoom_beyond_widget_shows_expected_source_area():
     QApplication.processEvents()
     rendered = c.grab()
     out = rendered.toImage()
+    # grab() returns an image in device pixels (pixelRatio == 1 under the
+    # offscreen platform but 2 on HiDPI Wayland/X11 sessions), while
+    # pixelColor() samples in those device coordinates. Normalizing to the
+    # widget's logical size keeps the assertions resolution-independent.
+    if out.devicePixelRatio() != 1.0:
+        out = out.scaled(c.width(), c.height())
     # The visible source rect maps 1:1 to the widget (400x300 at scale 4x
-    # shows a 100x75 source window centered on the marker center).
-    assert out.pixelColor(94, 100).name() == "#000000"  # left of marker edge
+    # shows a 100x75 source window centered on the marker center). The marker
+    # spans logical x=100..300 (white), with black on either side.
+    assert out.pixelColor(50, 150).name() == "#000000"  # left of marker edge
     assert out.pixelColor(200, 150).name() == "#ffffff"  # exact image center
-    assert out.pixelColor(380, 150).name() == "#000000"  # right of marker
+    assert out.pixelColor(350, 150).name() == "#000000"  # right of marker
