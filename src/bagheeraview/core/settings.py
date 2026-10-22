@@ -192,16 +192,6 @@ class SettingsDialog(QDialog):
 
         # --- Thumbnails Tab ---
 
-        mru_tags_layout = QHBoxLayout()
-        self.mru_tags_spin = QSpinBox()
-        self.mru_tags_spin.setRange(5, 100)
-        mru_label = QLabel(UITexts.SETTINGS_MRU_TAGS_COUNT_LABEL)
-        mru_tags_layout.addWidget(mru_label)
-        mru_tags_layout.addWidget(self.mru_tags_spin)
-        mru_label.setToolTip(UITexts.SETTINGS_MRU_TAGS_TOOLTIP)
-        self.mru_tags_spin.setToolTip(UITexts.SETTINGS_MRU_TAGS_TOOLTIP)
-        thumbs_layout.addLayout(mru_tags_layout)
-
         thumbs_refresh_layout = QHBoxLayout()
         self.thumbs_refresh_spin = QSpinBox()
         self.thumbs_refresh_spin.setRange(50, 1000)
@@ -614,6 +604,16 @@ class SettingsDialog(QDialog):
         # --- Faces & People Tab ---
 
         # --- Quick Tags Tab ---
+        mru_tags_layout = QHBoxLayout()
+        self.mru_tags_spin = QSpinBox()
+        self.mru_tags_spin.setRange(5, 100)
+        mru_label = QLabel(UITexts.SETTINGS_MRU_TAGS_COUNT_LABEL)
+        mru_tags_layout.addWidget(mru_label)
+        mru_tags_layout.addWidget(self.mru_tags_spin)
+        mru_label.setToolTip(UITexts.SETTINGS_MRU_TAGS_TOOLTIP)
+        self.mru_tags_spin.setToolTip(UITexts.SETTINGS_MRU_TAGS_TOOLTIP)
+        quick_tags_layout.addLayout(mru_tags_layout)
+
         self.quick_tags_list = QListWidget()
         self.quick_tags_list.setViewMode(QListView.IconMode)
         self.quick_tags_list.setResizeMode(QListView.Adjust)
