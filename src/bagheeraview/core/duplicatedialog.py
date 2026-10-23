@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QWidget, QMessageBox, QApplication, QMenu,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QTabWidget, QSlider, QSizePolicy
+    QTabWidget, QSlider, QSizePolicy, QComboBox
 )
 from PySide6.QtGui import (
     QBrush, QColor, QDesktopServices, QIcon, QImage, QImageReader,
@@ -27,9 +27,40 @@ from PySide6.QtCore import Qt, QTimer, QUrl
 from .imageviewer import ImagePane
 from .overlaycanvas import OverlayCanvas
 from .constants import (
-    APP_CONFIG, UITexts, DEFAULT_DIALOG_SHORTCUTS
+    APP_CONFIG, UITexts, DEFAULT_DIALOG_SHORTCUTS,
+    DUPLICATE_METHOD_HASH, DUPLICATE_METHOD_AI, DUPLICATE_METHOD_BOTH
 )
+from .duplicatecache import duplicate_sort_key
 from .propertiesdialog import PropertiesDialog
+
+# Role used to store the numeric sort key of a row's primary column.
+# SORT_KEY_ROLE = Qt.UserRole + 1 keeps the original index in Qt.UserRole.
+SORT_KEY_ROLE = Qt.UserRole + 1
+
+
+class SortKeyItem(QTableWidgetItem):
+    """
+    QTableWidgetItem that sorts numerically by a stored sort key.
+
+    The primary column stores both the original index (Qt.UserRole) and a
+    numeric sort key (SORT_KEY_ROLE). This class compares rows using the sort
+    key so the table can be ordered by detection confidence instead of by
+    the visible text (which is localized).
+    """
+
+    def __lt__(self, other):
+        """Compares two items using their stored numeric sort key."""
+        if isinstance(other, QTableWidgetItem):
+            left = self.data(SORT_KEY_ROLE)
+            right = other.data(SORT_KEY_ROLE)
+            if left is None and right is None:
+                return self.text() < other.text()
+            if left is None:
+                return True
+            if right is None:
+                return False
+            return int(left) < int(right)
+        return super().__lt__(other)
 
 
 class DuplicateManagerDialog(QDialog):
@@ -100,6 +131,19 @@ class DuplicateManagerDialog(QDialog):
         header_layout.addWidget(QLabel(UITexts.DUPLICATE_LIST_HEADER))
         self.counter_lbl = QLabel()
         self.counter_lbl.setStyleSheet("color: #3498db; font-weight: bold;")
+        # Filter combo (hidden in review mode, where the list is static).
+        self.filter_combo = QComboBox()
+        self.filter_combo.addItems([
+            UITexts.DUPLICATE_FILTER_ALL,
+            UITexts.DUPLICATE_FILTER_DUPLICATES,
+            UITexts.DUPLICATE_FILTER_SIMILAR,
+            UITexts.DUPLICATE_FILTER_BOTH,
+        ])
+        self.filter_combo.currentIndexChanged.connect(
+            self._on_filter_changed)
+        if self.review_mode:
+            self.filter_combo.hide()
+        header_layout.addWidget(self.filter_combo)
         header_layout.addStretch()
         header_layout.addWidget(self.counter_lbl)
         left_layout.addLayout(header_layout)
@@ -117,14 +161,19 @@ class DuplicateManagerDialog(QDialog):
             self.table_widget.horizontalHeader().setSectionResizeMode(
                 2, QHeaderView.Stretch)
         else:
-            columns = 2
+            columns = 4
             self.table_widget.setColumnCount(columns)
-            self.table_widget.setHorizontalHeaderLabels(
-                ["%", UITexts.CONTEXT_MENU_OPEN])
+            self.table_widget.setHorizontalHeaderLabels([
+                UITexts.DUPLICATE_COL_TYPE, UITexts.DUPLICATE_COL_HASH,
+                UITexts.DUPLICATE_COL_AI, UITexts.CONTEXT_MENU_OPEN])
             self.table_widget.horizontalHeader().setSectionResizeMode(
                 0, QHeaderView.ResizeToContents)
             self.table_widget.horizontalHeader().setSectionResizeMode(
-                1, QHeaderView.Stretch)
+                1, QHeaderView.ResizeToContents)
+            self.table_widget.horizontalHeader().setSectionResizeMode(
+                2, QHeaderView.ResizeToContents)
+            self.table_widget.horizontalHeader().setSectionResizeMode(
+                3, QHeaderView.Stretch)
 
         self.table_widget.verticalHeader().setVisible(False)
         self.table_widget.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -1036,10 +1085,22 @@ class DuplicateManagerDialog(QDialog):
                 self.table_widget.setItem(row, 0, date_item)
                 col_offset = 1
             else:
-                col_offset = 0
+                col_offset = 1
 
-            # Similarity column (using DisplayRole with int for numerical
-            # sorting, plus a color that mirrors the removed similarity badge).
+            if not self.review_mode:
+                # Column 0 (normal mode): detection type with a numeric sort
+                # key so the table is ordered by confidence, not by text.
+                type_item = SortKeyItem(self._type_text(dup))
+                type_item.setData(SORT_KEY_ROLE, duplicate_sort_key(dup))
+                type_item.setData(Qt.UserRole, i)
+                type_item.setTextAlignment(Qt.AlignCenter)
+                type_color = self._type_color(dup)
+                if type_color:
+                    type_item.setForeground(QBrush(QColor(type_color)))
+                self.table_widget.setItem(row, 0, type_item)
+
+            # Similarity column (DisplayRole with int for numerical sorting,
+            # plus a color that mirrors the similarity badge).
             sim_item = QTableWidgetItem()
             sim_item.setData(Qt.DisplayRole, dup.similarity
                              if dup.similarity is not None else 0)
@@ -1047,19 +1108,138 @@ class DuplicateManagerDialog(QDialog):
             sim_color = self._similarity_color(dup.similarity)
             if sim_color:
                 sim_item.setForeground(QBrush(QColor(sim_color)))
-            if not self.review_mode:
+            if self.review_mode:
                 sim_item.setData(Qt.UserRole, i)
-
-            # Column 1: File names
-            names_item = QTableWidgetItem(f"{name1} ↔ {name2}")
-
             self.table_widget.setItem(row, col_offset, sim_item)
-            self.table_widget.setItem(row, col_offset + 1, names_item)
 
-        self.counter_lbl.setText(str(len(self.duplicates)))
+            # AI similarity column (normal mode only).
+            if not self.review_mode:
+                ai_item = QTableWidgetItem()
+                ai_item.setData(
+                    Qt.DisplayRole,
+                    dup.ai_similarity if dup.ai_similarity is not None else -1)
+                ai_item.setText(
+                    str(dup.ai_similarity) if dup.ai_similarity is not None
+                    else UITexts.DUPLICATE_TYPE_MISSING)
+                ai_item.setTextAlignment(Qt.AlignCenter)
+                ai_color = self._ai_similarity_color(dup.ai_similarity)
+                if ai_color:
+                    ai_item.setForeground(QBrush(QColor(ai_color)))
+                self.table_widget.setItem(row, col_offset + 1, ai_item)
+
+            # Last column: File names
+            names_item = QTableWidgetItem(f"{name1} ↔ {name2}")
+            if self.review_mode:
+                self.table_widget.setItem(row, col_offset + 1, names_item)
+            else:
+                self.table_widget.setItem(row, col_offset + 2, names_item)
+
+        # Apply the current filter, then sort by detection confidence.
+        self._apply_filter_row_visibility()
         self.table_widget.blockSignals(False)
         self.table_widget.setSortingEnabled(True)
         self.table_widget.sortItems(0, Qt.DescendingOrder)
+
+        # Keep a visible row selected (matches the previous startup behavior).
+        for r in range(self.table_widget.rowCount()):
+            if not self.table_widget.isRowHidden(r):
+                self.table_widget.setCurrentCell(r, 0)
+                break
+
+    def _type_text(self, dup):
+        """
+        Returns the localized label for the detection method of a pair.
+
+        Args:
+            dup (DuplicateResult): The result record.
+
+        Returns:
+            str: Translated "Both", "Duplicate" or "Similar" label.
+        """
+        method = getattr(dup, 'method', DUPLICATE_METHOD_HASH)
+        if method == DUPLICATE_METHOD_BOTH:
+            return UITexts.DUPLICATE_TYPE_BOTH
+        if method == DUPLICATE_METHOD_AI:
+            return UITexts.DUPLICATE_TYPE_AI
+        return UITexts.DUPLICATE_TYPE_HASH
+
+    def _type_color(self, dup):
+        """
+        Returns the color used by the detection type column of a pair.
+
+        Args:
+            dup (DuplicateResult): The result record.
+
+        Returns:
+            str: Hex color, or None to keep the default color.
+        """
+        method = getattr(dup, 'method', DUPLICATE_METHOD_HASH)
+        if method == DUPLICATE_METHOD_BOTH:
+            return "#2ecc71"
+        if method == DUPLICATE_METHOD_AI:
+            return "#3498db"
+        return "#f39c12"
+
+    @staticmethod
+    def _ai_similarity_color(ai_similarity):
+        """
+        Maps an AI similarity percentage to the color of the AI % column.
+
+        The AI scale is independent from the hash scale: 95 %+ is green, the
+        default configured band is blue and anything below 90 % is gray.
+
+        Args:
+            ai_similarity (float or None): The FAISS cosine similarity.
+
+        Returns:
+            str or None: Hex color string, or None when similarity is None.
+        """
+        if ai_similarity is None:
+            return None
+        if ai_similarity >= 95:
+            return "#2ecc71"
+        if ai_similarity >= 90:
+            return "#3498db"
+        return "#7f8c8d"
+
+    def _on_filter_changed(self, index):
+        """
+        Filters the visible rows by detection method.
+
+        Args:
+            index (int): Index of the selected filter entry (0=all,
+                1=hash, 2=ai, 3=both).
+        """
+        self._apply_filter_row_visibility()
+        for r in range(self.table_widget.rowCount()):
+            if not self.table_widget.isRowHidden(r):
+                self.table_widget.setCurrentCell(r, 0)
+                break
+
+    def _apply_filter_row_visibility(self):
+        """Shows or hides each row depending on the active filter."""
+        if self.review_mode:
+            self.counter_lbl.setText(str(len(self.duplicates)))
+            return
+        filter_index = self.filter_combo.currentIndex()
+        visible = 0
+        for r in range(self.table_widget.rowCount()):
+            item = self.table_widget.item(r, 0)
+            original_index = item.data(Qt.UserRole) if item else None
+            show = True
+            if original_index is not None and filter_index > 0:
+                dup = self.duplicates[original_index]
+                method = getattr(dup, 'method', DUPLICATE_METHOD_HASH)
+                if filter_index == 1:
+                    show = method == DUPLICATE_METHOD_HASH
+                elif filter_index == 2:
+                    show = method == DUPLICATE_METHOD_AI
+                elif filter_index == 3:
+                    show = method == DUPLICATE_METHOD_BOTH
+            self.table_widget.setRowHidden(r, not show)
+            if show:
+                visible += 1
+        self.counter_lbl.setText(str(visible))
 
     def _on_cell_changed(self, row, col, prev_row, prev_col):
         """Slot triggered when the selected row in the pairs table changes."""
@@ -1096,13 +1276,28 @@ class DuplicateManagerDialog(QDialog):
             return
 
         # Get the real index of the duplicates list stored in the UserRole of
-        # the item.
+        # the item. In normal mode the primary column is the detection type;
+        # in review mode it is the ignored date.
         item = self.table_widget.item(row, 0)
         if not item:
             return
         original_index = item.data(Qt.UserRole)
         dup = self.duplicates[original_index]
         self.current_dup_pair = dup  # Store the original pair
+
+        # Similar images (AI only) may look alike but differ in content, so
+        # the "overwrite" action is only offered for duplicates.
+        if getattr(self, 'btn_overwrite', None) is not None:
+            method = getattr(dup, 'method', DUPLICATE_METHOD_HASH)
+            if method == DUPLICATE_METHOD_AI:
+                self.btn_overwrite.setEnabled(False)
+                self.btn_overwrite.setToolTip(
+                    UITexts.DUPLICATE_AI_OVERWRITE_DISABLED_TOOLTIP)
+            else:
+                self.btn_overwrite.setEnabled(True)
+                self._set_button_shortcut_tooltip(
+                    self.btn_overwrite, UITexts.DUPLICATE_OVERWRITE_TOOLTIP,
+                    "dup_overwrite")
 
         # Reset all overlay controls before loading the new pair.
         self._reset_overlay_controls()
@@ -1707,12 +1902,14 @@ class DuplicateManagerDialog(QDialog):
     def _keep_both(self):
         """Marks the current pair as an exception to ignore in future scans."""
         if self.current_dup_pair:
+            dup = self.current_dup_pair
+            # AI-only pairs have no hash similarity; store the AI score so
+            # the exceptions table shows a meaningful value.
+            similarity = dup.similarity
+            if similarity is None:
+                similarity = dup.ai_similarity
             self.cache.mark_as_exception(
-                self.current_dup_pair.path1,
-                self.current_dup_pair.path2,
-                True,
-                similarity=self.current_dup_pair.similarity
-            )
+                dup.path1, dup.path2, True, similarity=similarity)
         self._handle_action(skip=False, permanent=False)
 
     def _skip(self):

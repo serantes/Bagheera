@@ -38,6 +38,8 @@ class _FakeDuplicate:
         self.path2 = path2
         self.similarity = similarity
         self.timestamp = 0
+        self.method = "hash"
+        self.ai_similarity = None
 
 
 class FakeMainWindow(QWidget):

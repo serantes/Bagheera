@@ -178,6 +178,8 @@ SCANNER_SETTINGS_DEFAULTS = {
     "next_region_type": "Face",
     "last_region_name": "",
     "similar_threshold": 65,  # Similarity percentage (50-100)
+    "duplicate_ai_enabled": True,  # Combine FAISS/MediaPipe similarity with dHash
+    "duplicate_ai_threshold": 90,  # AI similarity percentage (70-100)
     "person_recognition_enabled": False,
     "unrecognized_person_tag": "Unrecognized",
     "unrecognized_person_action": "ask",
@@ -309,6 +311,24 @@ HAVE_DUPLICATE_RESNET_LIBS = all(
     importlib.util.find_spec(lib) is not None
     for lib in ["torch", "torchvision", "numpy", "sklearn"]
 )
+
+# Detection methods when a duplicate pair is reported. A pair may be found by
+# the perceptual hash pipeline ("hash"), by the FAISS/MediaPipe embedding
+# pipeline ("ai") or by both ("both").
+DUPLICATE_METHOD_HASH = "hash"
+DUPLICATE_METHOD_AI = "ai"
+DUPLICATE_METHOD_BOTH = "both"
+
+# Whether the FAISS/MediaPipe similarity pipeline is available at runtime.
+HAVE_FAISS_LIBS = all(
+    importlib.util.find_spec(lib) is not None
+    for lib in ["faiss", "mediapipe"]
+)
+
+# Default AI similarity threshold and number of nearest neighbours used when
+# comparing all image pairs during duplicate detection.
+DUPLICATE_AI_THRESHOLD_DEFAULT = 90
+DUPLICATE_AI_TOPK_DEFAULT = 10
 
 MAX_DHASH_DISTANCE = 64  # For 64-bit dHash
 
@@ -701,6 +721,15 @@ _UI_TEXTS = {
         "SETTINGS_SIMILAR_THRESHOLD_TOOLTIP": "Set the similarity threshold "
         "(40-100%). Higher values mean images must be more similar to be considered "
         "similar images.",
+        "SETTINGS_DUPLICATE_AI_ENABLED_LABEL": "Use AI similarity (FAISS/MediaPipe) "
+        "for duplicate detection",
+        "SETTINGS_DUPLICATE_AI_THRESHOLD_LABEL": "AI similarity threshold:",
+        "SETTINGS_DUPLICATE_AI_THRESHOLD_TOOLTIP": "Set the AI similarity threshold "
+        "(70-100%) used by duplicate detection. Higher values report fewer, more "
+        "confident similar images. This value is independent of the hash threshold.",
+        "SETTINGS_DUPLICATE_AI_MISSING_LIBS": "The 'faiss' and 'mediapipe' libraries "
+        "are required for AI similarity detection but were not found. "
+        "This feature is disabled.",
         "SETTINGS_DUPLICATE_MISSING_LIBS": "The 'imagehash' library is required for "
         "duplicate detection but was not found. This feature is disabled.",
         "MENU_DETECT_DUPLICATES": "Detect Duplicates",
@@ -761,6 +790,21 @@ _UI_TEXTS = {
         "VIEWER_MENU_LINK_PANES": "Link Panes",
         "DUPLICATE_OPEN_COMPARISON": "Open Comparison",
         "DUPLICATE_LIST_HEADER": "Duplicate Pairs",
+        "DUPLICATE_COL_TYPE": "Type",
+        "DUPLICATE_COL_HASH": "Hash %",
+        "DUPLICATE_COL_AI": "AI %",
+        "DUPLICATE_TYPE_BOTH": "Both",
+        "DUPLICATE_TYPE_HASH": "Duplicate",
+        "DUPLICATE_TYPE_AI": "Similar",
+        "DUPLICATE_TYPE_MISSING": "—",
+        "DUPLICATE_FILTER_ALL": "Show all",
+        "DUPLICATE_FILTER_DUPLICATES": "Duplicates only",
+        "DUPLICATE_FILTER_SIMILAR": "Similar only",
+        "DUPLICATE_FILTER_BOTH": "Confirmed by both",
+        "DUPLICATE_MSG_AI_EMBEDDING": "Generating AI vectors {current}/{total}",
+        "DUPLICATE_MSG_AI_SEARCH": "Searching similar images...",
+        "DUPLICATE_AI_OVERWRITE_DISABLED_TOOLTIP": "Overwrite is only available for "
+        "duplicates (hash % is present). Similar images may differ.",
         "IGNORED_DATE": "Ignored Date",
         "SETTINGS_GROUP_SCANNER": "Scanner",
         "SETTINGS_GROUP_AREAS": "Regions",
@@ -1347,8 +1391,17 @@ _UI_TEXTS = {
         "duplicados se borrarán las cachés de búsqueda existentes al grabar la configuración.\n\n¿Desea continuar?",
         "SETTINGS_SIMILAR_THRESHOLD_LABEL": "Umbral de similitud de imágenes similares:",
         "SETTINGS_SIMILAR_THRESHOLD_TOOLTIP": "Establece el umbral de similitud "
-        "(40-100%). Valores más altos significan que las imágenes deben ser más "
-        "parecidas para considerarse similares.",
+        "para imágenes similares (40-100%). Valores más altos significan que las "
+        "imágenes deben ser más parecidas para considerarse similares.",
+        "SETTINGS_DUPLICATE_AI_ENABLED_LABEL": "Usar similitud por IA (FAISS/MediaPipe) "
+        "para la detección de duplicados",
+        "SETTINGS_DUPLICATE_AI_THRESHOLD_LABEL": "Umbral de similitud IA:",
+        "SETTINGS_DUPLICATE_AI_THRESHOLD_TOOLTIP": "Establece el umbral de similitud IA "
+        "(70-100%) usado por la detección de duplicados. Valores más altos reportan "
+        "menos imágenes similares y más seguras. Es independiente del umbral de hash.",
+        "SETTINGS_DUPLICATE_AI_MISSING_LIBS": "Las librerías 'faiss' y 'mediapipe' son "
+        "necesarias para la detección de similitud por IA pero no se encontraron. "
+        "Esta función está deshabilitada.",
         "SETTINGS_DUPLICATE_MISSING_LIBS": "La librería 'imagehash' es necesaria "
         "para la detección de duplicados pero no se ha encontrado. Esta función "
         "está desactivada.",
@@ -1410,6 +1463,21 @@ _UI_TEXTS = {
         "VIEWER_MENU_LINK_PANES": "Vincular Paneles",
         "DUPLICATE_OPEN_COMPARISON": "Abrir Comparación",
         "DUPLICATE_LIST_HEADER": "Parejas Duplicadas",
+        "DUPLICATE_COL_TYPE": "Tipo",
+        "DUPLICATE_COL_HASH": "% Hash",
+        "DUPLICATE_COL_AI": "% IA",
+        "DUPLICATE_TYPE_BOTH": "Ambos",
+        "DUPLICATE_TYPE_HASH": "Duplicado",
+        "DUPLICATE_TYPE_AI": "Similar",
+        "DUPLICATE_TYPE_MISSING": "—",
+        "DUPLICATE_FILTER_ALL": "Mostrar todos",
+        "DUPLICATE_FILTER_DUPLICATES": "Solo duplicados",
+        "DUPLICATE_FILTER_SIMILAR": "Solo similares",
+        "DUPLICATE_FILTER_BOTH": "Confirmados por ambos",
+        "DUPLICATE_MSG_AI_EMBEDDING": "Generando vectores IA {current}/{total}",
+        "DUPLICATE_MSG_AI_SEARCH": "Buscando imágenes similares...",
+        "DUPLICATE_AI_OVERWRITE_DISABLED_TOOLTIP": "Sobrescribir solo está disponible "
+        "para duplicados (hay % de hash). Las imágenes similares pueden diferir.",
         "IGNORED_DATE": "Fecha Ignorado",
         "SETTINGS_GROUP_SCANNER": "Escáner",
         "SETTINGS_GROUP_AREAS": 'Regiones',
@@ -2001,8 +2069,17 @@ _UI_TEXTS = {
         "de duplicados borraranse as cachés de busca existentes ao gardar a configuración.\n\nDesexa continuar?",
         "SETTINGS_SIMILAR_THRESHOLD_LABEL": "Umbral de similitude de imaxes similares:",
         "SETTINGS_SIMILAR_THRESHOLD_TOOLTIP": "Establece o umbral de similitude "
-        "(40-100%). Valores máis altos significan que as imaxes deben ser máis "
-        "parecidas para considerarse similares.",
+        "para imaxes similares (40-100%). Valores máis altos significan que as "
+        "imaxes deben ser máis parecidas para considerarse similares.",
+        "SETTINGS_DUPLICATE_AI_ENABLED_LABEL": "Usar similitude por IA (FAISS/MediaPipe) "
+        "para a detección de duplicados",
+        "SETTINGS_DUPLICATE_AI_THRESHOLD_LABEL": "Umbral de similitude IA:",
+        "SETTINGS_DUPLICATE_AI_THRESHOLD_TOOLTIP": "Establece o umbral de similitude IA "
+        "(70-100%) usado pola detección de duplicados. Valores máis altos reportan "
+        "menos imaxes similares e máis seguras. É independente do umbral de hash.",
+        "SETTINGS_DUPLICATE_AI_MISSING_LIBS": "As librarías 'faiss' e 'mediapipe' son "
+        "necesarias para a detección de similitude por IA pero non se atoparon. "
+        "Esta función está deshabilitada.",
         "SETTINGS_DUPLICATE_MISSING_LIBS": "A librería 'imagehash' é necesaria para a "
         "detección de duplicados pero non se atopou. Esta función está desactivada.",
         "MENU_DETECT_DUPLICATES": "Detectar Duplicados",
@@ -2063,6 +2140,21 @@ _UI_TEXTS = {
         "VIEWER_MENU_LINK_PANES": "Vincular Paneis",
         "DUPLICATE_OPEN_COMPARISON": "Abrir Comparación",
         "DUPLICATE_LIST_HEADER": "Parellas Duplicadas",
+        "DUPLICATE_COL_TYPE": "Tipo",
+        "DUPLICATE_COL_HASH": "% Hash",
+        "DUPLICATE_COL_AI": "% IA",
+        "DUPLICATE_TYPE_BOTH": "Ambos",
+        "DUPLICATE_TYPE_HASH": "Duplicado",
+        "DUPLICATE_TYPE_AI": "Similar",
+        "DUPLICATE_TYPE_MISSING": "—",
+        "DUPLICATE_FILTER_ALL": "Amosar todos",
+        "DUPLICATE_FILTER_DUPLICATES": "Só duplicados",
+        "DUPLICATE_FILTER_SIMILAR": "Só similares",
+        "DUPLICATE_FILTER_BOTH": "Confirmados por ambos",
+        "DUPLICATE_MSG_AI_EMBEDDING": "Xerando vectores IA {current}/{total}",
+        "DUPLICATE_MSG_AI_SEARCH": "Buscando imaxes similares...",
+        "DUPLICATE_AI_OVERWRITE_DISABLED_TOOLTIP": "Sobrescribir só está dispoñible "
+        "para duplicados (hai % de hash). As imaxes similares poden diferir.",
         "IGNORED_DATE": "Data Ignorado",
         "SETTINGS_GROUP_SCANNER": "Escáner",
         "SETTINGS_GROUP_AREAS": "Rexións",

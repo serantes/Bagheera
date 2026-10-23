@@ -33,15 +33,29 @@ from .constants import (
     DUPLICATE_CACHE_PATH, DUPLICATE_HASH_DB_NAME,
     DUPLICATE_EXCEPTIONS_DB_NAME, DUPLICATE_PENDING_DB_NAME,
     DUPLICATE_BKTREE_DB_NAME, DUPLICATE_HASH_TO_FILES_DB_NAME,
-    MAX_DHASH_DISTANCE, UITexts
+    MAX_DHASH_DISTANCE, UITexts,
+    DUPLICATE_METHOD_HASH, DUPLICATE_METHOD_AI, DUPLICATE_METHOD_BOTH,
+    DUPLICATE_AI_THRESHOLD_DEFAULT, DUPLICATE_AI_TOPK_DEFAULT,
+    HAVE_FAISS_LIBS
 )
 
 logger = logging.getLogger(__name__)
 
-# Result structure for duplicate detection
+# Result structure for duplicate detection.
+# ``similarity`` always holds the perceptual hash percentage. When a pair is
+# found only by the FAISS/MediaPipe pipeline it is ``None`` and the cosine
+# similarity is stored in ``ai_similarity``. ``method`` is one of "hash",
+# "ai" or "both". The two last fields have defaults so that callers still
+# constructing the record with six arguments keep working unchanged.
 DuplicateResult = collections.namedtuple(
     'DuplicateResult',
-    ['path1', 'path2', 'hash_value', 'is_exception', 'similarity', 'timestamp'])
+    ['path1', 'path2', 'hash_value', 'is_exception', 'similarity', 'timestamp',
+     'method', 'ai_similarity'],
+    defaults=(DUPLICATE_METHOD_HASH, None))
+
+# Ordering rank per detection method (higher values sort first).
+_DUPLICATE_RANK = {DUPLICATE_METHOD_BOTH: 3, DUPLICATE_METHOD_HASH: 2,
+                   DUPLICATE_METHOD_AI: 1}
 
 # Color histogram verification for duplicate confirmation.
 # A candidate pair that passes the perceptual hash threshold is additionally
@@ -51,6 +65,129 @@ DuplicateResult = collections.namedtuple(
 COLOR_HIST_BINS = 8  # Bins per RGB channel (8x8x8 = 512-dimensional)
 COLOR_HIST_THUMBNAIL_SIZE = (128, 128)
 COLOR_HIST_MIN_CORRELATION = 0.90
+
+
+def merge_duplicate_results(a, b):
+    """
+    Merges two DuplicateResult records describing the same image pair.
+
+    Each result contributes one similarity score (perceptual hash or AI cosine
+    similarity). The merged record keeps the maximum of the non-null scores
+    and is marked with the combination of the detection methods, e.g. as
+    "both" when the pair was found by the hash pipeline and by the FAISS
+    pipeline.
+
+    Args:
+        a (DuplicateResult): First record for the pair.
+        b (DuplicateResult): Second record for the same pair.
+
+    Returns:
+        DuplicateResult: The merged record.
+    """
+    sim_values = [r.similarity for r in (a, b) if r.similarity is not None]
+    ai_values = [r.ai_similarity for r in (a, b)
+                 if r.ai_similarity is not None]
+    sim = max(sim_values) if sim_values else None
+    ai_sim = max(ai_values) if ai_values else None
+
+    if sim is not None and ai_sim is not None:
+        method = DUPLICATE_METHOD_BOTH
+    elif ai_sim is not None:
+        method = DUPLICATE_METHOD_AI
+    else:
+        method = DUPLICATE_METHOD_HASH
+
+    return DuplicateResult(
+        path1=a.path1 or b.path1,
+        path2=a.path2 or b.path2,
+        hash_value=a.hash_value if a.hash_value is not None else b.hash_value,
+        is_exception=a.is_exception or b.is_exception,
+        similarity=sim,
+        timestamp=max(a.timestamp or 0, b.timestamp or 0),
+        method=method,
+        ai_similarity=ai_sim,
+    )
+
+
+def duplicates_to_dict(results):
+    """
+    Builds a pair-keyed dictionary from a list of DuplicateResult records.
+
+    The pair key is the frozenset of the two canonical file identities
+    (``{dev}-{inode hex}``); when an identity cannot be resolved the
+    normalized absolute paths are used instead. Records sharing the same pair
+    are merged via :func:`merge_duplicate_results`, so the same pair is never
+    reported twice even when several detection methods match it.
+
+    Args:
+        results (list): Iterable of DuplicateResult instances.
+
+    Returns:
+        dict: Mapping from the pair key to the merged DuplicateResult.
+    """
+    merged = {}
+    for res in results:
+        dev1, ino1 = DuplicateCache._get_inode_info(res.path1)
+        dev2, ino2 = DuplicateCache._get_inode_info(res.path2)
+        if ino1 and ino2:
+            key = frozenset((f"{dev1}-{ino1.hex()}",
+                             f"{dev2}-{ino2.hex()}"))
+        else:
+            key = frozenset((os.path.abspath(os.path.normpath(res.path1)),
+                             os.path.abspath(os.path.normpath(res.path2))))
+        if key in merged:
+            merged[key] = merge_duplicate_results(merged[key], res)
+        else:
+            merged[key] = res
+    return merged
+
+
+def duplicate_sort_key(dup):
+    """
+    Numeric sort key that orders results by detection confidence.
+
+    Pairs confirmed by both methods rank first, followed by hash-only pairs
+    and finally AI-only pairs. Within a method the native similarity score is
+    the tie breaker.
+
+    Args:
+        dup (DuplicateResult): The result to rank.
+
+    Returns:
+        int: ``rank * 1000 + score``, ready for numeric sorting.
+    """
+    rank = _DUPLICATE_RANK.get(getattr(dup, 'method', DUPLICATE_METHOD_HASH), 2)
+    score = dup.similarity if dup.similarity is not None else (
+        dup.ai_similarity if dup.ai_similarity is not None else 0)
+    return rank * 1000 + int(score or 0)
+
+
+def _parse_pending_value(val_str):
+    """
+    Parses a serialized value stored in the LMDB pending database.
+
+    The current format is ``"p1|p2|sim|ts|method|ai_sim"``. Values written by
+    older versions only contain the first four fields and are interpreted as
+    hash-only pairs.
+
+    Args:
+        val_str (str): Decoded value of a pending record.
+
+    Returns:
+        tuple: ``(p1, p2, similarity, timestamp, method, ai_similarity)``.
+    """
+    parts = val_str.split('|')
+    p1 = parts[0] if len(parts) > 0 else ""
+    p2 = parts[1] if len(parts) > 1 else ""
+    sim = int(parts[2]) if len(parts) > 2 and parts[2] else None
+    ts = int(parts[3]) if len(parts) > 3 and parts[3] else 0
+    method = DUPLICATE_METHOD_HASH
+    if len(parts) > 4 and parts[4] in (
+            DUPLICATE_METHOD_HASH, DUPLICATE_METHOD_AI,
+            DUPLICATE_METHOD_BOTH):
+        method = parts[4]
+    ai_sim = int(parts[5]) if len(parts) > 5 and parts[5] else None
+    return p1, p2, sim, ts, method, ai_sim
 
 
 def _blur_histogram_axis(hist3, axis):
@@ -268,27 +405,63 @@ class DuplicateCache(QObject):
         logger.info("Duplicate pending search cache cleared.")
         return True
 
-    def set_pending_scan_metadata(self, threshold):
-        """Stores scan completion metadata for pending duplicates database."""
+    def set_pending_scan_metadata(self, threshold, ai_threshold=None):
+        """
+        Stores scan completion metadata for pending duplicates database.
+
+        When the FAISS pipeline is enabled the AI threshold is stored too, so
+        changing it invalidates previously completed scans.
+
+        Args:
+            threshold (int): Perceptual hash similarity threshold used.
+            ai_threshold (int, optional): AI similarity threshold used, or
+                None when the AI pipeline is disabled.
+        """
         if not self._lmdb_env or self._pending_db is None:
             return False
+        ai_str = str(ai_threshold) if ai_threshold is not None else ""
+        meta_str = f"{threshold}|{ai_str}"
         with QMutexLocker(self._db_lock):
             with self._lmdb_env.begin(write=True) as txn:
-                txn.put(b"__scan_completed_threshold__", str(threshold).encode('utf-8'), db=self._pending_db)
-        logger.info(f"Duplicate scan metadata saved for threshold {threshold}.")
+                txn.put(b"__scan_completed_threshold__",
+                        meta_str.encode('utf-8'), db=self._pending_db)
+        logger.info(f"Duplicate scan metadata saved for threshold {threshold} "
+                    f"(AI threshold {ai_threshold}).")
         return True
 
-    def is_pending_scan_completed(self, threshold):
-        """Checks if a pending scan was previously completed for the given threshold."""
+    def is_pending_scan_completed(self, threshold, ai_threshold=None):
+        """
+        Checks if a pending scan was previously completed for the given
+        thresholds.
+
+        Args:
+            threshold (int): Perceptual hash similarity threshold.
+            ai_threshold (int, optional): AI similarity threshold that must
+                also match; when None, legacy one-field metadata is accepted.
+
+        Returns:
+            bool: True when a completed scan exists for the given thresholds.
+        """
         if not self._lmdb_env or self._pending_db is None:
             return False
         with QMutexLocker(self._db_lock):
             with self._lmdb_env.begin(write=False) as txn:
-                val = txn.get(b"__scan_completed_threshold__", db=self._pending_db)
+                val = txn.get(b"__scan_completed_threshold__",
+                              db=self._pending_db)
                 if val is not None:
                     try:
-                        saved_thresh = int(val.decode('utf-8'))
-                        return saved_thresh == int(threshold)
+                        parts = val.decode('utf-8').split('|')
+                        saved_thresh = int(parts[0])
+                        # Legacy one-field values imply an AI-disabled scan.
+                        saved_ai = int(parts[1]) if len(parts) > 1 \
+                            and parts[1] else None
+                        if saved_thresh != int(threshold):
+                            return False
+                        if ai_threshold is not None:
+                            return saved_ai == int(ai_threshold)
+                        # Caller requested a hash-only scan: any AI value is
+                        # compatible as long as the hash threshold matches.
+                        return True
                     except Exception:
                         return False
         return False
@@ -762,8 +935,30 @@ class DuplicateCache(QObject):
                     do_remove(t)
 
     def mark_as_pending(self,
-                        path1, path2, is_pending=True, similarity=None, timestamp=None):
-        """Marks a pair as pending review."""
+                        path1, path2, is_pending=True, similarity=None,
+                        timestamp=None, method=None, ai_similarity=None):
+        """
+        Marks a pair as pending review.
+
+        Records written before the FAISS integration store only
+        ``path1|path2|similarity|timestamp``; new records also store the
+        detection method and the AI cosine similarity. When a record already
+        exists for the pair, the incoming scores are merged so the pair is
+        never duplicated in the database.
+
+        Args:
+            path1 (str): Absolute path of the first image.
+            path2 (str): Absolute path of the second image.
+            is_pending (bool): True stores the pair, False removes it.
+            similarity (int, optional): Perceptual hash similarity percentage.
+            timestamp (int, optional): Unix timestamp of the detection.
+            method (str, optional): Detection method ("hash", "ai", "both");
+                defaults to the method implied by the supplied scores.
+            ai_similarity (int, optional): FAISS cosine similarity percentage.
+
+        Returns:
+            bool: True on success, False when the pair cannot be stored.
+        """
         if not self._lmdb_env or self._pending_db is None:
             return False
 
@@ -771,15 +966,39 @@ class DuplicateCache(QObject):
         if not key:
             return False
 
-        # Store paths in value to allow reconstruction without scanning
         ts = timestamp if timestamp is not None else int(time_module.time())
-        val_str = f"{path1}|{path2}|{similarity if similarity is not None else ''}|{ts}"
-        value = val_str.encode('utf-8')
 
         with QMutexLocker(self._db_lock):
             with self._lmdb_env.begin(write=True) as txn:
                 if is_pending:
-                    txn.put(key, value, db=self._pending_db)
+                    # Merge with any existing record for this same pair so a
+                    # pair detected by both pipelines is stored only once.
+                    existing_val = txn.get(key, db=self._pending_db)
+                    sim = similarity
+                    ai_sim = ai_similarity
+                    mth = method if method is not None else (
+                        DUPLICATE_METHOD_AI if ai_sim is not None
+                        else DUPLICATE_METHOD_HASH)
+                    if existing_val:
+                        _, _, e_sim, e_ts, e_mth, e_ai = _parse_pending_value(
+                            existing_val.decode('utf-8'))
+                        sim = max(sim or 0, e_sim or 0) if (sim or e_sim) \
+                            else (sim or e_sim)
+                        ai_sim = max(ai_sim or 0, e_ai or 0) \
+                            if (ai_sim or e_ai) else (ai_sim or e_ai)
+                        ts = max(ts, e_ts)
+                        if sim is not None and ai_sim is not None:
+                            mth = DUPLICATE_METHOD_BOTH
+                        elif ai_sim is not None:
+                            mth = DUPLICATE_METHOD_AI
+                        elif sim is not None:
+                            mth = DUPLICATE_METHOD_HASH
+                        else:
+                            mth = e_mth
+                    sim_str = str(sim) if sim is not None else ""
+                    ai_str = str(ai_sim) if ai_sim is not None else ""
+                    val_str = f"{path1}|{path2}|{sim_str}|{ts}|{mth}|{ai_str}"
+                    txn.put(key, val_str.encode('utf-8'), db=self._pending_db)
                 else:
                     # Check if it exists before deleting to avoid errors
                     if txn.get(key, db=self._pending_db):
@@ -789,7 +1008,13 @@ class DuplicateCache(QObject):
     def mark_as_pending_batch(self, pairs_data):
         """
         Marks multiple pairs as pending review in a single transaction.
-        pairs_data: list of (path1, path2, similarity, timestamp)
+
+        Args:
+            pairs_data (list): Iterable of tuples. Legacy 4-tuples
+                ``(path1, path2, similarity, timestamp)`` are still accepted;
+                new 6-tuples ``(path1, path2, similarity, timestamp, method,
+                ai_similarity)`` also store the detection metadata. Existing
+                records for the same pair are merged, never duplicated.
         """
         if not self._lmdb_env or self._pending_db is None or not pairs_data:
             return False
@@ -797,14 +1022,47 @@ class DuplicateCache(QObject):
         with QMutexLocker(self._db_lock):  # noqa: E501
 
             with self._lmdb_env.begin(write=True) as txn:
-                for p1, p2, similarity, timestamp in pairs_data:
+                for entry in pairs_data:
+                    if len(entry) == 4:
+                        p1, p2, similarity, timestamp = entry
+                        method = DUPLICATE_METHOD_HASH
+                        ai_similarity = None
+                    else:
+                        (p1, p2, similarity, timestamp,
+                         method, ai_similarity) = entry
+
                     key = self._get_pair_lmdb_key(p1, p2)
                     if not key:
                         continue
 
-                    ts = timestamp if timestamp is not None else int(time_module.time())
-                    sim_str = str(similarity) if similarity is not None else ""
-                    val_str = f"{p1}|{p2}|{sim_str}|{ts}"
+                    ts = timestamp if timestamp is not None \
+                        else int(time_module.time())
+                    sim = similarity
+                    ai_sim = ai_similarity
+                    mth = method if method is not None else (
+                        DUPLICATE_METHOD_AI if ai_sim is not None
+                        else DUPLICATE_METHOD_HASH)
+                    existing_val = txn.get(key, db=self._pending_db)
+                    if existing_val is not None:
+                        _, _, e_sim, e_ts, e_mth, e_ai = _parse_pending_value(
+                            existing_val.decode('utf-8'))
+                        sim = max(sim or 0, e_sim or 0) if (sim or e_sim) \
+                            else (sim or e_sim)
+                        ai_sim = max(ai_sim or 0, e_ai or 0) \
+                            if (ai_sim or e_ai) else (ai_sim or e_ai)
+                        ts = max(ts, e_ts)
+                        if sim is not None and ai_sim is not None:
+                            mth = DUPLICATE_METHOD_BOTH
+                        elif ai_sim is not None:
+                            mth = DUPLICATE_METHOD_AI
+                        elif sim is not None:
+                            mth = DUPLICATE_METHOD_HASH
+                        else:
+                            mth = e_mth
+
+                    sim_str = str(sim) if sim is not None else ""
+                    ai_str = str(ai_sim) if ai_sim is not None else ""
+                    val_str = f"{p1}|{p2}|{sim_str}|{ts}|{mth}|{ai_str}"
                     value = val_str.encode('utf-8')
                     txn.put(key, value, db=self._pending_db)
         return True
@@ -849,9 +1107,10 @@ class DuplicateCache(QObject):
                     if key.startswith(b"__"):
                         continue
                     try:
-                        parts = value_bytes.decode('utf-8').split('|')
-                        p1 = Path(parts[0]).resolve()
-                        p2 = Path(parts[1]).resolve()
+                        raw1, raw2, sim, ts, method, ai_sim = _parse_pending_value(
+                            value_bytes.decode('utf-8'))
+                        p1 = Path(raw1).resolve()
+                        p2 = Path(raw2).resolve()
 
                         # Definitive identity test for symlinks/hardlinks
                         try:
@@ -864,8 +1123,6 @@ class DuplicateCache(QObject):
                             keys_to_delete.append(key)
                             pass
 
-                        sim = int(parts[2]) if len(parts) > 2 and parts[2] else None
-                        ts = int(parts[3]) if len(parts) > 3 else 0  # noqa: E501
                         if os.path.exists(p1) and os.path.exists(p2):
                             # Check if it's already a known exception (by inode)
                             dev1, ino1 = self._get_inode_info(p1)
@@ -879,7 +1136,8 @@ class DuplicateCache(QObject):
                                     continue
 
                             results.append(
-                                DuplicateResult(p1, p2, None, False, sim, ts))
+                                DuplicateResult(p1, p2, None, False, sim, ts,
+                                                method, ai_sim))
                         else:
                             keys_to_delete.append(key)
                     except Exception:
@@ -1116,7 +1374,8 @@ class DuplicateDetector(QThread):
                  paths_to_scan, duplicate_cache, pool_manager,
                  method="histogram_hashing", threshold=90, force_full=False,
                  color_check=True,
-                 color_threshold=COLOR_HIST_MIN_CORRELATION):
+                 color_threshold=COLOR_HIST_MIN_CORRELATION,
+                 ai_enabled=False, ai_threshold=DUPLICATE_AI_THRESHOLD_DEFAULT):
         super().__init__()
         self.paths_to_scan = paths_to_scan
         self.duplicate_cache = duplicate_cache
@@ -1126,6 +1385,10 @@ class DuplicateDetector(QThread):
         self.force_full = force_full
         self.color_check = color_check
         self.color_threshold = color_threshold
+        self.ai_enabled = ai_enabled  # FAISS/MediaPipe similarity phase
+        self.ai_threshold = ai_threshold  # AI similarity percentage (0-100)
+        self.ai_available = HAVE_FAISS_LIBS  # libraries present at runtime
+        self._progress_total = 0  # Set by run(); default for direct callers
         self._hist_cache = {}  # path -> normalized color histogram or None
         self._is_running = True
 
@@ -1176,6 +1439,139 @@ class DuplicateDetector(QThread):
         similarity = compare_color_histograms(hist1, hist2)
         return similarity >= self.color_threshold
 
+    def _pending_passes_thresholds(self, pending):
+        """
+        Checks whether a pending duplicate record satisfies the active
+        thresholds.
+
+        The perceptual hash and the AI similarity percentages live on
+        different scales, so each record is evaluated against the threshold of
+        the method it was detected with. AI-only records are rejected when the
+        AI pipeline is disabled.
+
+        Args:
+            pending (DuplicateResult): Record loaded from the pending DB.
+
+        Returns:
+            bool: True when the record must be shown in the results.
+        """
+        sim = pending.similarity
+        ai_sim = pending.ai_similarity
+        method = getattr(pending, 'method', DUPLICATE_METHOD_HASH)
+        if method == DUPLICATE_METHOD_AI:
+            return self.ai_enabled and ai_sim is not None \
+                and ai_sim >= self.ai_threshold
+        if method == DUPLICATE_METHOD_BOTH:
+            hash_ok = sim is not None and sim >= self.threshold
+            ai_ok = self.ai_enabled and ai_sim is not None \
+                and ai_sim >= self.ai_threshold
+            return hash_ok or ai_ok
+        return sim is not None and sim >= self.threshold
+
+    def _run_ai_phase(self, merged_results, results_to_save_ai):
+        """
+        Runs the FAISS/MediaPipe all-pairs similarity phase.
+
+        Uses :class:`FaissPairSearcher` (from ``faiss_worker``) against every
+        file of the current scan and merges the pairs it finds into
+        ``merged_results``. Pairs already reported by the perceptual hash
+        pipeline are upgraded to "both" instead of being added twice; pairs
+        only detected here get the "ai" method.
+
+        Args:
+            merged_results (dict): Pair-keyed dictionary being built by the
+                current run; mutated in place.
+            results_to_save_ai (list): List that accumulates the new AI pairs
+                as 6-tuples so they can be flushed to the pending DB.
+        """
+        if not self.ai_available:
+            logger.info("AI similarity disabled: faiss/mediapipe not available.")
+            return
+
+        try:
+            from .faiss_worker import FaissPairSearcher
+        except Exception as exc:  # pragma: no cover - optional dependency
+            logger.warning(f"AI similarity disabled: {exc}")
+            return
+
+        total = len(self.paths_to_scan)
+
+        def log_progress_cb(current, total_saved, msg):
+            # AI embedding generation occupies the last third of the bar.
+            progress = (2 * total) + int((current / total_saved)
+                                         * total) if total_saved else 2 * total
+            self.progress_update.emit(
+                min(progress, self._progress_total), self._progress_total,
+                msg)
+
+        self.progress_update.emit(
+            2 * total, self._progress_total,
+            UITexts.DUPLICATE_MSG_AI_EMBEDDING.format(
+                current=0, total=total))
+
+        searcher = FaissPairSearcher(
+            self.paths_to_scan, self.ai_threshold,
+            top_k=DUPLICATE_AI_TOPK_DEFAULT,
+            progress_callback=log_progress_cb,
+            is_running_callback=lambda: self._is_running)
+        pairs = searcher.run()
+
+        if not self._is_running:
+            return
+
+        self.progress_update.emit(
+            self._progress_total, self._progress_total,
+            UITexts.DUPLICATE_MSG_AI_SEARCH)
+
+        ts = int(time_module.time())
+        for p1, p2, ai_sim in pairs:
+            if not self._is_running:
+                break
+            if p1 not in self.scan_paths_set or p2 not in self.scan_paths_set:
+                continue
+
+            h1_tuple = self.path_to_hash.get(p1)
+            dev1, ino1 = (h1_tuple[1], h1_tuple[2]) if h1_tuple \
+                else self.duplicate_cache._get_inode_info(p1)
+            h2_tuple = self.path_to_hash.get(p2)
+            dev2, ino2 = (h2_tuple[1], h2_tuple[2]) if h2_tuple \
+                else self.duplicate_cache._get_inode_info(p2)
+
+            if not ino1 or not ino2:
+                continue
+            if (dev1, ino1) == (dev2, ino2):
+                self.duplicate_cache.mark_as_exception(
+                    p1, p2, True, similarity=100)
+                continue
+
+            id1, id2 = f"{dev1}-{ino1.hex()}", f"{dev2}-{ino2.hex()}"
+            pair_key = frozenset((id1, id2))
+            if pair_key in self.exceptions_set:
+                continue
+
+            if pair_key in merged_results:
+                existing = merged_results[pair_key]
+                res = merge_duplicate_results(
+                    existing, DuplicateResult(
+                        p1, p2, existing.hash_value, False, None, ts,
+                        DUPLICATE_METHOD_AI, ai_sim))
+                merged_results[pair_key] = res
+                if res.method == DUPLICATE_METHOD_BOTH:
+                    if existing.similarity is not None:
+                        # Pair was already saved to the pending DB with its
+                        # hash similarity; upgrade the stored record.
+                        results_to_save_ai.append(
+                            (res.path1, res.path2, res.similarity,
+                             res.timestamp, DUPLICATE_METHOD_BOTH,
+                             res.ai_similarity))
+            else:
+                res = DuplicateResult(
+                    p1, p2, None, False, None, ts,
+                    DUPLICATE_METHOD_AI, ai_sim)
+                merged_results[pair_key] = res
+                results_to_save_ai.append(
+                    (p1, p2, None, ts, DUPLICATE_METHOD_AI, ai_sim))
+
     def run(self):
         # Ensure all paths are absolute and normalized at the start
         self.paths_to_scan = [os.path.abspath(os.path.normpath(p))
@@ -1183,14 +1579,21 @@ class DuplicateDetector(QThread):
 
         # Pre-load exceptions to avoid UnboundLocalError in Phase 1 and maintain
         # consistency
-        exceptions_set = self.duplicate_cache.get_all_exceptions_set()
-        scan_paths_set = set(self.paths_to_scan)
+        self.exceptions_set = self.duplicate_cache.get_all_exceptions_set()
+        self.scan_paths_set = set(self.paths_to_scan)
 
         total_files = len(self.paths_to_scan)
-        found_duplicates = []
-        # To store frozenset((path1, path2)) for uniqueness
-        unique_inode_pairs = set()
+        # merged_results maps a pair key (frozenset of inode identities) to the
+        # merged DuplicateResult, so a pair detected by the hash pipeline and by
+        # the FAISS pipeline is reported only once.
+        merged_results = {}
+        # To store frozenset((path1, path2)) identities physically equal.
+        physical_identity_pairs = set()
         last_ui_update_time = 0
+
+        # Total progress units: 2x when only the hash pipeline runs, 3x when
+        # the AI similarity phase is also enabled.
+        self._progress_total = total_files * (3 if self.ai_enabled else 2)
 
         pool = self.pool_manager.get_pool()
 
@@ -1226,7 +1629,7 @@ class DuplicateDetector(QThread):
             f"Distance Threshold={distance_threshold}")
 
         # 2. Phase 1: Hash Collection (Parallelized)
-        path_to_hash = {}
+        self.path_to_hash = {}
         dirty_paths = set()
         paths_to_hash_parallel = []
 
@@ -1248,13 +1651,13 @@ class DuplicateDetector(QThread):
 
                 if cached_h:
                     if cached_path == path:
-                        path_to_hash[path] = (cached_h, dev, inode)
+                        self.path_to_hash[path] = (cached_h, dev, inode)
                     else:
                         # File moved or renamed: update cache and mark as dirty
                         self.duplicate_cache.add_hash_for_path(
                             path, cached_h, mtime, dev, inode)
                         dirty_paths.add(path)
-                        path_to_hash[path] = (cached_h, dev, inode)
+                        self.path_to_hash[path] = (cached_h, dev, inode)
                 else:
                     dirty_paths.add(path)
                     paths_to_hash_parallel.append((path, mtime, dev, inode))
@@ -1266,7 +1669,7 @@ class DuplicateDetector(QThread):
                     progress = int((processed_initial / total_unique) * (0.2 * total_files))
                     fname = os.path.basename(path)
                     self.progress_update.emit(
-                        progress, total_files * 2,
+                        progress, self._progress_total,
                         UITexts.DUPLICATE_MSG_HASHING.format(filename=fname))
                     last_ui_update_time = current_time
 
@@ -1307,7 +1710,7 @@ class DuplicateDetector(QThread):
                             (processed_hashing / num_to_hash) * remaining_progress_span)
                         fname = os.path.basename(current_batch[j][0])
                         self.progress_update.emit(
-                            progress, total_files * 2,
+                            progress, self._progress_total,
                             UITexts.DUPLICATE_MSG_HASHING.format(filename=fname))
                         last_ui_update_time = current_time
 
@@ -1315,12 +1718,12 @@ class DuplicateDetector(QThread):
             for p, mtime, dev, inode in paths_to_hash_parallel:
                 h = new_hashes.get(p)
                 if h:
-                    path_to_hash[p] = (h, dev, inode)
+                    self.path_to_hash[p] = (h, dev, inode)
                     hashes_to_batch.append((p, h, mtime, dev, inode))
 
             if hashes_to_batch:
                 # total_batch = len(hashes_to_batch)
-                base_batch_progress = int(0.4 * (total_files * 2))
+                base_batch_progress = int(0.4 * self._progress_total)
                 span_batch_progress = total_files - base_batch_progress
 
                 def batch_progress_cb(current, total, current_path):
@@ -1331,7 +1734,7 @@ class DuplicateDetector(QThread):
                         prog = base_batch_progress + int((current / total) * span_batch_progress)
                         fname = os.path.basename(current_path)
                         self.progress_update.emit(
-                            prog, total_files * 2,
+                            prog, self._progress_total,
                             UITexts.DUPLICATE_MSG_HASHING.format(filename=fname))
                         last_ui_update_time = current_time
 
@@ -1340,7 +1743,7 @@ class DuplicateDetector(QThread):
             # All files were cached in Phase 1 Part A, advance progress to 50%
             fname = os.path.basename(unique_paths_to_scan[-1]) if unique_paths_to_scan else "..."
             self.progress_update.emit(
-                total_files, total_files * 2,
+                total_files, self._progress_total,
                 UITexts.DUPLICATE_MSG_HASHING.format(filename=fname))
             last_ui_update_time = time_module.perf_counter()
 
@@ -1360,7 +1763,7 @@ class DuplicateDetector(QThread):
                         if total_pending > 0 else total_files
                     fname = os.path.basename(p.path1)
                     self.progress_update.emit(
-                        progress, total_files * 2,
+                        progress, self._progress_total,
                         UITexts.DUPLICATE_MSG_ANALYZING.format(filename=fname))
                     last_ui_update_time = current_time
 
@@ -1368,16 +1771,16 @@ class DuplicateDetector(QThread):
                 np1, np2 = (os.path.abspath(os.path.normpath(p.path1)),
                             os.path.abspath(os.path.normpath(p.path2)))
 
-                if np1 in scan_paths_set and np2 in scan_paths_set:
+                if np1 in self.scan_paths_set and np2 in self.scan_paths_set:
                     # If any of the files changed (is in dirty_paths), the pending
                     # result is invalid and must be ignored for recalculation.
                     if np1 in dirty_paths or np2 in dirty_paths:
                         continue
 
                     # Fast inode lookup from in-memory path_to_hash when possible
-                    h1_tuple = path_to_hash.get(np1)
+                    h1_tuple = self.path_to_hash.get(np1)
                     dev1, ino1 = (h1_tuple[1], h1_tuple[2]) if h1_tuple else self.duplicate_cache._get_inode_info(np1)
-                    h2_tuple = path_to_hash.get(np2)
+                    h2_tuple = self.path_to_hash.get(np2)
                     dev2, ino2 = (h2_tuple[1], h2_tuple[2]) if h2_tuple else self.duplicate_cache._get_inode_info(np2)
 
                     # Skip physical identities (links)
@@ -1390,34 +1793,44 @@ class DuplicateDetector(QThread):
                     # Check if already marked as exception
                     if ino1 and ino2:
                         id1, id2 = f"{dev1}-{ino1.hex()}", f"{dev2}-{ino2.hex()}"
-                        if frozenset((id1, id2)) in exceptions_set:
+                        if frozenset((id1, id2)) in self.exceptions_set:
                             # If already an exception, ensure it's not in pending
                             self.duplicate_cache.mark_as_pending(np1, np2, False)
                             continue
 
-                    if p.similarity is None or p.similarity >= self.threshold:
+                    if self._pending_passes_thresholds(p):
                         # Use normalized paths in the result
                         res = p._replace(path1=np1, path2=np2)
-                        found_duplicates.append(res)
-                        # Save inodes to avoid recalculating in Phase 2
                         if ino1 and ino2:
-                            unique_inode_pairs.add(frozenset((id1, id2)))
+                            pairwise_key = frozenset((id1, id2))
+                            if pairwise_key in merged_results:
+                                merged_results[pairwise_key] = \
+                                    merge_duplicate_results(
+                                        merged_results[pairwise_key], res)
+                            else:
+                                merged_results[pairwise_key] = res
 
         if not self._is_running:
             self.detection_finished.emit()
             return
 
         # Determine if we can rely on existing pending cache for this threshold
-        has_pending_cache = (not self.force_full and self.duplicate_cache.is_pending_scan_completed(self.threshold))
+        ai_cache_threshold = self.ai_threshold if self.ai_enabled else None
+        has_pending_cache = (not self.force_full and
+                             self.duplicate_cache.is_pending_scan_completed(
+                                 self.threshold, ai_cache_threshold))
 
         # --- KEY OPTIMIZATION: EARLY EXIT ---
-        # If there are no new or modified files AND we have a valid completed pending scan for this threshold,
-        # return results already present in the pending database.
+        # If there are no new or modified files AND we have a valid completed
+        # pending scan for this threshold, return the results already present
+        # in the pending database (they include any AI-detected pairs).
         if not dirty_paths and has_pending_cache:
             self.progress_update.emit(
-                total_files * 2, total_files * 2,
+                self._progress_total, self._progress_total,
                 UITexts.DUPLICATE_FINISHED)
-            self.duplicates_found.emit(found_duplicates)
+            self.duplicates_found.emit(
+                sorted(merged_results.values(), key=duplicate_sort_key,
+                       reverse=True))
             self.detection_finished.emit()
             return
 
@@ -1427,8 +1840,9 @@ class DuplicateDetector(QThread):
 
         total_queries = len(paths_to_query)
         results_to_save = []
+        results_to_save_ai = []
         start_p2_progress = total_files + int(0.2 * total_files)
-        span_p2_progress = max(1, (total_files * 2) - start_p2_progress)
+        span_p2_progress = max(1, self._progress_total - start_p2_progress)
 
         if total_queries > 0 and self._is_running:
             last_ui_update_time = 0  # Force immediate UI update on start of Phase 2
@@ -1446,11 +1860,11 @@ class DuplicateDetector(QThread):
                     progress = start_p2_progress + int(((i + 1) / total_queries) * span_p2_progress)
                     fname = os.path.basename(p1)
                     self.progress_update.emit(
-                        progress, total_files * 2,
+                        progress, self._progress_total,
                         UITexts.DUPLICATE_MSG_ANALYZING.format(filename=fname))
                     last_ui_update_time = current_time
 
-                h1_data = path_to_hash.get(p1)
+                h1_data = self.path_to_hash.get(p1)
                 if not h1_data:
                     continue
                 h1_str, dev1, ino1 = h1_data
@@ -1473,13 +1887,13 @@ class DuplicateDetector(QThread):
                             progress = start_p2_progress + int(((i + 1) / total_queries) * span_p2_progress)
                             fname = os.path.basename(p1)
                             self.progress_update.emit(
-                                progress, total_files * 2,
+                                progress, self._progress_total,
                                 UITexts.DUPLICATE_MSG_ANALYZING.format(filename=fname))
                             last_ui_update_time = current_time
 
                         # Check if p2 is within the current scan scope to avoid
                         # results outside the folders the user is currently browsing.
-                        if p2 not in scan_paths_set:
+                        if p2 not in self.scan_paths_set:
                             continue
 
                         # 1. Check if it's exactly the same path (already normalized)
@@ -1490,7 +1904,9 @@ class DuplicateDetector(QThread):
                         id1, id2 = f"{dev1}-{ino1.hex()}", f"{dev2}-{ino2.hex()}"
                         inode_pair = frozenset((id1, id2))
 
-                        if inode_pair in unique_inode_pairs or inode_pair in exceptions_set:
+                        if (inode_pair in merged_results
+                                or inode_pair in self.exceptions_set
+                                or inode_pair in physical_identity_pairs):
                             continue
 
                         # 3. Absolute physical identity (pointers to the same object)
@@ -1499,14 +1915,14 @@ class DuplicateDetector(QThread):
                                 # Silent identity (symlinks): mark and skip
                                 self.duplicate_cache.mark_as_exception(
                                     p1, p2, True, similarity=100)
-                                exceptions_set.add(inode_pair)
-                                unique_inode_pairs.add(inode_pair)
+                                self.exceptions_set.add(inode_pair)
+                                physical_identity_pairs.add(inode_pair)
                                 continue
                         except OSError:
                             pass
 
                         # 4. Avoid duplicating pairs already processed in this session
-                        if inode_pair in unique_inode_pairs:
+                        if inode_pair in physical_identity_pairs:
                             continue
 
                         # 5. Calculate actual similarity
@@ -1518,13 +1934,12 @@ class DuplicateDetector(QThread):
                         # to discard false positives that share the dHash but
                         # have clearly different color content.
                         if not self._passes_color_check(p1, p2):
-                            unique_inode_pairs.add(inode_pair)
+                            physical_identity_pairs.add(inode_pair)
                             continue
 
                         ts = int(time_module.time())
                         res = DuplicateResult(p1, p2, h1_str, False, sim, ts)
-                        found_duplicates.append(res)
-                        unique_inode_pairs.add(inode_pair)
+                        merged_results[inode_pair] = res
                         results_to_save.append((p1, p2, sim, ts))
 
                 # Periodically flush pending updates to DB
@@ -1536,19 +1951,32 @@ class DuplicateDetector(QThread):
         if results_to_save:
             self.duplicate_cache.mark_as_pending_batch(results_to_save)
 
+        # 4. Phase 3 (AI similarity): optional FAISS/MediaPipe all-pairs phase.
+        # Runs in this same thread; pairs found here are merged with the hash
+        # results so a pair detected by both pipelines is reported only once.
+        if self.ai_enabled and self._is_running:
+            self._run_ai_phase(merged_results, results_to_save_ai)
+
+        if results_to_save_ai:
+            self.duplicate_cache.mark_as_pending_batch(results_to_save_ai)
+
         # Emit 100% analyzing status update before finishing
         fname = os.path.basename(paths_to_query[-1]) if paths_to_query else "..."
         self.progress_update.emit(
-            total_files * 2, total_files * 2,
+            self._progress_total, self._progress_total,
             UITexts.DUPLICATE_MSG_ANALYZING.format(filename=fname))
 
         # Mark scan as completed for this threshold
-        self.duplicate_cache.set_pending_scan_metadata(self.threshold)
+        self.duplicate_cache.set_pending_scan_metadata(
+            self.threshold,
+            ai_threshold=self.ai_threshold if self.ai_enabled else None)
 
         self.progress_update.emit(
-            total_files * 2, total_files * 2,
+            self._progress_total, self._progress_total,
             UITexts.DUPLICATE_FINISHED)
-        self.duplicates_found.emit(found_duplicates)
+        self.duplicates_found.emit(
+            sorted(merged_results.values(), key=duplicate_sort_key,
+                   reverse=True))
         self.detection_finished.emit()
 
 

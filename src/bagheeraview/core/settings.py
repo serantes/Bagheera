@@ -39,6 +39,7 @@ from .constants import (
     THUMBNAILS_TAGS_LINES_DEFAULT, THUMBNAILS_TAGS_FONT_SIZE_DEFAULT,
     VIEWER_AUTO_RESIZE_WINDOW_DEFAULT, VIEWER_WHEEL_SPEED_DEFAULT,
     UITexts, save_app_config, HAVE_DUPLICATE_RESNET_LIBS, HAVE_IMAGEHASH,
+    HAVE_FAISS_LIBS,
     DUPLICATE_CACHE_PATH, DUPLICATE_PENDING_DB_NAME
 )
 
@@ -168,6 +169,8 @@ class SettingsDialog(QDialog):
         self._is_slider_down = False
         self._is_updating_threshold = False
         self._clear_search_cache_on_save = False
+        self._initial_duplicate_ai_enabled = None
+        self._initial_duplicate_ai_threshold = None
 
         layout = QVBoxLayout(self)
 
@@ -512,6 +515,44 @@ class SettingsDialog(QDialog):
 
         self.similar_threshold_slider.valueChanged.connect(
             lambda v: self.similar_threshold_value_label.setText(f"{v}%"))
+
+        # --- AI similarity (FAISS/MediaPipe) for duplicate detection ---
+        ai_enabled_layout = QHBoxLayout()
+        ai_enabled_label = QLabel(UITexts.SETTINGS_DUPLICATE_AI_ENABLED_LABEL)
+        self.duplicate_ai_enabled_check = QCheckBox()
+        self.duplicate_ai_enabled_check.setText("")
+        ai_enabled_layout.addWidget(ai_enabled_label)
+        ai_enabled_layout.addStretch()
+        ai_enabled_layout.addWidget(self.duplicate_ai_enabled_check)
+        duplicates_layout.addLayout(ai_enabled_layout)
+
+        ai_threshold_layout = QHBoxLayout()
+        ai_threshold_label = QLabel(UITexts.SETTINGS_DUPLICATE_AI_THRESHOLD_LABEL)
+        self.duplicate_ai_threshold_slider = QSlider(Qt.Horizontal)
+        self.duplicate_ai_threshold_slider.setRange(70, 100)
+        self.duplicate_ai_threshold_value_label = QLabel("0%")
+        self.duplicate_ai_threshold_value_label.setFixedWidth(40)
+        ai_threshold_layout.addWidget(ai_threshold_label)
+        ai_threshold_layout.addWidget(self.duplicate_ai_threshold_slider)
+        ai_threshold_layout.addWidget(self.duplicate_ai_threshold_value_label)
+        ai_threshold_label.setToolTip(
+            UITexts.SETTINGS_DUPLICATE_AI_THRESHOLD_TOOLTIP)
+        self.duplicate_ai_threshold_slider.setToolTip(
+            UITexts.SETTINGS_DUPLICATE_AI_THRESHOLD_TOOLTIP)
+        self.duplicate_ai_threshold_slider.valueChanged.connect(
+            lambda v: self.duplicate_ai_threshold_value_label.setText(f"{v}%"))
+        self.duplicate_ai_threshold_slider.valueChanged.connect(
+            self._on_duplicate_ai_threshold_changed)
+        self.duplicate_ai_enabled_check.toggled.connect(
+            self._on_duplicate_ai_enabled_changed)
+        duplicates_layout.addLayout(ai_threshold_layout)
+
+        if not HAVE_FAISS_LIBS:
+            ai_enabled_label.setToolTip(UITexts.SETTINGS_DUPLICATE_AI_MISSING_LIBS)
+            ai_threshold_label.setToolTip(
+                UITexts.SETTINGS_DUPLICATE_AI_MISSING_LIBS)
+            self.duplicate_ai_enabled_check.setEnabled(False)
+            self.duplicate_ai_threshold_slider.setEnabled(False)
 
         def create_path_list_ui(label_text, tooltip):
             container = QWidget()
@@ -1142,6 +1183,20 @@ class SettingsDialog(QDialog):
         self.similar_threshold_slider.setValue(similar_threshold)
         self.similar_threshold_value_label.setText(f"{similar_threshold}%")
 
+        duplicate_ai_enabled = APP_CONFIG.get(
+            "duplicate_ai_enabled",
+            SCANNER_SETTINGS_DEFAULTS["duplicate_ai_enabled"]) \
+            and HAVE_FAISS_LIBS
+        self.duplicate_ai_enabled_check.setChecked(duplicate_ai_enabled)
+        duplicate_ai_threshold = APP_CONFIG.get(
+            "duplicate_ai_threshold",
+            SCANNER_SETTINGS_DEFAULTS["duplicate_ai_threshold"])
+        self.duplicate_ai_threshold_slider.setValue(duplicate_ai_threshold)
+        self.duplicate_ai_threshold_value_label.setText(
+            f"{duplicate_ai_threshold}%")
+        self._initial_duplicate_ai_enabled = duplicate_ai_enabled
+        self._initial_duplicate_ai_threshold = duplicate_ai_threshold
+
         default_delete_to_trash = APP_CONFIG.get("default_delete_to_trash", True)
         self.default_delete_to_trash_checkbox.setChecked(default_delete_to_trash)
 
@@ -1537,6 +1592,10 @@ class SettingsDialog(QDialog):
         APP_CONFIG["duplicate_method"] = self.duplicate_method_combo.currentData()
         APP_CONFIG["duplicate_threshold"] = self.duplicate_threshold_slider.value()
         APP_CONFIG["similar_threshold"] = self.similar_threshold_slider.value()
+        APP_CONFIG["duplicate_ai_enabled"] = \
+            self.duplicate_ai_enabled_check.isChecked()
+        APP_CONFIG["duplicate_ai_threshold"] = \
+            self.duplicate_ai_threshold_slider.value()
         APP_CONFIG["default_delete_to_trash"] = \
             self.default_delete_to_trash_checkbox.isChecked()
         APP_CONFIG["duplicate_confirm_delete"] = \
@@ -1594,6 +1653,18 @@ class SettingsDialog(QDialog):
                 except Exception:
                     pass
         super().accept()
+
+    def _on_duplicate_ai_enabled_changed(self, checked):
+        """Remembers to clear the pending cache when AI detection toggles on."""
+        if self._initial_duplicate_ai_enabled is not None \
+                and checked != self._initial_duplicate_ai_enabled:
+            self._clear_search_cache_on_save = True
+
+    def _on_duplicate_ai_threshold_changed(self, value):
+        """Remembers to clear pending cache when the AI threshold changes."""
+        if self._initial_duplicate_ai_threshold is not None \
+                and value != self._initial_duplicate_ai_threshold:
+            self._clear_search_cache_on_save = True
 
     def _on_duplicate_threshold_pressed(self):
         """Track slider mouse press."""

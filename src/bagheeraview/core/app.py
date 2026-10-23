@@ -59,7 +59,7 @@ from .constants import (
     SCANNER_SETTINGS_DEFAULTS, SUPPORTED_LANGUAGES, VIEWER_ACTIONS,
     TAGS_MENU_MAX_ITEMS_DEFAULT, THUMBNAILS_BG_COLOR_DEFAULT,
     THUMBNAILS_DEFAULT_SIZE, THUMBNAILS_FILENAME_COLOR_DEFAULT,
-    THUMBNAILS_TOOLTIP_BG_COLOR_DEFAULT, HAVE_IMAGEHASH,
+    THUMBNAILS_TOOLTIP_BG_COLOR_DEFAULT, HAVE_IMAGEHASH, HAVE_FAISS_LIBS,
     FACES_MENU_MAX_ITEMS_DEFAULT, THUMBNAILS_TOOLTIP_FG_COLOR_DEFAULT,
     THUMBNAILS_FILENAME_LINES_DEFAULT, THUMBNAILS_FILENAME_FONT_SIZE_DEFAULT,
     THUMBNAILS_TAGS_LINES_DEFAULT, THUMBNAILS_TAGS_COLOR_DEFAULT,
@@ -6262,7 +6262,10 @@ class MainWindow(QMainWindow):
 
         self.duplicate_detector = DuplicateDetector(
             paths_to_scan, self.duplicate_cache,
-            self.thread_pool_manager, method, threshold, force_full=force_full)
+            self.thread_pool_manager, method, threshold, force_full=force_full,
+            ai_enabled=(bool(APP_CONFIG.get("duplicate_ai_enabled", True))
+                        and HAVE_FAISS_LIBS),
+            ai_threshold=APP_CONFIG.get("duplicate_ai_threshold", 90))
 
         self.duplicate_detector.progress_update.connect(
             self.on_duplicate_detection_progress)
@@ -6288,9 +6291,12 @@ class MainWindow(QMainWindow):
         if percent < 50:
             # Phase 1: Hashing images (Blue)
             self.progress_bar.setCustomColor(QColor("#3498db"))
-        else:
+        elif percent < 90:
             # Phase 2: Mathematical comparison (Orange/Amber)
             self.progress_bar.setCustomColor(QColor("#f39c12"))
+        else:
+            # Phase 3: AI similarity / embeddings (Purple)
+            self.progress_bar.setCustomColor(QColor("#9b59b6"))
 
         self.progress_bar.setValue(percent)
         self.status_counter_lbl.setText(f"[{current}/{total}]")
