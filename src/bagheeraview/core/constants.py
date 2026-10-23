@@ -327,7 +327,7 @@ HAVE_FAISS_LIBS = all(
 
 # Default AI similarity threshold and number of nearest neighbours used when
 # comparing all image pairs during duplicate detection.
-DUPLICATE_AI_THRESHOLD_DEFAULT = 90
+DUPLICATE_AI_THRESHOLD_DEFAULT = 80
 DUPLICATE_AI_TOPK_DEFAULT = 10
 
 MAX_DHASH_DISTANCE = 64  # For 64-bit dHash

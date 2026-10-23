@@ -516,6 +516,8 @@ class SettingsDialog(QDialog):
         self.similar_threshold_slider.valueChanged.connect(
             lambda v: self.similar_threshold_value_label.setText(f"{v}%"))
 
+        duplicates_layout.addLayout(threshold_layout)
+
         # --- AI similarity (FAISS/MediaPipe) for duplicate detection ---
         ai_enabled_layout = QHBoxLayout()
         ai_enabled_label = QLabel(UITexts.SETTINGS_DUPLICATE_AI_ENABLED_LABEL)
@@ -630,8 +632,6 @@ class SettingsDialog(QDialog):
             UITexts.SETTINGS_DEFAULT_DELETE_TO_TRASH_TOOLTIP)
         duplicates_layout.addWidget(self.default_delete_to_trash_checkbox)
 
-        duplicates_layout.addLayout(threshold_layout)
-
         self.duplicate_confirm_delete_checkbox = QCheckBox(
             UITexts.SETTINGS_DUPLICATE_CONFIRM_DELETE_LABEL)
         self.duplicate_confirm_delete_checkbox.setToolTip(
@@ -641,8 +641,6 @@ class SettingsDialog(QDialog):
         duplicates_layout.addLayout(threshold_similar_layout)
 
         duplicates_layout.addStretch()
-
-        # --- Faces & People Tab ---
 
         # --- Quick Tags Tab ---
         mru_tags_layout = QHBoxLayout()

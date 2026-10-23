@@ -6265,7 +6265,7 @@ class MainWindow(QMainWindow):
             self.thread_pool_manager, method, threshold, force_full=force_full,
             ai_enabled=(bool(APP_CONFIG.get("duplicate_ai_enabled", True))
                         and HAVE_FAISS_LIBS),
-            ai_threshold=APP_CONFIG.get("duplicate_ai_threshold", 90))
+            ai_threshold=APP_CONFIG.get("duplicate_ai_threshold", 80))
 
         self.duplicate_detector.progress_update.connect(
             self.on_duplicate_detection_progress)
