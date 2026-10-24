@@ -77,7 +77,8 @@ def _refresh_embeddings(conn, disk_images, progress_callback=None,
     """
     Updates the embedding cache with the current state of the disk images.
 
-    Entries whose files no longer exist on disk are pruned and entries whose
+    Entries whose files no longer exist on disk are pruned (entries for
+    existing files outside ``disk_images`` are preserved) and entries whose
     modification time changed are regenerated. When ``existing_embeddings``
     is provided, its contents are reused and the disk is only read for the
     paths not included in it; this avoids re-running the embedder when a
@@ -106,11 +107,13 @@ def _refresh_embeddings(conn, disk_images, progress_callback=None,
     db_mapping = dict(cursor.fetchall())
     disk_images_set = set(disk_images)
 
-    # Prune cache entries whose file no longer belongs to the search scope.
-    # The caller passes the full set of paths it is interested in, so any DB
-    # entry outside that set is stale for this operation.
+    # Prune only the cache entries whose file no longer exists on disk.
+    # Entries outside the current search scope are valid cache data and must
+    # be kept, otherwise they would have to be recomputed whenever the set of
+    # displayed images changes.
     stale_paths = [path for path in db_mapping
-                   if path not in disk_images_set]
+                   if path not in disk_images_set
+                   and not os.path.exists(path)]
     if stale_paths:
         cursor.executemany("DELETE FROM embeddings WHERE path = ?",
                            [(p,) for p in stale_paths])
@@ -553,7 +556,7 @@ class FAISSSimilarSearchWorker(QThread):
                 disk_images.append(self.target_path)
                 disk_images_set.add(self.target_path)
 
-            # 2-5. Refresh the embedding cache (prunes stale entries and
+            # 2-5. Refresh the embedding cache (prunes deleted files and
             # generates vectors for new/modified images).
             _refresh_embeddings(
                 conn, disk_images,
@@ -565,7 +568,12 @@ class FAISSSimilarSearchWorker(QThread):
             # search is restricted to the displayed thumbnails, only the
             # entries belonging to that scope are taken into the index.
             cursor.execute("SELECT path, embedding FROM embeddings")
-            all_db_records = cursor.fetchall()
+            # The cache keeps entries outside the current scope, so restrict
+            # the records to the scanned images.
+            all_db_records = [
+                record for record in cursor.fetchall()
+                if record[0] in disk_images_set
+            ]
             if self.visible_paths_set:
                 all_db_records = [
                     record for record in all_db_records
