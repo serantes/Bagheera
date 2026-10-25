@@ -641,9 +641,9 @@ _UI_TEXTS = {
         "THUMBNAIL_NO_TAGS": "No tags",
         "MENU_ABOUT": "About",
         "MENU_ABOUT_TITLE": "About {}",
-        "MENU_ABOUT_TEXT": "<b>{0}</b> v{1}<br><br>A simple image viewer and manager "
-        "for KDE with Baloo support.<br><br>Created by {2} with the help of AI, but "
-        "mostly thanks to the job of the good people at KDE and Qt.",
+        "MENU_ABOUT_TEXT": "<b>{0}</b> v{1}<br><br>A not-so-simple image viewer and "
+        "manager for KDE with Baloo support.<br><br>Vibe coded by {2} (the AI did the "
+        "typing), but mostly thanks to the work of the good people at KDE and Qt.",
         "MENU_CACHE": "Cache",
         "MENU_CACHE_MAINTENANCE": "Cache Maintenance",
         "MENU_CLEAR_CACHE": "Clear cache ({} items, {:.1f} MB, {:.1f} MB on disk)",
@@ -1311,9 +1311,10 @@ _UI_TEXTS = {
         "THUMBNAIL_NO_TAGS": "Sin etiquetas",
         "MENU_ABOUT": "Acerca de",
         "MENU_ABOUT_TITLE": "Acerca de {}",
-        "MENU_ABOUT_TEXT": "<b>{0}</b> v{1}<br><br>Un visor y gestor de imágenes "
-        "simple para KDE con soporte para Baloo.<br><br>Creado por {2} con la ayuda de "
-        "la IA, pero mayormente gracias al trabajo de la buena gente de KDE y Qt.",
+        "MENU_ABOUT_TEXT": "<b>{0}</b> v{1}<br><br>Un visor y gestor de imágenes no "
+        "demasiado simple para KDE con soporte para Baloo.<br><br>Hecho con vibe coding por "
+        "{2} (la IA se encargó de teclear), pero sobre todo gracias al trabajo de la "
+        "buena gente de KDE y Qt.",
         "MENU_CACHE": "Caché",
         "MENU_CACHE_MAINTENANCE": "Mantenimiento de caché",
         "MENU_CLEAR_CACHE": "Limpiar caché ({} ítems, {:.1f} MB, {:.1f} MB en disco)",
@@ -1989,9 +1990,10 @@ _UI_TEXTS = {
         "THUMBNAIL_NO_TAGS": "Sen etiquetas",
         "MENU_ABOUT": "Acerca de",
         "MENU_ABOUT_TITLE": "Acerca de {}",
-        "MENU_ABOUT_TEXT": "<b>{0}</b> v{1}<br><br>Un visor e xestor de imaxes "
-        "sinxelo para KDE con soporte para Baloo.<br><br>Creado por {2} coa axuda da "
-        " IA, pero maiormente gracias ó traballo da boa xente de KDE e Qt.",
+        "MENU_ABOUT_TEXT": "<b>{0}</b> v{1}<br><br>Un visor e xestor de imaxes non "
+        "demasiado sinxelo para KDE con soporte para Baloo.<br><br>Feito con vibe coding "
+        "por Ignacio Serantes (a IA encargouse de teclear), pero sobre todo grazas ao "
+        "traballo da boa xente de KDE e Qt.",
         "MENU_CACHE": "Caché",
         "MENU_CACHE_MAINTENANCE": "Mantemento de caché",
         "MENU_CLEAR_CACHE": "Limpar caché ({} elementos, {:.1f} MB, {:.1f} MB en "
