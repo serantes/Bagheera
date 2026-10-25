@@ -164,3 +164,199 @@ def test_zoom_beyond_widget_shows_expected_source_area():
     assert out.pixelColor(50, 150).name() == "#000000"  # left of marker edge
     assert out.pixelColor(200, 150).name() == "#ffffff"  # exact image center
     assert out.pixelColor(350, 150).name() == "#000000"  # right of marker
+
+
+def _quadrants(w=120, h=60):
+    """
+    Builds a rectangular image with a distinct color in each quadrant.
+
+    The four colors make any 90-degree rotation or axis flip detectable.
+
+    Args:
+        w (int): Width of the image.
+        h (int): Height of the image.
+
+    Returns:
+        QPixmap: The four-quadrant test image.
+    """
+    from PySide6.QtGui import QColor
+
+    img = QImage(w, h, QImage.Format_RGB32)
+    img.fill(QColor("#000000"))
+    for y in range(h):
+        for x in range(w):
+            left = x * 2 < w
+            top = y * 2 < h
+            color = {
+                (True, True): "#ff0000",      # top-left red
+                (False, True): "#00ff00",     # top-right green
+                (True, False): "#0000ff",     # bottom-left blue
+                (False, False): "#ffff00",    # bottom-right yellow
+            }[(left, top)]
+            img.setPixelColor(x, y, QColor(color))
+    return QPixmap.fromImage(img)
+
+
+def _expect_corners(c, top_left, top_right):
+    """
+    Asserts the dominant colors of the top row of the canvas top layer.
+
+    The corner pixels of a 120x60 image sit exactly on the rotated quadrant
+    seams, so a pure seam sample can mix colours (Qt's smooth rotation).
+    Instead the dominant hue is computed over small patches that live fully
+    inside the left and right quadrants.
+
+    Args:
+        c (OverlayCanvas): The canvas whose top layer is sampled.
+        top_left (str): Expected dominant colour of the left half of the
+            top row.
+        top_right (str): Expected dominant colour of the right half.
+    """
+    img = c._top.toImage()
+    height = img.height()
+    left_col = int(img.width() * 0.25)
+    right_col = int(img.width() * 0.75)
+    for col in (left_col, right_col):
+        counts = {}
+        for dy in range(4):
+            for dx in range(4):
+                name = img.pixelColor(col + dx - 2,
+                                      round(height * 0.25) + dy - 2).name()
+                counts[name] = counts.get(name, 0) + 1
+        dominant = max(counts, key=counts.get)
+        expected = top_left if col == left_col else top_right
+        assert dominant == expected, 'expected {} got {} at x={}'.format(
+            expected, dominant, col)
+
+
+def test_rotate_top_left_swaps_dimensions_and_pixels(canvas):
+    """Rotate Left swaps a rectangular layer's dimensions and orientation."""
+    c = OverlayCanvas()
+    c.set_pixmaps(_quadrants(w=120, h=60), _solid("#ff0000"))
+    before = (c._top.width(), c._top.height())
+    c.rotate_top(clockwise=False)
+    assert (c._top.width(), c._top.height()) == (before[1], before[0])
+    c.rotate_top(clockwise=False)
+    assert (c._top.width(), c._top.height()) == (before[0], before[1])
+    c.rotate_top(clockwise=False)
+    assert (c._top.width(), c._top.height()) == (before[1], before[0])
+    c.rotate_top(clockwise=False)
+    assert (c._top.width(), c._top.height()) == (before[0], before[1])
+
+
+def test_rotate_top_right_swaps_dimensions_and_pixels(canvas):
+    """Rotate Right swaps a rectangular layer's dimensions and orientation."""
+    c = OverlayCanvas()
+    c.set_pixmaps(_quadrants(w=120, h=60), _solid("#ff0000"))
+    c.rotate_top()
+    assert (c._top.width(), c._top.height()) == (60, 120)
+    # After a clockwise/right rotation the bottom-left quadrant becomes the
+    # top-left one (blue originally) and the top-left one becomes the
+    # top-right one (red originally).
+    _expect_corners(c, "#0000ff", "#ff0000")
+    assert c._bottom.width() == 100  # bottom layer stays untouched
+    assert c._bottom.height() == 100
+
+
+def test_flip_top_keeps_size_and_swaps_pixels(canvas):
+    """Flip preserves the dimensions while mirroring the source pixels."""
+    c = OverlayCanvas()
+    c.set_pixmaps(_quadrants(w=120, h=60), _solid("#ff0000"))
+    c.flip_top(horizontal=True)
+    assert (c._top.width(), c._top.height()) == (120, 60)
+    # Horizontal flip mirrors the columns: the green block becomes the
+    # top-left quadrant and the red block the top-right one.
+    _expect_corners(c, "#00ff00", "#ff0000")
+    c.flip_top(horizontal=False)
+    # Vertical flip swaps the rows: the whole bottom row moves to the top,
+    # so the top-left becomes the original yellow block and the top-right
+    # the original blue block.
+    _expect_corners(c, "#ffff00", "#0000ff")
+    assert c._bottom.toImage().pixelColor(0, 0).name() == "#ff0000"
+
+
+def test_rotate_top_resets_its_view_but_not_bottom(canvas):
+    """Transformations reset only the affected top-layer view state."""
+    c = OverlayCanvas()
+    c.set_pixmaps(_quadrants(), _solid("#ff0000"))
+    c._top_state.zoom = 3.0
+    c._top_state.offset = QPointF(10, 20)
+    c._bottom_state.zoom = 2.0
+    c.rotate_top()
+    assert c._top_state.zoom == 1.0
+    assert c._top_state.offset.isNull()
+    assert c._bottom_state.zoom == 2.0
+
+
+def test_transformed_top_survives_swap(canvas):
+    """A rotated layer carries its rotation when swapped to the bottom."""
+    c = OverlayCanvas()
+    c.set_pixmaps(_quadrants(), _solid("#ff0000"))
+    c.rotate_top()
+    assert (c._top.width(), c._top.height()) == (60, 120)
+    c.swap_layers()
+    assert (c._top.width(), c._top.height()) == (100, 100)
+    assert (c._bottom.width(), c._bottom.height()) == (60, 120)
+
+
+def test_rotate_top_ignored_when_layer_null():
+    """Transformations on an empty canvas must be a safe no-op."""
+    c = OverlayCanvas()
+    c.rotate_top()
+    c.flip_top()
+    assert c._top.isNull() and c._bottom.isNull()
+
+
+def test_context_menu_build_wires_rotate_flip_and_fit(canvas):
+    """The context menu wires the Rotate/Flip submenus and Fit 1:1."""
+    from bagheeraview.core import constants
+
+    canvas.set_pixmaps(_quadrants(), _solid("#ff0000"))
+
+    menu = canvas._build_context_menu()
+    try:
+        actions = [a for a in menu.actions() if not a.isSeparator()]
+        texts = [a.text() for a in actions]
+        assert texts == [
+            constants.UITexts.VIEWER_MENU_ROTATE,
+            constants.UITexts.VIEWER_MENU_FLIP,
+            constants.UITexts.DUPLICATE_OVERLAY_FIT_1_1,
+        ]
+
+        rotate_menu = actions[0].menu()
+        flip_menu = actions[1].menu()
+        rotate_left, rotate_right = rotate_menu.actions()
+        flip_h, flip_v = flip_menu.actions()
+        fit_action = actions[2]
+
+        assert rotate_left.text() == constants.UITexts.VIEWER_MENU_ROTATE_LEFT
+        assert rotate_right.text() == constants.UITexts.VIEWER_MENU_ROTATE_RIGHT
+        assert flip_h.text() == constants.UITexts.VIEWER_MENU_FLIP_H
+        assert flip_v.text() == constants.UITexts.VIEWER_MENU_FLIP_V
+        assert fit_action.text() == constants.UITexts.DUPLICATE_OVERLAY_FIT_1_1
+
+        # The actions are connected to the real canvas transformations.
+        rotate_left.trigger()
+        assert (canvas._top.width(), canvas._top.height()) == (60, 120)
+        rotate_left.trigger()
+        assert (canvas._top.width(), canvas._top.height()) == (120, 60)
+        # After two left rotations the top row is yellow|blue and the bottom
+        # row green|red (a half-turn of the original).
+        _expect_corners(canvas, "#ffff00", "#0000ff")
+        flip_h.trigger()
+        # Horizontal mirror swaps the columns: blue|yellow on the top row and
+        # red|green on the bottom row.
+        _expect_corners(canvas, "#0000ff", "#ffff00")
+        flip_v.trigger()
+        # Vertical mirror swaps the rows: red|green return to the top row.
+        _expect_corners(canvas, "#ff0000", "#00ff00")
+
+        # Fit 1:1 action must switch the zoom exactly like the double click.
+        before = canvas._bottom_state.zoom
+        fit_action.trigger()
+        assert abs(canvas._fit_scale(canvas._bottom) *
+                   canvas._bottom_state.zoom - 1.0) < 1e-6
+        fit_action.trigger()
+        assert canvas._bottom_state.zoom == before
+    finally:
+        menu.deleteLater()

@@ -17,9 +17,9 @@ Classes:
 """
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
-    QColor, QPainter, QPen, QPixmap
+    QColor, QIcon, QPainter, QPen, QPixmap, QTransform
 )
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QMenu, QWidget
 
 from .constants import UITexts
 
@@ -254,6 +254,43 @@ class OverlayCanvas(QWidget):
         self.transform_changed.emit()
         self.update()
 
+    def rotate_top(self, clockwise=True):
+        """
+        Rotates the top layer by 90 degrees and resets its view.
+
+        The transformed pixmap replaces the current top layer so subsequent
+        operations (difference, split, opacity) compare against the rotated
+        image. The bottom layer is never modified.
+
+        Args:
+            clockwise (bool): True for a clockwise rotation, False to rotate
+                the top layer counter-clockwise.
+        """
+        self._transform_top(
+            QTransform().rotate(90 if clockwise else -90),
+            Qt.FastTransformation)
+
+    def flip_top(self, horizontal=True):
+        """
+        Flips the top layer along one axis and resets its view.
+
+        Uses :meth:`QImage.flipped` for pixel-exact mirrors, as scale-based
+        matrix transforms of already rotated images are unreliable.
+
+        Args:
+            horizontal (bool): True flips left-right, False flips top-bottom.
+        """
+        if self._top.isNull():
+            return
+        axis = Qt.Orientation.Horizontal if horizontal \
+            else Qt.Orientation.Vertical
+        flipped = self._top.toImage().flipped(axis)
+        self._top = QPixmap.fromImage(flipped)
+        self._top_small = self._make_small(self._top)
+        self._top_state.reset()
+        self.transform_changed.emit()
+        self.update()
+
     # --- Read-only state helpers -----------------------------------------
 
     @property
@@ -423,6 +460,30 @@ class OverlayCanvas(QWidget):
         return pixmap.scaled(
             _MAX_CACHE_SIZE, _MAX_CACHE_SIZE,
             Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+    def _transform_top(self, transform, hint=Qt.SmoothTransformation):
+        """
+        Replaces the top pixmap with a transformed copy and resets its view.
+
+        The cached reduced-size copy is regenerated and the layer state is
+        reset so the new dimensions fit the widget again. The bottom layer
+        and its view are left untouched.
+
+        Args:
+            transform (QTransform): The geometric transform to apply to the
+                top layer.
+            hint (Qt.TransformationMode): Interpolation hint. Exact flips
+                and right-angle rotations use FastTransformation to avoid
+                the smooth half-pixel edge blending.
+        """
+        if self._top.isNull():
+            return
+        transformed = self._top.toImage().transformed(transform, hint)
+        self._top = QPixmap.fromImage(transformed)
+        self._top_small = self._make_small(self._top)
+        self._top_state.reset()
+        self.transform_changed.emit()
+        self.update()
 
     def paintEvent(self, event):
         """
@@ -612,6 +673,58 @@ class OverlayCanvas(QWidget):
             event.accept()
         else:
             super().mouseDoubleClickEvent(event)
+
+    def contextMenuEvent(self, event):
+        """
+        Opens the context menu with the transform actions for the top layer.
+
+        The menu offers Rotate (Left/Right), Flip (Horizontal/Vertical) and
+        Fit 1:1. Rotate and Flip accumulate on the top layer giving more
+        comparison alignments; Fit 1:1 reuses the double-click toggle.
+
+        Args:
+            event (QContextMenuEvent): The context menu event.
+        """
+        if self._bottom.isNull():
+            event.ignore()
+            return
+
+        menu = self._build_context_menu()
+        menu.exec(event.globalPos())
+
+    def _build_context_menu(self):
+        """
+        Creates the context menu populating it with the transform actions.
+
+        Returns:
+            QMenu: The populated context menu, wired to the transformation
+            methods of this canvas. The caller is responsible for executing
+            and eventually deleting the menu.
+        """
+        menu = QMenu(self)
+        rotate_menu = menu.addMenu(QIcon.fromTheme("transform-rotate"),
+                                   UITexts.VIEWER_MENU_ROTATE)
+        rotate_left = rotate_menu.addAction(QIcon.fromTheme("object-rotate-left"),
+                                            UITexts.VIEWER_MENU_ROTATE_LEFT)
+        rotate_right = rotate_menu.addAction(QIcon.fromTheme("object-rotate-right"),
+                                             UITexts.VIEWER_MENU_ROTATE_RIGHT)
+        rotate_left.triggered.connect(
+            lambda: self.rotate_top(clockwise=False))
+        rotate_right.triggered.connect(
+            lambda: self.rotate_top(clockwise=True))
+
+        flip_menu = menu.addMenu(QIcon.fromTheme("transform-flip"), UITexts.VIEWER_MENU_FLIP)
+        flip_h = flip_menu.addAction(QIcon.fromTheme("object-flip-horizontal"), UITexts.VIEWER_MENU_FLIP_H)
+        flip_v = flip_menu.addAction(QIcon.fromTheme("object-flip-vertical"), UITexts.VIEWER_MENU_FLIP_V)
+        flip_h.triggered.connect(
+            lambda: self.flip_top(horizontal=True))
+        flip_v.triggered.connect(
+            lambda: self.flip_top(horizontal=False))
+
+        menu.addSeparator()
+        fit_action = menu.addAction(UITexts.DUPLICATE_OVERLAY_FIT_1_1)
+        fit_action.triggered.connect(self.toggle_fit_actual)
+        return menu
 
     def focusNextPrevChild(self, next):
         """
