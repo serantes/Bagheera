@@ -1287,17 +1287,18 @@ class DuplicateManagerDialog(QDialog):
 
         # Similar images (AI only) may look alike but differ in content, so
         # the "overwrite" action is only offered for duplicates.
-        if getattr(self, 'btn_overwrite', None) is not None:
-            method = getattr(dup, 'method', DUPLICATE_METHOD_HASH)
-            if method == DUPLICATE_METHOD_AI:
-                self.btn_overwrite.setEnabled(False)
-                self.btn_overwrite.setToolTip(
-                    UITexts.DUPLICATE_AI_OVERWRITE_DISABLED_TOOLTIP)
-            else:
-                self.btn_overwrite.setEnabled(True)
-                self._set_button_shortcut_tooltip(
-                    self.btn_overwrite, UITexts.DUPLICATE_OVERWRITE_TOOLTIP,
-                    "dup_overwrite")
+        # NOTE: testing not disable option on similar images.
+        # if getattr(self, 'btn_overwrite', None) is not None:
+        #     method = getattr(dup, 'method', DUPLICATE_METHOD_HASH)
+        #     if method == DUPLICATE_METHOD_AI:
+        #         self.btn_overwrite.setEnabled(False)
+        #         self.btn_overwrite.setToolTip(
+        #             UITexts.DUPLICATE_AI_OVERWRITE_DISABLED_TOOLTIP)
+        #     else:
+        #         self.btn_overwrite.setEnabled(True)
+        #         self._set_button_shortcut_tooltip(
+        #             self.btn_overwrite, UITexts.DUPLICATE_OVERWRITE_TOOLTIP,
+        #             "dup_overwrite")
 
         # Reset all overlay controls before loading the new pair.
         self._reset_overlay_controls()
