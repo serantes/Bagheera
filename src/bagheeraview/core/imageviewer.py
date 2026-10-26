@@ -211,7 +211,7 @@ class FastTagManager:
             menu.addSeparator()
 
         menu.addAction(UITexts.QUICK_TAG_ADD_TAG).triggered.connect(
-            lambda: self.viewer.show_quick_tag_add_tag_dialog() if self.viewer else None)
+            lambda: self.show_quick_tag_add_tag_dialog() if self else None)
 
         menu.addSeparator()
 
@@ -253,6 +253,25 @@ class FastTagManager:
             if is_checked:
                 self.main_win.add_to_mru_tags(tag_name)
             self.main_win.update_metadata_for_path(current_path)
+
+    def show_quick_tag_add_tag_dialog(self):
+        """
+        Opens a dialog to quickly add a new tag to the current image.
+
+        This method is triggered from the context menu and allows users
+        to add a tag without opening the full tag manager.
+        """
+        if not self.viewer.controller:
+            return
+
+        dialog = TagSelectorDialog()
+        if dialog.exec() == QDialog.Accepted:
+            new_tag = dialog.get_selected_tag()
+            if new_tag:
+                self.viewer.controller.toggle_tag(new_tag, True)
+                self.viewer.main_win.add_to_mru_tags(new_tag)
+                if self.viewer.canvas:
+                    self.viewer.canvas.update()
 
 
 class FastTagMenu(QMenu):
@@ -3704,22 +3723,3 @@ class ImageViewer(QWidget):
         during the inhibit call.
         """
         PowerManager.uninhibit()
-
-    def show_quick_tag_add_tag_dialog(self):
-        """
-        Opens a dialog to quickly add a new tag to the current image.
-
-        This method is triggered from the context menu and allows users
-        to add a tag without opening the full tag manager.
-        """
-        if not self.controller:
-            return
-
-        dialog = TagSelectorDialog()
-        if dialog.exec() == QDialog.Accepted:
-            new_tag = dialog.get_selected_tag()
-            if new_tag:
-                self.controller.toggle_tag(new_tag, True)
-                self.main_win.add_to_mru_tags(new_tag)
-                if self.canvas:
-                    self.canvas.update()
