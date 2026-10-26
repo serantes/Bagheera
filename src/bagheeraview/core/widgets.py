@@ -30,7 +30,7 @@ from PySide6.QtGui import (
     QPalette, QAction, QKeySequence
 )
 from PySide6.QtCore import (
-    Signal, QSortFilterProxyModel, Slot, QStringListModel, Qt, QTimer
+    Signal, QSortFilterProxyModel, Slot, QStringListModel, Qt, QTimer, QModelIndex
 )
 
 from .md_editor import MarkdownEditorWidget
@@ -2189,3 +2189,202 @@ class CommentWidget(QWidget):
             QMessageBox.critical(self, UITexts.ERROR, str(e))
         finally:
             QApplication.restoreOverrideCursor()
+
+
+class TagFilterProxyModel(QSortFilterProxyModel):
+    """Proxy model for hierarchical tag filtering supporting slash paths."""
+
+    def filterAcceptsRow(self, source_row: int, source_parent: QModelIndex) -> bool:
+        """Determine if a row is accepted by the filter criteria."""
+        model = self.sourceModel()
+        index = model.index(source_row, 0, source_parent)
+        if not index.isValid():
+            return False
+
+        path = index.data(Qt.UserRole) or ""
+        filter_str = self.filterRegularExpression().pattern().strip().lower()
+
+        if not filter_str:
+            return True
+
+        # Check if current path matches or contains the filter string
+        if filter_str in path.lower():
+            return True
+
+        # Recursively check descendants so parent nodes remain visible if a child matches
+        for i in range(model.rowCount(index)):
+            if self.filterAcceptsRow(i, index):
+                return True
+
+        return False
+
+
+class TagSelectorWidget(QWidget):
+    """Widget containing a filter/input textbox, a tag treeview, and action buttons."""
+
+    def __init__(self, parent: QWidget = None) -> None:
+        """Initialize the tag selector widget by loading tags from the Baloo database."""
+        super().__init__(parent)
+        self.available_tags = []
+        self._load_all = False
+        self._tag_paths = set()
+
+        self.load_available_tags()
+        self._init_ui()
+        self._populate_model()
+
+    def load_available_tags(self) -> None:
+        """Load all known tags from the Baloo index database."""
+        db_path = os.path.expanduser("~/.local/share/baloo/index")
+        if not os.path.exists(db_path) or not os.access(db_path, os.R_OK):
+            self.available_tags = []
+            self._load_all = True
+            return
+
+        tags = []
+        success = False
+        try:
+            # Auto-detect if it's a directory or a file to set subdir correctly
+            is_dir = os.path.isdir(db_path)
+            # Connect to the LMDB environment for Baloo
+            with lmdb.open(db_path, subdir=is_dir, readonly=True,
+                           lock=False, max_dbs=20) as env:
+                postingdb = env.open_db(b'postingdb')
+                with env.begin() as txn:
+                    cursor = txn.cursor(postingdb)
+                    prefix = b'TAG-'
+                    # Iterate over keys starting with the tag prefix
+                    if cursor.set_range(prefix):
+                        for key, _ in cursor:
+                            if not key.startswith(prefix):
+                                break
+                            tags.append(key[4:].decode('utf-8'))
+                success = True
+        except Exception as e:
+            logger.debug(f"Failed to load Baloo tags from {db_path}: {e}")
+
+        if success:
+            # Use set comparison to reliably detect any content change in tags
+            if set(tags) != set(self.available_tags):
+                self._load_all = True
+            self.available_tags = tags
+
+    def _init_ui(self) -> None:
+        """Initialize user interface components and layouts."""
+        main_layout = QVBoxLayout(self)
+
+        # Textbox for filtering and input at the top
+        self.line_edit = QLineEdit(self)
+        self.line_edit.setPlaceholderText(
+            "Filter or enter tag (e.g., Parent/Child)..."
+        )
+        self.line_edit.textChanged.connect(self._on_text_changed)
+        main_layout.addWidget(self.line_edit)
+
+        # TreeView for displaying hierarchical tags
+        self.tree_view = QTreeView(self)
+        self.tree_view.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.tree_view.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.tree_view.setHeaderHidden(True)
+
+        self.source_model = QStandardItemModel(self)
+        self.proxy_model = TagFilterProxyModel(self)
+        self.proxy_model.setSourceModel(self.source_model)
+        self.proxy_model.setRecursiveFilteringEnabled(True)
+
+        self.tree_view.setModel(self.proxy_model)
+        self.tree_view.clicked.connect(self._on_tree_item_clicked)
+        main_layout.addWidget(self.tree_view)
+
+        # Bottom buttons layout
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+
+        self.action_button = QPushButton("Create", self)
+        button_layout.addWidget(self.action_button)
+
+        self.cancel_button = QPushButton("Cancel", self)
+        button_layout.addWidget(self.cancel_button)
+
+        main_layout.addLayout(button_layout)
+
+    def _populate_model(self) -> None:
+        """Parse available tags and populate the standard item model."""
+        self.source_model.clear()
+        self._tag_paths.clear()
+
+        root = self.source_model.invisibleRootItem()
+        item_dict = {}
+
+        for tag_line in self.available_tags:
+            tag_line = tag_line.strip()
+            if not tag_line:
+                continue
+
+            self._tag_paths.add(tag_line)
+            parts = [p.strip() for p in tag_line.split("/") if p.strip()]
+            current_path = ""
+            parent = root
+
+            for part in parts:
+                current_path = f"{current_path}/{part}" if current_path else part
+                if current_path not in item_dict:
+                    item = QStandardItem(part)
+                    item.setData(current_path, Qt.UserRole)
+                    parent.appendRow([item])
+                    item_dict[current_path] = item
+                parent = item_dict[current_path]
+
+        self.tree_view.expandAll()
+        self._update_action_button()
+
+    def _on_text_changed(self, text: str) -> None:
+        """Handle text changes in the filter/input textbox."""
+        self.proxy_model.setFilterRegularExpression(text)
+        self.tree_view.expandAll()
+        self._update_action_button()
+
+    def _on_tree_item_clicked(self, proxy_index: QModelIndex) -> None:
+        """Handle tree item selection to populate the textbox."""
+        source_index = self.proxy_model.mapToSource(proxy_index)
+        path = source_index.data(Qt.UserRole)
+        if path:
+            self.line_edit.setText(path)
+
+    def _update_action_button(self) -> None:
+        """Update action button text based on whether input matches an existing tag."""
+        current_text = self.line_edit.text().strip()
+        if current_text in self._tag_paths:
+            self.action_button.setText("Select")
+        else:
+            self.action_button.setText("Create")
+
+    def get_current_text(self) -> str:
+        """Return the current text in the input textbox."""
+        return self.line_edit.text().strip()
+
+    def is_existing_tag(self) -> bool:
+        """Check if current textbox content corresponds to an existing tag."""
+        return self.get_current_text() in self._tag_paths
+
+
+class TagSelectorDialog(QDialog):
+    """Dialog wrapper for TagSelectorWidget providing standard dialog behavior."""
+
+    def __init__(self, parent: QWidget = None) -> None:
+        """Initialize the tag selector dialog."""
+        super().__init__(parent)
+        self.setWindowTitle("Tag Selector")
+        self.resize(450, 550)
+
+        layout = QVBoxLayout(self)
+        self.selector_widget = TagSelectorWidget(self)
+        layout.addWidget(self.selector_widget)
+
+        # Connect dialog buttons
+        self.selector_widget.cancel_button.clicked.connect(self.reject)
+        self.selector_widget.action_button.clicked.connect(self.accept)
+
+    def get_selected_tag(self) -> str:
+        """Return the selected or entered tag path."""
+        return self.selector_widget.get_current_text()

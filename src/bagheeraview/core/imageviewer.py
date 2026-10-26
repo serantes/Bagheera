@@ -36,7 +36,7 @@ from .constants import (
     AVAILABLE_FACE_ENGINES, AVAILABLE_PET_ENGINES
 )
 from .imagecontroller import ImageController
-from .widgets import FaceNameInputWidget
+from .widgets import FaceNameInputWidget, TagSelectorDialog
 from .utils import PowerManager
 from .propertiesdialog import PropertiesDialog
 from .personrecognition import PersonRecognitionDB, extract_face_encoding
@@ -209,6 +209,11 @@ class FastTagManager:
 
         if mru_tags_to_show and current_tags:
             menu.addSeparator()
+
+        menu.addAction(UITexts.QUICK_TAG_ADD_TAG).triggered.connect(
+            lambda: self.viewer.show_quick_tag_add_tag_dialog() if self.viewer else None)
+
+        menu.addSeparator()
 
         if current_tags:
             for tag in sorted(list(current_tags)):
@@ -3699,3 +3704,22 @@ class ImageViewer(QWidget):
         during the inhibit call.
         """
         PowerManager.uninhibit()
+
+    def show_quick_tag_add_tag_dialog(self):
+        """
+        Opens a dialog to quickly add a new tag to the current image.
+
+        This method is triggered from the context menu and allows users
+        to add a tag without opening the full tag manager.
+        """
+        if not self.controller:
+            return
+
+        dialog = TagSelectorDialog()
+        if dialog.exec() == QDialog.Accepted:
+            new_tag = dialog.get_selected_tag()
+            if new_tag:
+                self.controller.toggle_tag(new_tag, True)
+                self.main_win.add_to_mru_tags(new_tag)
+                if self.canvas:
+                    self.canvas.update()
