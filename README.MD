@@ -69,7 +69,7 @@ python -m venv venv --system-site-packages
 source venv/bin/activate
 
 # Install
-pip install "bagheera-suite[faces,exiv] @ git+https://github.com/serantes/Bagheera.git"
+pip install "bagheera-suite[duplicates,exiv,faces] @ git+https://github.com/serantes/Bagheera.git"
 
 # Deactivate venv
 deactivate
@@ -113,6 +113,8 @@ Bagheera requires KDE Frameworks 6 (specifically Baloo and KFileMetaData) and Qt
 - `exiv2`
 - `face-recognition`
 - `face-recognition-models`
+- `faiss-cpu`
+- `faiss-gpu`
 - `mediapipe`
 
 ### Prerequisites
