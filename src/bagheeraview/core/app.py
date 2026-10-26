@@ -32,7 +32,8 @@ from PySide6.QtWidgets import (
     QMessageBox, QSizePolicy, QMenu, QInputDialog, QTableWidget,
     QTableWidgetItem, QHeaderView, QTabWidget, QProgressDialog, QDockWidget,
     QAbstractItemView, QRadioButton, QButtonGroup, QListView,
-    QStyledItemDelegate, QStyle, QDialog, QKeySequenceEdit, QDialogButtonBox
+    QStyledItemDelegate, QStyle, QDialog, QKeySequenceEdit, QDialogButtonBox,
+    QPlainTextEdit
 )
 from PySide6.QtGui import (
     QDesktopServices, QFont, QFontMetrics, QIcon, QTransform, QImageReader,
@@ -560,7 +561,7 @@ class AppShortcutController(QObject):
         # Special case: Ignore specific navigation keys when typing
         focus_widget = QApplication.focusWidget()
         is_typing = isinstance(focus_widget, (QComboBox, QLineEdit, QTextEdit,
-                                              QInputDialog))
+                                              QInputDialog, QPlainTextEdit))
         # if is_typing and key in (Qt.Key_Home, Qt.Key_End, Qt.Key_Delete,
         #                         Qt.Key_Left, Qt.Key_Right, Qt.Key_Backspace):
         if is_typing:

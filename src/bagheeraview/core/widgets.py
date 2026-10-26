@@ -876,6 +876,7 @@ class TagEditWidget(QWidget):
             template_file=template_file,
             parent=dialog,
             auto_load=True,
+            capture_keys=True,
         )
         layout.addWidget(self.markdown_editor)
         dialog.show()
