@@ -85,6 +85,8 @@ DUPLICATE_HASH_TO_FILES_DB_NAME = b"hash_to_files"
 METADATA_DB_NAME = b"metadata"
 DIRECTORY_DB_NAME = b"directories"
 PERSON_RECOGNITION_DB_NAME = b"person_recognition"
+DIRECTORY_TAG_INFO = os.path.join(APP_DATA_DIR, "tags information")
+TAG_INFO_TEMPLATE = "tag_info_template.md"
 
 
 def save_app_config():
@@ -543,6 +545,7 @@ _UI_TEXTS = {
         "RENAME_TAG_TITLE": "Rename Tag",
         "RENAME_TAG_LABEL": "Tag path:",
         "RENAME_TAG_ITEMS_COUNT": "Number of elements with this tag: {}",
+        "EDIT_TAG_INFO": "Editar tag info",
         "COPY": "Copy",
         "DELETE": "Delete",
         "UNKNOWN": "Unknown",
@@ -1213,6 +1216,7 @@ _UI_TEXTS = {
         "RENAME_TAG_TITLE": "Renombrar Etiqueta",
         "RENAME_TAG_LABEL": "Ruta del tag:",
         "RENAME_TAG_ITEMS_COUNT": "Nº de elementos con este tag: {}",
+        "EDIT_TAG_INFO": "Editar la información de la etiqueta",
         "COPY": "Copiar",
         "DELETE": "Eliminar",
         "UNKNOWN": "Desconocido",
@@ -1892,6 +1896,7 @@ _UI_TEXTS = {
         "RENAME_TAG_TITLE": "Renomear Etiqueta",
         "RENAME_TAG_LABEL": "Ruta do tag:",
         "RENAME_TAG_ITEMS_COUNT": "Nº de elementos con este tag: {}",
+        "EDIT_TAG_INFO": "Editar a información da etiqueta",
         "COPY": "Copiar",
         "DELETE": "Eliminar",
         "UNKNOWN": "Descoñecido",

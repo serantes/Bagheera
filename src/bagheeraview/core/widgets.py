@@ -33,6 +33,7 @@ from PySide6.QtCore import (
     Signal, QSortFilterProxyModel, Slot, QStringListModel, Qt, QTimer
 )
 
+from .md_editor import MarkdownEditorWidget
 from .metadatamanager import XattrManager
 from .xmpmanager import XmpManager
 try:
@@ -41,7 +42,8 @@ except ImportError:
     BagheeraSearcher = None
 from .constants import (
     LAYOUTS_DIR, RATING_XATTR_NAME, XATTR_COMMENT_NAME, XATTR_NAME, UITexts,
-    FACES_MENU_MAX_ITEMS_DEFAULT, APP_CONFIG, FAVORITES_PATH, PROG_FILE_NAME
+    FACES_MENU_MAX_ITEMS_DEFAULT, APP_CONFIG, FAVORITES_PATH, PROG_FILE_NAME,
+    DIRECTORY_TAG_INFO, TAG_INFO_TEMPLATE, APP_DATA_DIR
 )
 
 logger = logging.getLogger(__name__)
@@ -62,6 +64,7 @@ class TagTreeView(QTreeView):
     rename_viewed_requested = Signal(object)
     add_to_quick_tags_requested = Signal(object)
     remove_from_quick_tags_requested = Signal(object)
+    tag_info_requested = Signal(object)
 
     def mousePressEvent(self, event):
         """Handles mouse press events to implement Ctrl+Click toggling.
@@ -129,6 +132,10 @@ class TagTreeView(QTreeView):
                 rename_viewed_action = menu.addAction(
                     QIcon.fromTheme("edit-rename"), UITexts.RENAME_TAGS_VIEWED)
 
+                menu.addSeparator()
+                tag_info_action = menu.addAction(
+                    QIcon.fromTheme("tag-edit"), UITexts.EDIT_TAG_INFO)
+
                 action = menu.exec(event.globalPos())
                 if action == search_action:
                     self.search_requested.emit(index)
@@ -146,7 +153,10 @@ class TagTreeView(QTreeView):
                     self.rename_all_requested.emit(index)
                 elif action == rename_viewed_action:
                     self.rename_viewed_requested.emit(index)
-        super().contextMenuEvent(event)
+                elif action == tag_info_action:
+                    self.tag_info_requested.emit(index)
+                else:
+                    super().contextMenuEvent(event)
 
 
 class TagRenameDialog(QDialog):
@@ -424,6 +434,7 @@ class TagEditWidget(QWidget):
         self.tree_view.rename_viewed_requested.connect(self.on_rename_viewed_requested)
         self.tree_view.add_to_quick_tags_requested.connect(self.on_add_to_quick_tags_requested)
         self.tree_view.remove_from_quick_tags_requested.connect(self.on_remove_from_quick_tags_requested)
+        self.tree_view.tag_info_requested.connect(self.on_tag_info_requested)
 
     def set_files_data(self, files_data):
         """Sets the files whose tags are to be edited.
@@ -839,6 +850,35 @@ class TagEditWidget(QWidget):
     @Slot(object)
     def on_rename_viewed_requested(self, proxy_index):
         self.on_rename_requested(proxy_index, all_files=False)
+
+    @Slot(object)
+    def on_tag_info_requested(self, proxy_index):
+        """Handles request to edit tag information."""
+        tag = self._get_tag_path_from_proxy_index(proxy_index)
+        if not tag or not self.main_win:
+            return
+
+        os.makedirs(DIRECTORY_TAG_INFO, exist_ok=True)
+        filepath = os.path.join(DIRECTORY_TAG_INFO, tag.replace('/', '_') + ".md")
+        template_text = ""
+        template_file = os.path.join(APP_DATA_DIR, TAG_INFO_TEMPLATE)
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Tag Information - {tag}")
+        dialog.resize(800, 600)
+        dialog.setAttribute(Qt.WA_DeleteOnClose)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.markdown_editor = MarkdownEditorWidget(
+            filepath=filepath,
+            template_text=template_text,
+            template_file=template_file,
+            parent=dialog,
+            auto_load=True,
+        )
+        layout.addWidget(self.markdown_editor)
+        dialog.show()
 
     def _get_tag_path_from_proxy_index(self, proxy_index):
         """Reconstructs the full tag path from a proxy model index."""
