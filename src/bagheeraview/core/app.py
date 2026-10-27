@@ -1523,6 +1523,13 @@ class MainWindow(QMainWindow):
         filter_layout.addLayout(mode_layout)
         self.filter_mode_group.buttonClicked.connect(self.apply_filters)
 
+        btn_clear = QPushButton(UITexts.FILTER_CLEAR)
+        btn_clear.setFixedWidth(60)
+        btn_clear.clicked.connect(self.clear_filters)
+        mode_layout.addWidget(btn_clear)
+        filter_layout.addLayout(mode_layout)
+        self.filter_mode_group.buttonClicked.connect(self.apply_filters)
+
         self.tag_search_input = QLineEdit()
         self.tag_search_input.setPlaceholderText(UITexts.TAG_SEARCH_PLACEHOLDER)
         self.tag_search_input.textChanged.connect(self.filter_tags_list)
@@ -4546,6 +4553,23 @@ class MainWindow(QMainWindow):
                 new_state = Qt.Unchecked \
                     if item.checkState() == Qt.Checked else Qt.Checked
                 item.setCheckState(new_state)
+                other_item = self.tags_list.item(i, 1)  # 'NOT' checkbox
+                if other_item:
+                    other_item.setCheckState(Qt.Unchecked
+                                             if item.checkState() == Qt.Checked and new_state == Qt.Checked
+                                             else other_item.checkState())
+        self.tags_list.blockSignals(False)
+        self.apply_filters()
+
+    def clear_filters(self):
+        """Clears the selection of the 'include' checkboxes in the filter."""
+        self.tags_list.blockSignals(True)
+        for i in range(self.tags_list.rowCount()):
+            item = self.tags_list.item(i, 0)
+            if item.flags() & Qt.ItemIsUserCheckable:
+                item.setCheckState(Qt.Unchecked)
+                other_item = self.tags_list.item(i, 1)  # 'NOT' checkbox
+                other_item.setCheckState(Qt.Unchecked)
         self.tags_list.blockSignals(False)
         self.apply_filters()
 
