@@ -12,7 +12,7 @@ Bagheera is a suite of tools designed to improve the KDE Baloo experience. The d
 - **GUI Framework:** PySide6 (Qt for Python)
 - **KDE Integration:** Baloo search and basic management
 - **Metadata Handling:** Advanced image header manipulation to store faces, pets, bodies, objects, and landmarks, with support for file extended attributes
-- **Duplicate Detection:** Using perceptual hashing (pHash).
+- **Duplicate Detection:** Using combination of perceptual hashing (pHash), histogram and FAISS.
 - **Image Similarity Search:** Powered by FAISS for fast feature vector matching.
 - **Person Identification:** Facial detection and recognition using deep learning embeddings.
 
@@ -51,7 +51,7 @@ mkdir -p "$HOME/.local/share/bagheera"
 cd "$HOME/.local/share/bagheera"
 
 # Install system-wide
-pip install "bagheera-suite[faces,exiv] @ git+https://github.com/serantes/Bagheera.git"
+pip install "bagheera-suite[full] @ git+https://github.com/serantes/Bagheera.git"
 
 # Run the applications
 bagheerasearch
@@ -69,7 +69,7 @@ python -m venv venv --system-site-packages
 source venv/bin/activate
 
 # Install
-pip install "bagheera-suite[duplicates,exiv,faces] @ git+https://github.com/serantes/Bagheera.git"
+pip install "bagheera-suite[full] @ git+https://github.com/serantes/Bagheera.git"
 
 # Deactivate venv
 deactivate
