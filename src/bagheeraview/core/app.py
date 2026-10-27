@@ -1523,12 +1523,6 @@ class MainWindow(QMainWindow):
         filter_layout.addLayout(mode_layout)
         self.filter_mode_group.buttonClicked.connect(self.apply_filters)
 
-        self.filter_stats_lbl = QLabel()
-        self.filter_stats_lbl.setAlignment(Qt.AlignCenter)
-        self.filter_stats_lbl.setStyleSheet("color: gray; font-style: italic;")
-        self.filter_stats_lbl.hide()
-        filter_layout.addWidget(self.filter_stats_lbl)
-
         self.tag_search_input = QLineEdit()
         self.tag_search_input.setPlaceholderText(UITexts.TAG_SEARCH_PLACEHOLDER)
         self.tag_search_input.textChanged.connect(self.filter_tags_list)
@@ -1546,6 +1540,12 @@ class MainWindow(QMainWindow):
         self.tags_list.setSelectionMode(QAbstractItemView.NoSelection)
         self.tags_list.itemChanged.connect(self.on_tag_changed)
         filter_layout.addWidget(self.tags_list)
+
+        self.filter_stats_lbl = QLabel()
+        self.filter_stats_lbl.setAlignment(Qt.AlignCenter)
+        self.filter_stats_lbl.setStyleSheet("color: gray; font-style: italic;")
+        # self.filter_stats_lbl.hide()
+        filter_layout.addWidget(self.filter_stats_lbl)
 
         self.tags_tabs.addTab(self.filter_widget, UITexts.TAG_FILTER_TAB)
 
@@ -4601,9 +4601,11 @@ class MainWindow(QMainWindow):
         if hidden_count > 0:
             self.filter_stats_lbl.setText(
                 UITexts.FILTER_STATS_HIDDEN.format(hidden_count, visible_count))
-            self.filter_stats_lbl.show()
+            # self.filter_stats_lbl.show()
         else:
-            self.filter_stats_lbl.hide()
+            self.filter_stats_lbl.setText(
+                UITexts.FILTER_STATS_HIDDEN.format(hidden_count, visible_count))
+            # self.filter_stats_lbl.hide()
 
         is_filter_active = bool(include_tags or exclude_tags or name_filter)
         if is_filter_active:
