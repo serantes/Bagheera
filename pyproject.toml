@@ -36,6 +36,14 @@ all = [
     "mediapipe",
     "pytest",
 ]
+full = [
+    "exiv2",
+    "face-recognition",
+    "face_recognition_models",
+    "faiss-cpu",
+    "faiss-gpu",
+    "mediapipe"
+]
 exiv = ["exiv2"]
 faces = [
     "face-recognition",
@@ -84,4 +92,3 @@ include = ["bagheerasearch*", "bagheeraview*", "bagheeragui*"]
 "share/icons/hicolor/512x512/apps" = [
     "data/icons/hicolor/512x512/apps/bagheeraview.png"
 ]
-
