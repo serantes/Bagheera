@@ -416,6 +416,21 @@ class BagheeraSearcher:
                     yield item
                 files_count += 1
 
+    def parse_properties(self, query_text: str) -> str:
+        """
+        Parses the query text to identify and handle properties.
+        Returns a modified query string suitable for Baloo.
+        """
+        # # Define operators, ordered with multi-character operators first to prevent partial matches
+        # operators = r">=|<=|!=|!:|=|>|<|:"
+
+        # # Build the pattern using lookahead to verify the operator follows 'comment'
+        # pattern = rf'\bcomment\b(?=\s*(?:{operators}))'
+
+        # query_text = re.sub(pattern, 'UserComment', query_text)
+
+        return query_text
+
     def search(
         self,
         query_text: str,
@@ -448,7 +463,7 @@ class BagheeraSearcher:
 
         # Make a copy to avoid mutating the caller's dict
         options = dict(main_options)
-        options["query"] = parse_date(query_text)
+        options["query"] = self.parse_properties(parse_date(query_text))
         files = self._execute_query(options)
 
         if not files:
@@ -461,7 +476,7 @@ class BagheeraSearcher:
             elif "type" in options:
                 options.pop("type")
 
-            rec_query = search_opts.get("subquery")
+            rec_query = self.parse_properties(search_opts.get("subquery"))
             query_text = parse_date(rec_query) if rec_query else ""
 
         files_count = 0
