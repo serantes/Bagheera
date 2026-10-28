@@ -77,8 +77,8 @@ include = ["bagheerasearch*", "bagheeraview*", "bagheeragui*"]
 [tool.setuptools.data-files]
 "share/applications" = [
     "data/bagheeraview.desktop",
-    "data/bagheeraview_x11.desktop"
-
+    "data/bagheeraview_x11.desktop",
+    "data/bagheerasearch.desktop"
 ]
 "share/icons/hicolor/64x64/apps" = [
     "data/icons/hicolor/64x64/apps/bagheeraview.png"
@@ -91,4 +91,9 @@ include = ["bagheerasearch*", "bagheeraview*", "bagheeragui*"]
 ]
 "share/icons/hicolor/512x512/apps" = [
     "data/icons/hicolor/512x512/apps/bagheeraview.png"
+]
+"share/icons/hicolor/scalable/apps" = [
+    "data/icons/hicolor/scalable/apps/bagheeraview.svg",
+    "data/icons/hicolor/scalable/apps/bagheeraview_x11.svg",
+    "data/icons/hicolor/scalable/apps/bagheerasearch.svg"
 ]
