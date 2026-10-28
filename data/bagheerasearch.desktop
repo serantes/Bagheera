@@ -1,0 +1,24 @@
+[Desktop Entry]
+Categories=KDE;Baloo;Bagheera
+Comment[en_US]=Bagheera Search Gui
+Comment=Bagheera Search Gui
+Encoding=UTF-8
+Exec=bagheeragui
+GenericName[en_US]=Bagheera Search
+GenericName=Bagheera Image Viewer
+Icon=bagheerasearch
+MimeType=
+Name[en_US]=Bagheera Search
+Name=Bagheera Search
+NoDisplay=false
+Path=
+StartupNotify=true
+StartupWMClass=bagheeraview
+Terminal=false
+TerminalOptions=
+Type=Application
+X-DBUS-ServiceName=
+X-DBUS-StartupType=
+X-DCOP-ServiceType=
+X-KDE-SubstituteUID=false
+X-KDE-Username=
