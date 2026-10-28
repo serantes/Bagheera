@@ -78,7 +78,7 @@ include = ["bagheerasearch*", "bagheeraview*", "bagheeragui*"]
 "share/applications" = [
     "data/bagheeraview.desktop",
     "data/bagheeraview_x11.desktop",
-    "data/bagheersearch.desktop"
+    "data/bagheerasearch.desktop"
 ]
 "share/icons/hicolor/64x64/apps" = [
     "data/icons/hicolor/64x64/apps/bagheeraview.png"
