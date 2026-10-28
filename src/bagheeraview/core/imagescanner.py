@@ -1900,7 +1900,7 @@ class ImageScanner(QThread):
                         for item in dir_path.iterdir():
                             if not self._is_running:
                                 return
-                            if item.is_dir() and (self._scan_hidden_dirs or not p.name.startswith(".")):
+                            if item.is_dir() and (self._scan_hidden_dirs or not item.name.startswith(".")):
                                 self._scan_directory(item, current_depth + 1)
                     except (PermissionError, OSError):
                         pass
