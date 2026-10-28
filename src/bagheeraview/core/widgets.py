@@ -27,10 +27,11 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import (
     QIcon, QStandardItemModel, QStandardItem, QColor, QPainter, QPen,
-    QPalette, QAction, QKeySequence
+    QPalette, QAction, QKeySequence, QDesktopServices
 )
 from PySide6.QtCore import (
-    Signal, QSortFilterProxyModel, Slot, QStringListModel, Qt, QTimer, QModelIndex
+    Signal, QSortFilterProxyModel, Slot, QStringListModel, Qt, QTimer,
+    QModelIndex, QObject, QUrl
 )
 
 from .md_editor import MarkdownEditorWidget
@@ -45,6 +46,8 @@ from .constants import (
     FACES_MENU_MAX_ITEMS_DEFAULT, APP_CONFIG, FAVORITES_PATH, PROG_FILE_NAME,
     DIRECTORY_TAG_INFO, TAG_INFO_TEMPLATE, APP_DATA_DIR
 )
+
+from .metadatamanager import MetadataManager, HAVE_EXIV2
 
 logger = logging.getLogger(__name__)
 
@@ -2389,3 +2392,413 @@ class TagSelectorDialog(QDialog):
     def get_selected_tag(self) -> str:
         """Return the selected or entered tag path."""
         return self.selector_widget.get_current_text()
+
+
+# ---------------------------------------------------------------------------
+# GeoMapWidget
+# ---------------------------------------------------------------------------
+
+# WebEngine imports are deferred until GeoMapWidget.__init__ is called
+# (i.e. after QApplication exists) to avoid segfaults on Linux.
+# Do NOT import QWebEngineView at module level.
+_HAVE_WEBENGINE = None  # None = not yet checked; True/False after first check
+_QWebEngineView = None
+_QWebChannel = None
+_QWebEngineSettings = None
+
+
+def _init_webengine():
+    """Lazily import WebEngine modules. Safe to call multiple times."""
+    global _HAVE_WEBENGINE, _QWebEngineView, _QWebChannel, _QWebEngineSettings
+    if _HAVE_WEBENGINE is not None:
+        return _HAVE_WEBENGINE
+    try:
+        from PySide6.QtWebEngineWidgets import QWebEngineView as _WEV
+        from PySide6.QtWebChannel import QWebChannel as _WC
+        from PySide6.QtWebEngineCore import QWebEngineSettings as _WES
+        _QWebEngineView = _WEV
+        _QWebChannel = _WC
+        _QWebEngineSettings = _WES
+        _HAVE_WEBENGINE = True
+    except Exception:
+        _HAVE_WEBENGINE = False
+    return _HAVE_WEBENGINE
+
+
+# Leaflet map HTML/JS template.  All external resources are loaded from CDN.
+# Communication with Python uses Qt WebChannel (qt.webChannelTransport).
+_MAP_HTML = """\
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Map</title>
+<link rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+  html,body,#map{{height:100%;margin:0;padding:0;background:#1a1a2e;}}
+  .leaflet-popup-content-wrapper{{background:#2a2a4a;color:#e0e0ff;border:1px solid #4a4aaa;}}
+  .leaflet-popup-tip{{background:#2a2a4a;}}
+  .leaflet-popup-content a{{color:#88aaff;}}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<script>
+var map = L.map('map', {{zoomControl:true, attributionControl:true}})
+           .setView([20,0], 2);
+
+L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  maxZoom: 19
+}}).addTo(map);
+
+var markers = [];
+var editMode = false;
+var bridge = null;
+
+// Marker icons
+var blueIcon = L.icon({{
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
+}});
+
+var redIcon = L.icon({{
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
+}});
+
+new QWebChannel(qt.webChannelTransport, function(channel) {{
+  bridge = channel.objects.bridge;
+}});
+
+function clearMarkers() {{
+  markers.forEach(function(m){{ map.removeLayer(m); }});
+  markers = [];
+}}
+
+function showMarkers(data) {{
+  // data: array of {{path, name, lat, lon, selected}}
+  clearMarkers();
+  var bounds = [];
+  data.forEach(function(item) {{
+    var icon = item.selected ? redIcon : blueIcon;
+    var m = L.marker([item.lat, item.lon], {{icon: icon, title: item.name}});
+    m.bindPopup('<b>' + item.name + '</b>');
+    m.on('click', function() {{
+      if(bridge) bridge.markerClicked(item.path);
+    }});
+    m.addTo(map);
+    markers.push(m);
+    bounds.push([item.lat, item.lon]);
+  }});
+  if(bounds.length === 1) {{
+    map.setView(bounds[0], Math.max(map.getZoom(), 13));
+  }} else if(bounds.length > 1) {{
+    map.fitBounds(bounds, {{padding:[30,30], maxZoom:15}});
+  }}
+}}
+
+function setEditMode(enabled) {{
+  editMode = enabled;
+  map.getContainer().style.cursor = enabled ? 'crosshair' : '';
+}}
+
+map.on('click', function(e) {{
+  if(editMode && bridge) {{
+    bridge.mapClicked(e.latlng.lat, e.latlng.lng);
+    setEditMode(false);
+  }}
+}});
+
+map.on('contextmenu', function(e) {{
+  if(editMode) {{
+    setEditMode(false);
+    if(bridge) bridge.editCancelled();
+  }}
+}});
+</script>
+</body>
+</html>
+"""
+
+
+class _MapBridge(QObject):
+    """Qt/JS bridge object exposed via QWebChannel.
+
+    Signals from JS to Python are handled here.
+    """
+    marker_clicked = Signal(str)   # path
+    map_clicked = Signal(float, float)  # lat, lon
+    edit_cancelled = Signal()
+
+    @Slot(str)
+    def markerClicked(self, path):
+        self.marker_clicked.emit(path)
+
+    @Slot(float, float)
+    def mapClicked(self, lat, lon):
+        self.map_clicked.emit(lat, lon)
+
+    @Slot()
+    def editCancelled(self):
+        self.edit_cancelled.emit()
+
+
+class GeoMapWidget(QWidget):
+    """Sidebar tab widget that displays selected photos on an OpenStreetMap.
+
+    Features:
+    - Shows geolocated photos as Leaflet markers (free OpenStreetMap tiles).
+    - Clicking a marker updates thumbnail selection in the main window.
+    - "Open in Google Maps" button (free, no API key required).
+    - Allows setting/editing GPS coordinates for non-geolocated photos.
+    - Lazy refresh: only updates when the tab is active.
+
+    Signals:
+        selection_requested (list[str]): Emitted when the user clicks a marker
+            on the map; carries a list of file paths to select.
+    """
+
+    selection_requested = Signal(list)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._is_active = False
+        self._current_paths = []
+        self._edit_path = None   # path being geolocated in edit mode
+        self._gps_cache = {}     # path -> (lat, lon) or None, per refresh
+        self.web_view = None     # set below if WebEngine is available
+        self._bridge = None
+        self._channel = None
+
+        # Lazy-import WebEngine NOW (QApplication already exists at this point)
+        have_webengine = _init_webengine()
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4)
+
+        # ---- Toolbar ----
+        tb = QHBoxLayout()
+        tb.setSpacing(4)
+
+        self.btn_googlemaps = QPushButton(UITexts.MAP_OPEN_GOOGLEMAPS)
+        self.btn_googlemaps.setIcon(QIcon.fromTheme("internet-web-browser"))
+        self.btn_googlemaps.setEnabled(False)
+        self.btn_googlemaps.clicked.connect(self._open_google_maps)
+        tb.addWidget(self.btn_googlemaps)
+
+        self.btn_edit = QPushButton(UITexts.MAP_SET_LOCATION)
+        self.btn_edit.setIcon(QIcon.fromTheme("document-edit"))
+        self.btn_edit.setEnabled(False)
+        self.btn_edit.clicked.connect(self._start_editing)
+        tb.addWidget(self.btn_edit)
+
+        self.btn_clear = QPushButton(UITexts.MAP_CLEAR_LOCATION)
+        self.btn_clear.setIcon(QIcon.fromTheme("edit-delete"))
+        self.btn_clear.setEnabled(False)
+        self.btn_clear.clicked.connect(self._clear_gps_location)
+        tb.addWidget(self.btn_clear)
+
+        layout.addLayout(tb)
+
+        # ---- Status label ----
+        self.status_lbl = QLabel(UITexts.MAP_NO_SELECTION)
+        self.status_lbl.setWordWrap(True)
+        self.status_lbl.setStyleSheet("color: gray; font-style: italic; font-size: 11px;")
+        layout.addWidget(self.status_lbl)
+
+        # ---- Map or fallback ----
+        if have_webengine:
+            self.web_view = _QWebEngineView()
+            self.web_view.settings().setAttribute(
+                _QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+
+            self._channel = _QWebChannel(self.web_view.page())
+            self._bridge = _MapBridge(self)
+            self._channel.registerObject("bridge", self._bridge)
+            self.web_view.page().setWebChannel(self._channel)
+
+            self.web_view.setHtml(_MAP_HTML)
+            layout.addWidget(self.web_view, stretch=1)
+
+            # Connect bridge signals
+            # self._bridge.marker_clicked.connect(self._on_marker_clicked)
+            # self._bridge.map_clicked.connect(self._on_map_clicked)
+            # self._bridge.edit_cancelled.connect(self._cancel_editing)
+        else:
+            fallback = QLabel(UITexts.MAP_WEBENGINE_MISSING)
+            fallback.setAlignment(Qt.AlignCenter)
+            fallback.setWordWrap(True)
+            fallback.setStyleSheet("color: #cc8800; font-size: 13px; padding: 20px;")
+            layout.addWidget(fallback, stretch=1)
+
+        # ---- Ungeolocated list ----
+        self.ungeo_lbl = QLabel()
+        self.ungeo_lbl.setStyleSheet("color: #aaaaaa; font-size: 11px;")
+        self.ungeo_lbl.setWordWrap(True)
+        self.ungeo_lbl.hide()
+        layout.addWidget(self.ungeo_lbl)
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def is_active(self) -> bool:
+        return self._is_active
+
+    def set_active(self, active: bool):
+        """Called by the main window when this tab is shown or hidden."""
+        self._is_active = active
+        if active:
+            self.refresh(self._current_paths)
+
+    def refresh(self, selected_paths: list):
+        """Refreshes the map with the given list of selected file paths.
+
+        This is a no-op if the tab is not currently active.
+        """
+        self._current_paths = list(selected_paths)
+        if not self._is_active:
+            return
+        self._do_refresh()
+
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+
+    def _do_refresh(self):
+        """Actually performs the map refresh (reads GPS, updates JS markers)."""
+        paths = self._current_paths
+        if not paths:
+            self.status_lbl.setText(UITexts.MAP_NO_SELECTION)
+            self._update_buttons(geolocated_count=0, total=0)
+            self.ungeo_lbl.hide()
+            if self.web_view is not None:
+                self.web_view.page().runJavaScript("clearMarkers();")
+            return
+
+        # Read GPS data for all selected paths (use cache for speed)
+        gps_data = []
+        ungeolocated = []
+        for path in paths:
+            if path not in self._gps_cache:
+                self._gps_cache[path] = MetadataManager.read_gps(path)
+            coords = self._gps_cache[path]
+            if coords:
+                gps_data.append({
+                    "path": path,
+                    "name": os.path.basename(path),
+                    "lat": coords[0],
+                    "lon": coords[1],
+                    "selected": True,
+                })
+            else:
+                ungeolocated.append(os.path.basename(path))
+
+        geolocated_count = len(gps_data)
+        self._update_buttons(geolocated_count, len(paths))
+
+        if geolocated_count == 0:
+            self.status_lbl.setText(UITexts.MAP_NO_GPS)
+        else:
+            self.status_lbl.setText(
+                f"{geolocated_count}/{len(paths)} photo(s) with GPS data.")
+
+        # Show ungeolocated names
+        if ungeolocated:
+            self.ungeo_lbl.setText(
+                UITexts.MAP_UNGEOLOCATED.format(len(ungeolocated)) +
+                " " + ", ".join(ungeolocated[:8]) +
+                (" …" if len(ungeolocated) > 8 else ""))
+            self.ungeo_lbl.show()
+        else:
+            self.ungeo_lbl.hide()
+
+        # Update JS map
+        if self.web_view is not None:
+            import json as _json
+            js_data = _json.dumps(gps_data)
+            self.web_view.page().runJavaScript(f"showMarkers({js_data});")
+
+    def _update_buttons(self, geolocated_count: int, total: int):
+        """Enables/disables toolbar buttons based on current selection."""
+        has_geo = geolocated_count > 0
+        single_selection = total == 1
+
+        # Google Maps: enabled when at least one geolocated photo
+        self.btn_googlemaps.setEnabled(has_geo)
+        # Edit: enabled for single photo (geolocated or not)
+        self.btn_edit.setEnabled(single_selection and HAVE_EXIV2)
+        # Clear: enabled for single geolocated photo
+        self.btn_clear.setEnabled(
+            single_selection and geolocated_count == 1 and HAVE_EXIV2)
+
+    def _open_google_maps(self):
+        """Opens the first geolocated photo's coordinates in Google Maps
+        using the browser (free, no API key required).
+        """
+        for path in self._current_paths:
+            coords = self._gps_cache.get(path)
+            if coords:
+                lat, lon = coords
+                url = QUrl(f"https://maps.google.com/?q={lat},{lon}")
+                QDesktopServices.openUrl(url)
+                return
+
+    def _start_editing(self):
+        """Enters editing mode: the next map click sets the GPS location."""
+        if not self._current_paths:
+            return
+        self._edit_path = self._current_paths[0]
+        self.status_lbl.setText(UITexts.MAP_EDITING_LOCATION)
+        self.btn_edit.setEnabled(False)
+        if self.web_view is not None:
+            self.web_view.page().runJavaScript("setEditMode(true);")
+
+    def _cancel_editing(self):
+        """Cancels editing mode without changing any data."""
+        self._edit_path = None
+        self.btn_edit.setEnabled(bool(self._current_paths))
+        self._do_refresh()
+
+    @Slot(str)
+    def _on_marker_clicked(self, path: str):
+        """Called from JS when the user clicks a map marker."""
+        if path:
+            self.selection_requested.emit([path])
+
+    @Slot(float, float)
+    def _on_map_clicked(self, lat: float, lon: float):
+        """Called from JS when the user clicks the map in edit mode."""
+        path = self._edit_path
+        self._edit_path = None
+        if not path:
+            return
+        try:
+            MetadataManager.write_gps(path, lat, lon)
+            # Invalidate cache for this path so the next refresh re-reads
+            self._gps_cache.pop(path, None)
+            self._do_refresh()
+        except Exception as e:
+            self.status_lbl.setText(UITexts.MAP_GPS_WRITE_ERROR.format(str(e)))
+            self.status_lbl.setStyleSheet("color: #cc4444; font-style: italic;")
+
+    def _clear_gps_location(self):
+        """Removes GPS EXIF tags from the single selected photo."""
+        if not self._current_paths:
+            return
+        path = self._current_paths[0]
+        try:
+            MetadataManager.clear_gps(path)
+            self._gps_cache.pop(path, None)
+            self._do_refresh()
+        except Exception as e:
+            self.status_lbl.setText(UITexts.MAP_GPS_WRITE_ERROR.format(str(e)))

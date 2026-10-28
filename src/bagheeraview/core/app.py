@@ -85,7 +85,7 @@ from .propertiesdialog import PropertiesDialog
 from .widgets import (
     CircularProgressBar,
     TagEditWidget, LayoutsWidget, HistoryWidget, RatingWidget, CommentWidget,
-    FavoritesWidget
+    FavoritesWidget, GeoMapWidget
 )
 from .metadatamanager import load_common_metadata
 from .filesystemwatcher import FileSystemWatcher
@@ -1569,6 +1569,11 @@ class MainWindow(QMainWindow):
         # Tab 6: History
         self.history_tab = HistoryWidget(self)
         self.tags_tabs.addTab(self.history_tab, UITexts.HISTORY_TAB)
+
+        # Tab 7: Map / Geolocation
+        self.map_tab = GeoMapWidget(self)
+        self.tags_tabs.addTab(self.map_tab, UITexts.MAP_TAB)
+        self.map_tab.selection_requested.connect(self.select_by_paths)
 
         self.main_dock.setWidget(self.tags_tabs)
         self.addDockWidget(Qt.RightDockWidgetArea, self.main_dock)
@@ -4319,6 +4324,12 @@ class MainWindow(QMainWindow):
             self.update_info_widget()
         elif widget == self.favorites_tab:
             self.favorites_tab.refresh_list()
+        # Activate / deactivate map tab (lazy refresh on activation)
+        if hasattr(self, 'map_tab'):
+            is_map = (widget == self.map_tab)
+            self.map_tab.set_active(is_map)
+            if is_map:
+                self.map_tab.refresh(self.get_selected_paths())
 
     def update_tag_edit_widget(self):
         """Updates the tag editor widget with data from the currently selected files."""
@@ -4543,6 +4554,37 @@ class MainWindow(QMainWindow):
 
         if self.info_widget.isVisible():
             self.update_info_widget()
+
+        # Refresh the map tab only when it is currently active (lazy refresh).
+        if hasattr(self, 'map_tab') and self.map_tab.is_active():
+            self.map_tab.refresh(self.get_selected_paths())
+
+    def select_by_paths(self, paths: list):
+        """Selects thumbnails matching the given file paths.
+        Called by GeoMapWidget when the user clicks a marker on the map.
+        Args:
+            paths (list[str]): File paths to select in the thumbnail grid.
+        """
+        if not paths:
+            return
+        path_set = set(paths)
+        selection_model = self.thumbnail_view.selectionModel()
+        from PySide6.QtCore import QItemSelection, QItemSelectionModel
+        selection = QItemSelection()
+        for path, p_idx in self._path_to_model_index.items():
+            if path not in path_set:
+                continue
+            if not p_idx.isValid():
+                continue
+            source_idx = QModelIndex(p_idx)
+            proxy_idx = self.proxy_model.mapFromSource(source_idx)
+            if proxy_idx.isValid():
+                selection.select(proxy_idx, proxy_idx)
+        selection_model.select(selection,
+                               QItemSelectionModel.ClearAndSelect)
+        # Scroll to first selected item
+        if selection.indexes():
+            self.thumbnail_view.scrollTo(selection.indexes()[0])
 
     def invert_tag_selection(self):
         """Inverts the selection of the 'include' checkboxes in the filter."""
@@ -6368,6 +6410,8 @@ class MainWindow(QMainWindow):
 
 
 def main():
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu"
+
     """The main entry point for the Bagheera Image Viewer application."""
     app = QApplication(sys.argv)
 

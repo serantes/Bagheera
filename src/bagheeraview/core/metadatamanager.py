@@ -247,7 +247,180 @@ class MetadataManager:
             raise
 
 
+    # ------------------------------------------------------------------ #
+    #  GPS helpers                                                         #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _decimal_to_dms_rational(decimal_degrees):
+        """Converts a decimal-degree value to (deg, min, sec) integer tuples
+        suitable for EXIF rational encoding as 'numerator/denominator'.
+
+        Returns a list of three (num, denom) pairs.
+        """
+        abs_val = abs(decimal_degrees)
+        degrees = int(abs_val)
+        minutes_float = (abs_val - degrees) * 60
+        minutes = int(minutes_float)
+        seconds_float = (minutes_float - minutes) * 60
+        # Use 100 as denominator for seconds to preserve 2 decimal places
+        seconds_num = round(seconds_float * 100)
+        return [(degrees, 1), (minutes, 1), (seconds_num, 100)]
+
+    @staticmethod
+    def _dms_rational_to_decimal(dms_str):
+        """Parses an exiv2 rational DMS string such as '48/1 15/1 3000/100'
+        into a decimal-degree float.
+
+        Returns None on parse failure.
+        """
+        try:
+            parts = dms_str.strip().split()
+            if len(parts) != 3:
+                return None
+            values = []
+            for part in parts:
+                if '/' in part:
+                    num, denom = part.split('/')
+                    values.append(float(num) / float(denom))
+                else:
+                    values.append(float(part))
+            return values[0] + values[1] / 60.0 + values[2] / 3600.0
+        except Exception:
+            return None
+
+    @staticmethod
+    def read_gps(path):
+        """Reads GPS coordinates from a file's EXIF data.
+
+        Args:
+            path (str): The path to the image file.
+
+        Returns:
+            tuple[float, float] | None: (latitude, longitude) in decimal degrees,
+            or None if no GPS data is available or on error.
+        """
+        if not HAVE_EXIV2:
+            return None
+        try:
+            image = exiv2.ImageFactory.open(path)
+            image.readMetadata()
+            exif = image.exifData()
+
+            lat_key = exiv2.ExifKey("Exif.GPSInfo.GPSLatitude")
+            lat_ref_key = exiv2.ExifKey("Exif.GPSInfo.GPSLatitudeRef")
+            lon_key = exiv2.ExifKey("Exif.GPSInfo.GPSLongitude")
+            lon_ref_key = exiv2.ExifKey("Exif.GPSInfo.GPSLongitudeRef")
+
+            lat_it = exif.findKey(lat_key)
+            lat_ref_it = exif.findKey(lat_ref_key)
+            lon_it = exif.findKey(lon_key)
+            lon_ref_it = exif.findKey(lon_ref_key)
+
+            if (lat_it == exif.end() or lon_it == exif.end()):
+                return None
+
+            lat = MetadataManager._dms_rational_to_decimal(lat_it.toString())
+            lon = MetadataManager._dms_rational_to_decimal(lon_it.toString())
+
+            if lat is None or lon is None:
+                return None
+
+            if lat_ref_it != exif.end() and lat_ref_it.toString().strip() == 'S':
+                lat = -lat
+            if lon_ref_it != exif.end() and lon_ref_it.toString().strip() == 'W':
+                lon = -lon
+
+            return (lat, lon)
+        except Exception as e:
+            logger.debug(f"read_gps error for {path}: {e}")
+            return None
+
+    @staticmethod
+    def write_gps(path, lat: float, lon: float) -> None:
+        """Writes GPS EXIF tags (latitude and longitude) to an image file.
+
+        Uses rational DMS encoding as required by the EXIF specification.
+
+        Args:
+            path (str): The path to the image file.
+            lat (float): Latitude in decimal degrees (negative = South).
+            lon (float): Longitude in decimal degrees (negative = West).
+
+        Raises:
+            RuntimeError: If exiv2 is not available.
+            Exception: On write failure.
+        """
+        if not HAVE_EXIV2:
+            raise RuntimeError("exiv2 library not available")
+
+        image = exiv2.ImageFactory.open(path)
+        image.readMetadata()
+        exif = image.exifData()
+
+        lat_ref = 'N' if lat >= 0 else 'S'
+        lon_ref = 'E' if lon >= 0 else 'W'
+        lat_dms = MetadataManager._decimal_to_dms_rational(lat)
+        lon_dms = MetadataManager._decimal_to_dms_rational(lon)
+
+        def _fmt_rational(dms):
+            return ' '.join(f"{n}/{d}" for n, d in dms)
+
+        exif["Exif.GPSInfo.GPSLatitude"] = _fmt_rational(lat_dms)
+        exif["Exif.GPSInfo.GPSLatitudeRef"] = lat_ref
+        exif["Exif.GPSInfo.GPSLongitude"] = _fmt_rational(lon_dms)
+        exif["Exif.GPSInfo.GPSLongitudeRef"] = lon_ref
+        # GPSMapDatum: standard value for most modern cameras
+        exif["Exif.GPSInfo.GPSMapDatum"] = "WGS-84"
+
+        image.writeMetadata()
+        notify_baloo(path)
+        mark_app_modified(path)
+
+    @staticmethod
+    def clear_gps(path) -> None:
+        """Removes all GPS EXIF tags from an image file.
+
+        Args:
+            path (str): The path to the image file.
+        """
+        if not HAVE_EXIV2:
+            return
+        try:
+            image = exiv2.ImageFactory.open(path)
+            image.readMetadata()
+            exif = image.exifData()
+
+            gps_keys = [
+                "Exif.GPSInfo.GPSLatitude",
+                "Exif.GPSInfo.GPSLatitudeRef",
+                "Exif.GPSInfo.GPSLongitude",
+                "Exif.GPSInfo.GPSLongitudeRef",
+                "Exif.GPSInfo.GPSMapDatum",
+                "Exif.GPSInfo.GPSAltitude",
+                "Exif.GPSInfo.GPSAltitudeRef",
+                "Exif.GPSInfo.GPSTimeStamp",
+                "Exif.GPSInfo.GPSDateStamp",
+                "Exif.GPSInfo.GPSVersionID",
+            ]
+            for key_str in gps_keys:
+                try:
+                    key = exiv2.ExifKey(key_str)
+                    it = exif.findKey(key)
+                    if it != exif.end():
+                        exif.erase(it)
+                except Exception:
+                    pass
+
+            image.writeMetadata()
+            notify_baloo(path)
+            mark_app_modified(path)
+        except Exception as e:
+            logger.error(f"clear_gps error for {path}: {e}")
+
+
 class XattrManager:
+
     """A manager class to handle reading and writing extended attributes (xattrs)."""
     @staticmethod
     def get_attribute(path_or_fd, attr_name, default_value=""):
