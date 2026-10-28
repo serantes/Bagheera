@@ -31,7 +31,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtCore import (
     Signal, QSortFilterProxyModel, Slot, QStringListModel, Qt, QTimer,
-    QModelIndex, QObject, QUrl
+    QModelIndex, QObject, QUrl, QFile, QIODevice
 )
 
 from .md_editor import MarkdownEditorWidget
@@ -2398,8 +2398,8 @@ class TagSelectorDialog(QDialog):
 # GeoMapWidget
 # ---------------------------------------------------------------------------
 
-# WebEngine imports are deferred until GeoMapWidget.__init__ is called
-# (i.e. after QApplication exists) to avoid segfaults on Linux.
+# WebEngine imports are deferred until the map tab is activated to avoid
+# initializing Chromium during application startup.
 # Do NOT import QWebEngineView at module level.
 _HAVE_WEBENGINE = None  # None = not yet checked; True/False after first check
 _QWebEngineView = None
@@ -2425,6 +2425,19 @@ def _init_webengine():
     return _HAVE_WEBENGINE
 
 
+def _webchannel_script():
+    """Read Qt's WebChannel client script for inline use in the map page."""
+    resource = QFile(":/qtwebchannel/qwebchannel.js")
+    if not resource.open(QIODevice.OpenModeFlag.ReadOnly):
+        raise RuntimeError(
+            "Could not read Qt WebChannel client script: "
+            f"{resource.errorString()}")
+    try:
+        return bytes(resource.readAll()).decode("utf-8")
+    finally:
+        resource.close()
+
+
 # Leaflet map HTML/JS template.  All external resources are loaded from CDN.
 # Communication with Python uses Qt WebChannel (qt.webChannelTransport).
 _MAP_HTML = """\
@@ -2437,92 +2450,97 @@ _MAP_HTML = """\
 <link rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <style>
-  html,body,#map{{height:100%;margin:0;padding:0;background:#1a1a2e;}}
-  .leaflet-popup-content-wrapper{{background:#2a2a4a;color:#e0e0ff;border:1px solid #4a4aaa;}}
-  .leaflet-popup-tip{{background:#2a2a4a;}}
-  .leaflet-popup-content a{{color:#88aaff;}}
+  html,body,#map{height:100%;margin:0;padding:0;background:#1a1a2e;}
+  .leaflet-popup-content-wrapper{background:#2a2a4a;color:#e0e0ff;border:1px solid #4a4aaa;}
+  .leaflet-popup-tip{background:#2a2a4a;}
+  .leaflet-popup-content a{color:#88aaff;}
 </style>
 </head>
 <body>
 <div id="map"></div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        onerror='document.getElementById("map").textContent=__MAP_LOAD_FAILED__'></script>
 <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
 <script>
-var map = L.map('map', {{zoomControl:true, attributionControl:true}})
+var map = L.map('map', {zoomControl:true, attributionControl:true})
            .setView([20,0], 2);
 
-L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   maxZoom: 19
-}}).addTo(map);
+}).addTo(map);
 
 var markers = [];
 var editMode = false;
 var bridge = null;
 
 // Marker icons
-var blueIcon = L.icon({{
+var blueIcon = L.icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
   iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
-}});
+});
 
-var redIcon = L.icon({{
+var redIcon = L.icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
   iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
-}});
+});
 
-new QWebChannel(qt.webChannelTransport, function(channel) {{
+new QWebChannel(qt.webChannelTransport, function(channel) {
   bridge = channel.objects.bridge;
-}});
+});
 
-function clearMarkers() {{
-  markers.forEach(function(m){{ map.removeLayer(m); }});
+function clearMarkers() {
+  markers.forEach(function(m){ map.removeLayer(m); });
   markers = [];
-}}
+}
 
-function showMarkers(data) {{
-  // data: array of {{path, name, lat, lon, selected}}
+function showMarkers(data) {
+  // data: array of {path, name, lat, lon, selected}
   clearMarkers();
   var bounds = [];
-  data.forEach(function(item) {{
+  data.forEach(function(item) {
     var icon = item.selected ? redIcon : blueIcon;
-    var m = L.marker([item.lat, item.lon], {{icon: icon, title: item.name}});
+    var m = L.marker([item.lat, item.lon], {icon: icon, title: item.name});
     m.bindPopup('<b>' + item.name + '</b>');
-    m.on('click', function() {{
+    m.on('click', function() {
       if(bridge) bridge.markerClicked(item.path);
-    }});
+    });
     m.addTo(map);
     markers.push(m);
     bounds.push([item.lat, item.lon]);
-  }});
-  if(bounds.length === 1) {{
+  });
+  if(bounds.length === 1) {
     map.setView(bounds[0], Math.max(map.getZoom(), 13));
-  }} else if(bounds.length > 1) {{
-    map.fitBounds(bounds, {{padding:[30,30], maxZoom:15}});
-  }}
-}}
+  } else if(bounds.length > 1) {
+    map.fitBounds(bounds, {padding:[30,30], maxZoom:15});
+  }
+}
 
-function setEditMode(enabled) {{
+function setEditMode(enabled) {
   editMode = enabled;
   map.getContainer().style.cursor = enabled ? 'crosshair' : '';
-}}
+}
 
-map.on('click', function(e) {{
-  if(editMode && bridge) {{
+map.on('click', function(e) {
+  if(editMode && bridge) {
     bridge.mapClicked(e.latlng.lat, e.latlng.lng);
     setEditMode(false);
-  }}
-}});
+  }
+});
 
-map.on('contextmenu', function(e) {{
-  if(editMode) {{
+map.on('contextmenu', function(e) {
+  if(editMode) {
     setEditMode(false);
     if(bridge) bridge.editCancelled();
-  }}
-}});
+  }
+});
+
+window.addEventListener('resize', function() {
+  map.invalidateSize({pan:false});
+});
 </script>
 </body>
 </html>
@@ -2577,9 +2595,10 @@ class GeoMapWidget(QWidget):
         self.web_view = None     # set below if WebEngine is available
         self._bridge = None
         self._channel = None
-
-        # Lazy-import WebEngine NOW (QApplication already exists at this point)
-        have_webengine = _init_webengine()
+        self._map_initialized = False
+        self._map_loaded = False
+        self._shortcut_controller = None
+        self._shortcut_filter_suspended = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -2591,18 +2610,21 @@ class GeoMapWidget(QWidget):
 
         self.btn_googlemaps = QPushButton(UITexts.MAP_OPEN_GOOGLEMAPS)
         self.btn_googlemaps.setIcon(QIcon.fromTheme("internet-web-browser"))
+        self.btn_googlemaps.setToolTip(UITexts.MAP_OPEN_GOOGLEMAPS_TOOLTIP)
         self.btn_googlemaps.setEnabled(False)
         self.btn_googlemaps.clicked.connect(self._open_google_maps)
         tb.addWidget(self.btn_googlemaps)
 
         self.btn_edit = QPushButton(UITexts.MAP_SET_LOCATION)
         self.btn_edit.setIcon(QIcon.fromTheme("document-edit"))
+        self.btn_edit.setToolTip(UITexts.MAP_SET_LOCATION_TOOLTIP)
         self.btn_edit.setEnabled(False)
         self.btn_edit.clicked.connect(self._start_editing)
         tb.addWidget(self.btn_edit)
 
         self.btn_clear = QPushButton(UITexts.MAP_CLEAR_LOCATION)
         self.btn_clear.setIcon(QIcon.fromTheme("edit-delete"))
+        self.btn_clear.setToolTip(UITexts.MAP_CLEAR_LOCATION_TOOLTIP)
         self.btn_clear.setEnabled(False)
         self.btn_clear.clicked.connect(self._clear_gps_location)
         tb.addWidget(self.btn_clear)
@@ -2615,8 +2637,27 @@ class GeoMapWidget(QWidget):
         self.status_lbl.setStyleSheet("color: gray; font-style: italic; font-size: 11px;")
         layout.addWidget(self.status_lbl)
 
-        # ---- Map or fallback ----
-        if have_webengine:
+        # Keep the map area empty until the user opens this tab. QtWebEngine
+        # starts Chromium during widget construction, which can crash startup
+        # on some Linux systems even when the containing dock is hidden.
+        self._map_layout = QVBoxLayout()
+        self._map_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addLayout(self._map_layout, stretch=1)
+
+        # ---- Ungeolocated list ----
+        self.ungeo_lbl = QLabel()
+        self.ungeo_lbl.setStyleSheet("color: #aaaaaa; font-size: 11px;")
+        self.ungeo_lbl.setWordWrap(True)
+        self.ungeo_lbl.hide()
+        layout.addWidget(self.ungeo_lbl)
+
+    def _initialize_map(self):
+        """Create the WebEngine view only when the map tab is first opened."""
+        if self._map_initialized:
+            return
+        self._map_initialized = True
+
+        if _init_webengine():
             self.web_view = _QWebEngineView()
             self.web_view.settings().setAttribute(
                 _QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
@@ -2626,8 +2667,18 @@ class GeoMapWidget(QWidget):
             self._channel.registerObject("bridge", self._bridge)
             self.web_view.page().setWebChannel(self._channel)
 
-            self.web_view.setHtml(_MAP_HTML)
-            layout.addWidget(self.web_view, stretch=1)
+            webchannel_tag = (
+                '<script src="qrc:///qtwebchannel/qwebchannel.js"></script>')
+            if webchannel_tag not in _MAP_HTML:
+                raise RuntimeError(
+                    "Map HTML is missing the Qt WebChannel script tag.")
+            html = _MAP_HTML.replace(
+                webchannel_tag, f"<script>{_webchannel_script()}</script>")
+            html = html.replace(
+                "__MAP_LOAD_FAILED__", json.dumps(UITexts.MAP_LOAD_FAILED))
+            self.web_view.loadFinished.connect(self._on_map_load_finished)
+            self.web_view.setHtml(html)
+            self._map_layout.addWidget(self.web_view)
 
             # Connect bridge signals
             # self._bridge.marker_clicked.connect(self._on_marker_clicked)
@@ -2638,14 +2689,44 @@ class GeoMapWidget(QWidget):
             fallback.setAlignment(Qt.AlignCenter)
             fallback.setWordWrap(True)
             fallback.setStyleSheet("color: #cc8800; font-size: 13px; padding: 20px;")
-            layout.addWidget(fallback, stretch=1)
+            self._map_layout.addWidget(fallback)
 
-        # ---- Ungeolocated list ----
-        self.ungeo_lbl = QLabel()
-        self.ungeo_lbl.setStyleSheet("color: #aaaaaa; font-size: 11px;")
-        self.ungeo_lbl.setWordWrap(True)
-        self.ungeo_lbl.hide()
-        layout.addWidget(self.ungeo_lbl)
+    def _on_map_load_finished(self, success):
+        self._map_loaded = success
+        if success and self._is_active:
+            self._invalidate_map_size()
+            self._do_refresh()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._invalidate_map_size()
+
+    def _invalidate_map_size(self):
+        if self.web_view is not None and self._map_loaded:
+            QTimer.singleShot(
+                0, lambda: self.web_view.page().runJavaScript(
+                    "map.invalidateSize({pan:false});"))
+
+    def _suspend_shortcut_filter(self):
+        app = QApplication.instance()
+        parent = self.parentWidget()
+        while parent is not None:
+            self._shortcut_controller = getattr(
+                parent, "shortcut_controller", None)
+            if self._shortcut_controller is not None:
+                break
+            parent = parent.parentWidget()
+        if app is not None and self._shortcut_controller is not None:
+            app.removeEventFilter(self._shortcut_controller)
+            self._shortcut_filter_suspended = True
+
+    def _restore_shortcut_filter(self):
+        if not self._shortcut_filter_suspended:
+            return
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self._shortcut_controller)
+        self._shortcut_filter_suspended = False
 
     # ------------------------------------------------------------------
     # Public API
@@ -2658,7 +2739,26 @@ class GeoMapWidget(QWidget):
         """Called by the main window when this tab is shown or hidden."""
         self._is_active = active
         if active:
-            self.refresh(self._current_paths)
+            self._suspend_shortcut_filter()
+            self.initialize_if_ready()
+        else:
+            self._restore_shortcut_filter()
+
+    def initialize_if_ready(self):
+        """Initialize the map when the main window is ready and not scanning."""
+        if not self._is_active:
+            return
+
+        parent = self.parentWidget()
+        while parent is not None:
+            if not getattr(parent, "_map_startup_ready", True):
+                return
+            if getattr(parent, "_is_loading", False):
+                return
+            parent = parent.parentWidget()
+
+        self._initialize_map()
+        self.refresh(self._current_paths)
 
     def refresh(self, selected_paths: list):
         """Refreshes the map with the given list of selected file paths.
@@ -2681,7 +2781,7 @@ class GeoMapWidget(QWidget):
             self.status_lbl.setText(UITexts.MAP_NO_SELECTION)
             self._update_buttons(geolocated_count=0, total=0)
             self.ungeo_lbl.hide()
-            if self.web_view is not None:
+            if self.web_view is not None and self._map_loaded:
                 self.web_view.page().runJavaScript("clearMarkers();")
             return
 
@@ -2723,7 +2823,7 @@ class GeoMapWidget(QWidget):
             self.ungeo_lbl.hide()
 
         # Update JS map
-        if self.web_view is not None:
+        if self.web_view is not None and self._map_loaded:
             import json as _json
             js_data = _json.dumps(gps_data)
             self.web_view.page().runJavaScript(f"showMarkers({js_data});")

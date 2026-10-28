@@ -1308,6 +1308,7 @@ class MainWindow(QMainWindow):
 
         self._high_res_mode_active = False
         self._is_loading = False
+        self._map_startup_ready = False
         self._scanner_last_index = 0
         self._scanner_total_files = 0
         self._current_thumb_tier = 0
@@ -1576,6 +1577,8 @@ class MainWindow(QMainWindow):
         self.map_tab.selection_requested.connect(self.select_by_paths)
 
         self.main_dock.setWidget(self.tags_tabs)
+        self.main_dock.visibilityChanged.connect(
+            self._on_main_dock_visibility_changed)
         self.addDockWidget(Qt.RightDockWidgetArea, self.main_dock)
 
         self.main_dock.hide()
@@ -1704,6 +1707,7 @@ class MainWindow(QMainWindow):
         else:
             self.show()
             self.setFocus()
+        self._map_startup_ready = True
 
     def _set_thumbnail_model(self, from_init: bool = False):
         self.thumbnail_view.setModel(None)
@@ -3637,6 +3641,7 @@ class MainWindow(QMainWindow):
     def _on_scan_finished(self, n, select_paths=None):
         """Slot for when the image scanner has finished."""
         self._suppress_updates = False
+        self._is_loading = False
         self._scanner_last_index = self._scanner_total_files
 
         self.btn_load_more.hide()
@@ -3672,6 +3677,7 @@ class MainWindow(QMainWindow):
 
         # Retry locating a path requested by the location dialogs.
         self._maybe_locate_pending_path()
+        self.map_tab.initialize_if_ready()
 
     def more_files_available(self, i, count):
         """Slot for when a batch of images has been loaded, with more available."""
@@ -3680,6 +3686,8 @@ class MainWindow(QMainWindow):
         self._is_loading = False
         has_more = i < count
         self.btn_load_all.setVisible(has_more)
+        if not self._is_loading_all:
+            self.map_tab.initialize_if_ready()
 
     def request_more_images(self, amount):
         """Requests the scanner to load a specific number of additional images."""
@@ -4326,10 +4334,15 @@ class MainWindow(QMainWindow):
             self.favorites_tab.refresh_list()
         # Activate / deactivate map tab (lazy refresh on activation)
         if hasattr(self, 'map_tab'):
-            is_map = (widget == self.map_tab)
+            is_map = (widget == self.map_tab and self.main_dock.isVisible())
             self.map_tab.set_active(is_map)
             if is_map:
                 self.map_tab.refresh(self.get_selected_paths())
+
+    def _on_main_dock_visibility_changed(self, visible):
+        if hasattr(self, 'map_tab'):
+            is_map = visible and self.tags_tabs.currentWidget() == self.map_tab
+            self.map_tab.set_active(is_map)
 
     def update_tag_edit_widget(self):
         """Updates the tag editor widget with data from the currently selected files."""
@@ -6410,7 +6423,7 @@ class MainWindow(QMainWindow):
 
 
 def main():
-    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu"
+    # os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu"
 
     """The main entry point for the Bagheera Image Viewer application."""
     app = QApplication(sys.argv)
@@ -6434,6 +6447,8 @@ def main():
     args, resolution = _extract_resolution(args)
     win = MainWindow(cache, args, thread_pool_manager, duplicate_cache, resolution=resolution)
     app.installEventFilter(win.shortcut_controller)
+    if win.map_tab.is_active():
+        win.map_tab.set_active(True)
 
     sys.exit(app.exec())
 
