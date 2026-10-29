@@ -612,6 +612,15 @@ class AppShortcutController(QObject):
         if action_name in self._actions:
             self._actions[action_name]()
 
+    def activate_from_viewer(self, key, modifiers):
+        """Dispatches a configured global shortcut when a viewer has focus."""
+        key_combo = (int(key), Qt.KeyboardModifiers(modifiers))
+        if (key_combo not in self._shortcuts and
+                key_combo not in self._favorite_shortcuts):
+            return False
+        self._activate_shortcut(*key_combo)
+        return True
+
     def show_help(self):
         """Displays a dialog listing all registered shortcuts."""
         dialog = ShortcutHelpDialog(self._shortcuts,

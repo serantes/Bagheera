@@ -3641,7 +3641,13 @@ class ImageViewer(QWidget):
             self._execute_action(action)
             event.accept()
         else:
-            super().keyPressEvent(event)
+            shortcut_controller = getattr(
+                self.main_win, "shortcut_controller", None)
+            if shortcut_controller and shortcut_controller.activate_from_viewer(
+                    key_code, modifiers):
+                event.accept()
+            else:
+                super().keyPressEvent(event)
 
     # --- Delete Management ---
     def refresh_after_delete(self, new_list, deleted_idx=-1):
