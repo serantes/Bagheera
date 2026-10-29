@@ -1,11 +1,11 @@
 [Desktop Entry]
-Categories=KDE;Baloo;Bagheera
+Categories=Utility;
 Comment[en_US]=Bagheera Search Gui
 Comment=Bagheera Search Gui
 Encoding=UTF-8
 Exec=bagheeragui
 GenericName[en_US]=Bagheera Search
-GenericName=Bagheera Image Viewer
+GenericName=Bagheera Search
 Icon=bagheerasearch
 MimeType=
 Name[en_US]=Bagheera Search
