@@ -2,7 +2,8 @@ import pytest
 from PySide6.QtCore import QEventLoop, QTimer, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
-    QApplication, QDockWidget, QLabel, QMainWindow, QTabWidget, QWidget
+    QApplication, QDialog, QDockWidget, QLabel, QListWidget, QMainWindow,
+    QRadioButton, QTabWidget, QWidget
 )
 
 from bagheeraview.core.app import AppShortcutController
@@ -161,9 +162,10 @@ def test_webengine_map_keeps_working_with_native_application_shortcuts(
     assert javascript == ["object:function:function"]
 
     path = "/tmp/geolocated-photo.jpg"
+    second_path = "/tmp/second-photo.jpg"
     written_coordinates = []
-    map_widget._current_paths = [path]
-    map_widget._edit_path = path
+    map_widget._current_paths = [path, second_path]
+    map_widget._edit_paths = [path, second_path]
     map_widget.btn_edit.setEnabled(False)
     monkeypatch.setattr(widgets, "HAVE_EXIV2", True)
     monkeypatch.setattr(
@@ -181,16 +183,19 @@ def test_webengine_map_keeps_working_with_native_application_shortcuts(
         "bridge.mapClicked(12.5, -45.6);")
     map_click_loop.exec()
 
-    assert written_coordinates == [(path, 12.5, -45.6)]
-    assert map_widget._edit_path is None
+    assert written_coordinates == [
+        (path, 12.5, -45.6), (second_path, 12.5, -45.6)]
+    assert map_widget._edit_paths == []
     assert map_widget.btn_edit.isEnabled()
-    assert map_widget.btn_clear.isEnabled()
+    assert not map_widget.btn_clear.isEnabled()
+    assert map_widget.btn_copy_location.isEnabled()
     assert map_widget.btn_googlemaps.isEnabled()
 
-    map_widget._edit_path = path
+    map_widget._current_paths = [path]
+    map_widget._edit_paths = [path]
     map_widget.btn_edit.setEnabled(False)
     map_widget._bridge.edit_cancelled.emit()
-    assert map_widget._edit_path is None
+    assert map_widget._edit_paths == []
     assert map_widget.btn_edit.isEnabled()
 
     triggered = []
@@ -215,3 +220,116 @@ def test_webengine_map_keeps_working_with_native_application_shortcuts(
     QTimer.singleShot(1000, loop.quit)
     loop.exec()
     window.close()
+
+
+def test_copy_location_targets_only_ungeolocated_photos(monkeypatch):
+    map_widget = widgets.GeoMapWidget()
+    source = "/photos/source.jpg"
+    other_location = "/photos/other-location.jpg"
+    ungeolocated = "/photos/ungeolocated.jpg"
+    map_widget._current_paths = [source, other_location, ungeolocated]
+    map_widget._gps_cache = {
+        source: (10.0, 20.0),
+        other_location: (30.0, 40.0),
+        ungeolocated: None,
+    }
+    monkeypatch.setattr(widgets, "HAVE_EXIV2", True)
+    monkeypatch.setattr(
+        map_widget, "_choose_copy_location",
+        lambda locations, count: ((30.0, 40.0), False))
+    writes = []
+    monkeypatch.setattr(
+        widgets.MetadataManager, "write_gps",
+        lambda path, lat, lon: writes.append((path, lat, lon)))
+    monkeypatch.setattr(
+        widgets.MetadataManager, "read_gps",
+        lambda _path: None)
+
+    map_widget._copy_location_to_selected()
+
+    assert writes == [(ungeolocated, 30.0, 40.0)]
+
+
+def test_cancel_copy_location_does_not_write(monkeypatch):
+    map_widget = widgets.GeoMapWidget()
+    map_widget._current_paths = ["/photos/source.jpg", "/photos/target.jpg"]
+    map_widget._gps_cache = {
+        "/photos/source.jpg": (10.0, 20.0),
+        "/photos/target.jpg": None,
+    }
+    monkeypatch.setattr(widgets, "HAVE_EXIV2", True)
+    monkeypatch.setattr(
+        map_widget, "_choose_copy_location", lambda *_args: None)
+    writes = []
+    monkeypatch.setattr(
+        widgets.MetadataManager, "write_gps",
+        lambda *args: writes.append(args))
+
+    map_widget._copy_location_to_selected()
+
+    assert writes == []
+
+
+def test_copy_location_dialog_returns_chosen_source_and_scope(monkeypatch):
+    map_widget = widgets.GeoMapWidget()
+    map_widget._current_paths = ["/photos/first.jpg", "/photos/second.jpg"]
+
+    def accept_with_second_location_and_all_targets(dialog):
+        dialog.findChild(QListWidget).setCurrentRow(1)
+        dialog.findChildren(QRadioButton)[0].setChecked(True)
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(
+        QDialog, "exec", accept_with_second_location_and_all_targets)
+
+    choice = map_widget._choose_copy_location(
+        [("/photos/first.jpg", (10.0, 20.0)),
+         ("/photos/second.jpg", (30.0, 40.0))],
+        ungeolocated_count=1)
+
+    assert choice == ((30.0, 40.0), True)
+
+
+def test_google_maps_prompts_when_selected_photos_have_distinct_locations(
+        monkeypatch):
+    map_widget = widgets.GeoMapWidget()
+    map_widget._current_paths = ["/photos/first.jpg", "/photos/second.jpg"]
+    map_widget._gps_cache = {
+        "/photos/first.jpg": (10.0, 20.0),
+        "/photos/second.jpg": (30.0, 40.0),
+    }
+    prompts = []
+    monkeypatch.setattr(
+        widgets.QInputDialog, "getItem",
+        lambda *args: (prompts.extend(args[3]) or args[3][1], True))
+    opened_urls = []
+    monkeypatch.setattr(
+        widgets.QDesktopServices, "openUrl",
+        lambda url: opened_urls.append(url.toString()))
+
+    map_widget._open_google_maps()
+
+    assert prompts == [
+        "first.jpg — 10.000000, 20.000000",
+        "second.jpg — 30.000000, 40.000000",
+    ]
+    assert opened_urls == ["https://maps.google.com/?q=30.0,40.0"]
+
+
+def test_cancel_google_maps_location_selection_does_not_open_url(monkeypatch):
+    map_widget = widgets.GeoMapWidget()
+    map_widget._current_paths = ["/photos/first.jpg", "/photos/second.jpg"]
+    map_widget._gps_cache = {
+        "/photos/first.jpg": (10.0, 20.0),
+        "/photos/second.jpg": (30.0, 40.0),
+    }
+    monkeypatch.setattr(
+        widgets.QInputDialog, "getItem", lambda *_args: ("", False))
+    opened_urls = []
+    monkeypatch.setattr(
+        widgets.QDesktopServices, "openUrl",
+        lambda url: opened_urls.append(url.toString()))
+
+    map_widget._open_google_maps()
+
+    assert opened_urls == []

@@ -23,7 +23,8 @@ from PySide6.QtWidgets import (
     QApplication, QWidget,  QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QMessageBox, QSizePolicy, QInputDialog, QTableWidget, QTableWidgetItem,
     QMenu, QHeaderView, QAbstractItemView, QTreeView, QLabel, QTextEdit,
-    QComboBox, QCompleter, QToolBar, QDialog, QProgressBar
+    QComboBox, QCompleter, QToolBar, QDialog, QDialogButtonBox, QListWidget,
+    QProgressBar, QRadioButton
 )
 from PySide6.QtGui import (
     QIcon, QStandardItemModel, QStandardItem, QColor, QPainter, QPen,
@@ -2590,7 +2591,7 @@ class GeoMapWidget(QWidget):
         super().__init__(parent)
         self._is_active = False
         self._current_paths = []
-        self._edit_path = None   # path being geolocated in edit mode
+        self._edit_paths = []    # paths being geolocated in edit mode
         self._gps_cache = {}     # path -> (lat, lon) or None, per refresh
         self.web_view = None     # set below if WebEngine is available
         self._bridge = None
@@ -2619,6 +2620,15 @@ class GeoMapWidget(QWidget):
         self.btn_edit.setEnabled(False)
         self.btn_edit.clicked.connect(self._start_editing)
         tb.addWidget(self.btn_edit)
+
+        self.btn_copy_location = QPushButton(UITexts.MAP_COPY_LOCATION)
+        self.btn_copy_location.setIcon(QIcon.fromTheme("edit-copy"))
+        self.btn_copy_location.setToolTip(
+            UITexts.MAP_COPY_LOCATION_TOOLTIP)
+        self.btn_copy_location.setEnabled(False)
+        self.btn_copy_location.clicked.connect(
+            self._copy_location_to_selected)
+        tb.addWidget(self.btn_copy_location)
 
         self.btn_clear = QPushButton(UITexts.MAP_CLEAR_LOCATION)
         self.btn_clear.setIcon(QIcon.fromTheme("edit-delete"))
@@ -2804,33 +2814,148 @@ class GeoMapWidget(QWidget):
     def _update_buttons(self, geolocated_count: int, total: int):
         """Enables/disables toolbar buttons based on current selection."""
         has_geo = geolocated_count > 0
-        single_selection = total == 1
+        has_selection = total > 0
 
         # Google Maps: enabled when at least one geolocated photo
         self.btn_googlemaps.setEnabled(has_geo)
-        # Edit: enabled for single photo (geolocated or not)
-        self.btn_edit.setEnabled(single_selection and HAVE_EXIV2)
+        # Edit: a map click assigns the point to every selected photo.
+        self.btn_edit.setEnabled(has_selection and HAVE_EXIV2)
+        self.btn_copy_location.setEnabled(
+            total > 1 and has_geo and HAVE_EXIV2)
         # Clear: enabled for single geolocated photo
-        self.btn_clear.setEnabled(
-            single_selection and geolocated_count == 1 and HAVE_EXIV2)
+        self.btn_clear.setEnabled(total == 1 and geolocated_count == 1
+                                  and HAVE_EXIV2)
 
     def _open_google_maps(self):
         """Opens the first geolocated photo's coordinates in Google Maps
         using the browser (free, no API key required).
         """
-        for path in self._current_paths:
-            coords = self._gps_cache.get(path)
-            if coords:
-                lat, lon = coords
-                url = QUrl(f"https://maps.google.com/?q={lat},{lon}")
-                QDesktopServices.openUrl(url)
+        locations = self._get_geolocated_paths()
+        if not locations:
+            return
+
+        distinct_coordinates = {tuple(coords) for _path, coords in locations}
+        location_index = 0
+        if len(distinct_coordinates) > 1:
+            choices = [
+                f"{os.path.basename(path)} — {lat:.6f}, {lon:.6f}"
+                for path, (lat, lon) in locations
+            ]
+            selected, accepted = QInputDialog.getItem(
+                self, UITexts.MAP_SELECT_GOOGLE_LOCATION_TITLE,
+                UITexts.MAP_SELECT_GOOGLE_LOCATION_PROMPT, choices,
+                0, False)
+            if not accepted:
                 return
+            location_index = choices.index(selected)
+
+        lat, lon = locations[location_index][1]
+        url = QUrl(f"https://maps.google.com/?q={lat},{lon}")
+        QDesktopServices.openUrl(url)
+
+    def _get_geolocated_paths(self):
+        """Returns selected paths with known GPS coordinates, reading cache misses."""
+        locations = []
+        for path in self._current_paths:
+            if path not in self._gps_cache:
+                self._gps_cache[path] = MetadataManager.read_gps(path)
+            coords = self._gps_cache[path]
+            if coords:
+                locations.append((path, coords))
+        return locations
+
+    def _choose_copy_location(self, locations, ungeolocated_count):
+        """Shows source-location and target-scope choices before copying."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle(UITexts.MAP_COPY_LOCATION_TITLE)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(UITexts.MAP_COPY_LOCATION_PROMPT, dialog))
+
+        distinct_coordinates = {tuple(coords) for _path, coords in locations}
+        location_list = None
+        if len(distinct_coordinates) > 1:
+            location_list = QListWidget(dialog)
+            for path, (lat, lon) in locations:
+                location_list.addItem(
+                    f"{os.path.basename(path)} — {lat:.6f}, {lon:.6f}")
+            location_list.setCurrentRow(0)
+            layout.addWidget(location_list)
+
+        all_radio = QRadioButton(
+            UITexts.MAP_COPY_LOCATION_ALL.format(len(self._current_paths)),
+            dialog)
+        ungeolocated_radio = QRadioButton(
+            UITexts.MAP_COPY_LOCATION_UNGEOLOCATED.format(
+                ungeolocated_count), dialog)
+        ungeolocated_radio.setEnabled(ungeolocated_count > 0)
+        if ungeolocated_count:
+            ungeolocated_radio.setChecked(True)
+        else:
+            all_radio.setChecked(True)
+        layout.addWidget(all_radio)
+        layout.addWidget(ungeolocated_radio)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok |
+            QDialogButtonBox.StandardButton.Cancel, parent=dialog)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return None
+
+        location_index = location_list.currentRow() if location_list else 0
+        if location_index < 0:
+            return None
+        return locations[location_index][1], all_radio.isChecked()
+
+    def _copy_location_to_selected(self):
+        """Copies one selected GPS location to all or ungeolocated selections."""
+        locations = self._get_geolocated_paths()
+        if not locations or not HAVE_EXIV2:
+            return
+
+        ungeolocated = [
+            path for path in self._current_paths
+            if self._gps_cache.get(path) is None
+        ]
+        choice = self._choose_copy_location(locations, len(ungeolocated))
+        if choice is None:
+            return
+        coords, copy_to_all = choice
+        targets = self._current_paths if copy_to_all else ungeolocated
+
+        errors = []
+        copied_count = 0
+        for path in targets:
+            try:
+                MetadataManager.write_gps(path, *coords)
+            except Exception as exc:
+                errors.append((path, exc))
+            else:
+                self._gps_cache.pop(path, None)
+                copied_count += 1
+
+        self._do_refresh()
+        if errors:
+            path, error = errors[0]
+            self.status_lbl.setText(
+                UITexts.MAP_GPS_WRITE_ERROR.format(
+                    f"{os.path.basename(path)}: {error}"))
+            self.status_lbl.setStyleSheet(
+                "color: #cc4444; font-style: italic;")
+        else:
+            self.status_lbl.setText(
+                UITexts.MAP_COPY_LOCATION_DONE.format(copied_count))
+            self.status_lbl.setStyleSheet(
+                "color: gray; font-style: italic; font-size: 11px;")
 
     def _start_editing(self):
         """Enters editing mode: the next map click sets the GPS location."""
         if not self._current_paths:
             return
-        self._edit_path = self._current_paths[0]
+        self._edit_paths = list(self._current_paths)
         self.status_lbl.setText(UITexts.MAP_EDITING_LOCATION)
         self.btn_edit.setEnabled(False)
         if self.web_view is not None:
@@ -2838,8 +2963,7 @@ class GeoMapWidget(QWidget):
 
     def _cancel_editing(self):
         """Cancels editing mode without changing any data."""
-        self._edit_path = None
-        self.btn_edit.setEnabled(bool(self._current_paths))
+        self._edit_paths = []
         self._do_refresh()
 
     @Slot(str)
@@ -2851,20 +2975,32 @@ class GeoMapWidget(QWidget):
     @Slot(float, float)
     def _on_map_clicked(self, lat: float, lon: float):
         """Called from JS when the user clicks the map in edit mode."""
-        path = self._edit_path
-        self._edit_path = None
-        if not path:
+        paths = self._edit_paths
+        self._edit_paths = []
+        if not paths:
             return
-        try:
-            MetadataManager.write_gps(path, lat, lon)
-            # Invalidate cache for this path so the next refresh re-reads
-            self._gps_cache.pop(path, None)
-            self._do_refresh()
-        except Exception as e:
-            self.status_lbl.setText(UITexts.MAP_GPS_WRITE_ERROR.format(str(e)))
+
+        errors = []
+        for path in paths:
+            try:
+                MetadataManager.write_gps(path, lat, lon)
+            except Exception as exc:
+                errors.append((path, exc))
+            else:
+                self._gps_cache.pop(path, None)
+
+        self._do_refresh()
+        if errors:
+            path, error = errors[0]
+            self.status_lbl.setText(UITexts.MAP_GPS_WRITE_ERROR.format(
+                f"{os.path.basename(path)}: {error}"))
             self.status_lbl.setStyleSheet("color: #cc4444; font-style: italic;")
-            self.btn_edit.setEnabled(
-                len(self._current_paths) == 1 and HAVE_EXIV2)
+        else:
+            self.status_lbl.setText(
+                UITexts.MAP_LOCATION_ASSIGNED.format(
+                    len(paths) - len(errors)))
+            self.status_lbl.setStyleSheet(
+                "color: gray; font-style: italic; font-size: 11px;")
 
     def _clear_gps_location(self):
         """Removes GPS EXIF tags from the single selected photo."""
