@@ -239,8 +239,9 @@ class ScannerWorker(QRunnable):
 
 def generate_thumbnail(path, size, fd=None):
     """Generates a QImage thumbnail for a given path and size."""
+    qfile = None
+    reader = None
     try:
-        qfile = None
         if fd is not None:
             try:
                 # Ensure we are at the beginning of the file
@@ -295,6 +296,12 @@ def generate_thumbnail(path, size, fd=None):
     except Exception as e:
         logger.debug(f"Could not generate thumbnail for {path}: {e}")
         return None
+    finally:
+        # QImageReader does not own its QIODevice. Release the reader while
+        # QFile is still alive; TIFF handlers access the device during close.
+        reader = None
+        if qfile is not None:
+            qfile.close()
 
 
 class CacheWriter(QThread):
