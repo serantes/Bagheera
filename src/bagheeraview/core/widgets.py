@@ -2597,8 +2597,6 @@ class GeoMapWidget(QWidget):
         self._channel = None
         self._map_initialized = False
         self._map_loaded = False
-        self._shortcut_controller = None
-        self._shortcut_filter_suspended = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -2680,10 +2678,9 @@ class GeoMapWidget(QWidget):
             self.web_view.setHtml(html)
             self._map_layout.addWidget(self.web_view)
 
-            # Connect bridge signals
-            # self._bridge.marker_clicked.connect(self._on_marker_clicked)
-            # self._bridge.map_clicked.connect(self._on_map_clicked)
-            # self._bridge.edit_cancelled.connect(self._cancel_editing)
+            self._bridge.marker_clicked.connect(self._on_marker_clicked)
+            self._bridge.map_clicked.connect(self._on_map_clicked)
+            self._bridge.edit_cancelled.connect(self._cancel_editing)
         else:
             fallback = QLabel(UITexts.MAP_WEBENGINE_MISSING)
             fallback.setAlignment(Qt.AlignCenter)
@@ -2707,27 +2704,6 @@ class GeoMapWidget(QWidget):
                 0, lambda: self.web_view.page().runJavaScript(
                     "map.invalidateSize({pan:false});"))
 
-    def _suspend_shortcut_filter(self):
-        app = QApplication.instance()
-        parent = self.parentWidget()
-        while parent is not None:
-            self._shortcut_controller = getattr(
-                parent, "shortcut_controller", None)
-            if self._shortcut_controller is not None:
-                break
-            parent = parent.parentWidget()
-        if app is not None and self._shortcut_controller is not None:
-            app.removeEventFilter(self._shortcut_controller)
-            self._shortcut_filter_suspended = True
-
-    def _restore_shortcut_filter(self):
-        if not self._shortcut_filter_suspended:
-            return
-        app = QApplication.instance()
-        if app is not None:
-            app.installEventFilter(self._shortcut_controller)
-        self._shortcut_filter_suspended = False
-
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -2739,10 +2715,7 @@ class GeoMapWidget(QWidget):
         """Called by the main window when this tab is shown or hidden."""
         self._is_active = active
         if active:
-            self._suspend_shortcut_filter()
             self.initialize_if_ready()
-        else:
-            self._restore_shortcut_filter()
 
     def initialize_if_ready(self):
         """Initialize the map when the main window is ready and not scanning."""
@@ -2890,6 +2863,8 @@ class GeoMapWidget(QWidget):
         except Exception as e:
             self.status_lbl.setText(UITexts.MAP_GPS_WRITE_ERROR.format(str(e)))
             self.status_lbl.setStyleSheet("color: #cc4444; font-style: italic;")
+            self.btn_edit.setEnabled(
+                len(self._current_paths) == 1 and HAVE_EXIV2)
 
     def _clear_gps_location(self):
         """Removes GPS EXIF tags from the single selected photo."""

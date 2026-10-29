@@ -1,9 +1,11 @@
 import pytest
-from PySide6.QtCore import QEvent, QObject, QEventLoop, QTimer, Qt
+from PySide6.QtCore import QEventLoop, QTimer, Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication, QDockWidget, QLabel, QMainWindow, QTabWidget, QWidget
 )
 
+from bagheeraview.core.app import AppShortcutController
 from bagheeraview.core import widgets
 
 
@@ -71,26 +73,29 @@ def test_map_initialization_waits_for_startup_scan(monkeypatch):
     application.processEvents()
 
 
-def test_webengine_map_load_does_not_crash_with_application_event_filter(
+def test_webengine_map_keeps_working_with_native_application_shortcuts(
         app, monkeypatch):
     pytest.importorskip("PySide6.QtWebEngineWidgets")
 
-    class ShortcutFilter(QObject):
-        def __init__(self, parent):
-            super().__init__(parent)
-            self.event_count = 0
-
-        def eventFilter(self, _obj, _event):
-            self.event_count += 1
-            return False
-
     window = QMainWindow()
+    window.viewer_shortcuts = {}
+    window.dialog_shortcuts = {}
+    for action in (
+            "perform_shutdown", "toggle_visibility", "close_all_viewers",
+            "load_more_images", "load_all_images", "save_layout",
+            "load_layout_dialog", "open_current_folder",
+            "delete_current_image", "hard_refresh_content", "refresh_content",
+            "select_all_thumbnails", "select_none_thumbnails",
+            "invert_selection_thumbnails"):
+        setattr(window, action, lambda *args, **kwargs: None)
     tabs = QTabWidget()
     dock = QDockWidget(window)
     dock.setWidget(tabs)
     window.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
     map_widget = widgets.GeoMapWidget(window)
     tabs.addTab(map_widget, "Map")
+    other_tab = QWidget()
+    tabs.addTab(other_tab, "Other")
 
     leaflet_shim = """
     <script>
@@ -103,6 +108,7 @@ def test_webengine_map_load_does_not_crash_with_application_event_filter(
           removeLayer() {},
           getContainer() {return {style: {}}},
           getZoom() {return 2},
+          invalidateSize() {return this},
           fitBounds() {}
         };
       },
@@ -130,16 +136,11 @@ def test_webengine_map_load_does_not_crash_with_application_event_filter(
     monkeypatch.setattr(
         widgets, "_MAP_HTML", html)
 
-    shortcut_filter = ShortcutFilter(window)
-    window.shortcut_controller = shortcut_filter
     window.resize(900, 600)
     window.show()
     dock.show()
     app.processEvents()
     map_widget.set_active(True)
-
-    app.installEventFilter(shortcut_filter)
-    map_widget.set_active(map_widget.is_active())
 
     loop = QEventLoop()
     map_widget.web_view.loadFinished.connect(loop.quit)
@@ -148,8 +149,6 @@ def test_webengine_map_load_does_not_crash_with_application_event_filter(
 
     assert map_widget.web_view is not None
     assert map_widget._map_loaded
-    assert map_widget._shortcut_filter_suspended
-    assert map_widget._shortcut_controller is shortcut_filter
     assert map_widget.web_view.width() > 0
     assert map_widget.web_view.height() > 0
     javascript = []
@@ -161,13 +160,58 @@ def test_webengine_map_load_does_not_crash_with_application_event_filter(
     loop.exec()
     assert javascript == ["object:function:function"]
 
-    shortcut_filter.event_count = 0
-    app.sendEvent(window, QEvent(QEvent.User))
-    assert shortcut_filter.event_count == 0
+    path = "/tmp/geolocated-photo.jpg"
+    written_coordinates = []
+    map_widget._current_paths = [path]
+    map_widget._edit_path = path
+    map_widget.btn_edit.setEnabled(False)
+    monkeypatch.setattr(widgets, "HAVE_EXIV2", True)
+    monkeypatch.setattr(
+        widgets.MetadataManager, "write_gps",
+        lambda image_path, lat, lon:
+        written_coordinates.append((image_path, lat, lon)))
+    monkeypatch.setattr(
+        widgets.MetadataManager, "read_gps",
+        lambda _image_path: (12.5, -45.6))
 
+    map_click_loop = QEventLoop()
+    map_widget._bridge.map_clicked.connect(map_click_loop.quit)
+    QTimer.singleShot(3000, map_click_loop.quit)
+    map_widget.web_view.page().runJavaScript(
+        "bridge.mapClicked(12.5, -45.6);")
+    map_click_loop.exec()
+
+    assert written_coordinates == [(path, 12.5, -45.6)]
+    assert map_widget._edit_path is None
+    assert map_widget.btn_edit.isEnabled()
+    assert map_widget.btn_clear.isEnabled()
+    assert map_widget.btn_googlemaps.isEnabled()
+
+    map_widget._edit_path = path
+    map_widget.btn_edit.setEnabled(False)
+    map_widget._bridge.edit_cancelled.emit()
+    assert map_widget._edit_path is None
+    assert map_widget.btn_edit.isEnabled()
+
+    triggered = []
+    controller = AppShortcutController(window)
+    controller._shortcuts = {
+        (int(Qt.Key.Key_K), Qt.KeyboardModifiers.NoModifier):
+            ("test_action", False, "Test", "Test")
+    }
+    controller._favorite_shortcuts.clear()
+    controller._actions = {"test_action": lambda: triggered.append(True)}
+    controller._refresh_native_shortcuts()
+    QTest.keyClick(map_widget.web_view, Qt.Key.Key_K)
+    assert triggered == [True]
+
+    tabs.setCurrentWidget(other_tab)
     map_widget.set_active(False)
-    app.sendEvent(window, QEvent(QEvent.User))
-    assert shortcut_filter.event_count > 0
+    window.setFocus()
+    QTest.keyClick(window, Qt.Key.Key_K)
+    assert triggered == [True, True]
 
-    app.removeEventFilter(shortcut_filter)
+    loop = QEventLoop()
+    QTimer.singleShot(1000, loop.quit)
+    loop.exec()
     window.close()

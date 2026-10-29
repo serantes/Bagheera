@@ -11,7 +11,7 @@ The application uses a model-view-delegate pattern for the thumbnail grid to
 efficiently handle very large collections of images.
 
 Classes:
-    AppShortcutController: Global event filter for keyboard shortcuts.
+    AppShortcutController: Application-wide keyboard shortcut manager.
     MainWindow: The main application window containing the thumbnail grid and
     docks.
 """
@@ -38,7 +38,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import (
     QDesktopServices, QFont, QFontMetrics, QIcon, QTransform, QImageReader,
     QPalette, QStandardItemModel, QStandardItem, QColor, QPixmap, QPixmapCache,
-    QPainter, QKeySequence, QAction, QActionGroup, QImage
+    QPainter, QKeySequence, QShortcut, QAction, QActionGroup, QImage
 )
 from PySide6.QtCore import (
     Qt, QPoint, QUrl, QObject, QEvent, QTimer, QByteArray,
@@ -423,12 +423,10 @@ class ShortcutHelpDialog(QDialog):
 
 class AppShortcutController(QObject):
     """
-    Global event filter for application-wide keyboard shortcuts.
+    Application-wide keyboard shortcut manager.
 
-    This class is installed on the QApplication instance to intercept key press
-    events before they reach their target widgets. This allows for defining
-    global shortcuts that work regardless of which widget has focus, unless
-    the user is typing in an input field.
+    Native Qt shortcuts avoid inspecting every event sent to QtWebEngine's
+    internal objects, which can crash PySide/Shiboken on some platforms.
     """
     def __init__(self, main_win):
         """Initializes the shortcut controller.
@@ -436,11 +434,12 @@ class AppShortcutController(QObject):
         Args:
             main_win (MainWindow): A reference to the main application window.
         """
-        super().__init__()
+        super().__init__(main_win)
         self.main_win = main_win
         self._actions = self._get_actions()
         self._shortcuts = {}
         self._favorite_shortcuts = {}
+        self._native_shortcuts = []
         self.action_to_shortcut = {}
         self._register_shortcuts()
 
@@ -467,26 +466,31 @@ class AppShortcutController(QObject):
 
             self._shortcuts = final_shortcuts
             self.action_to_shortcut = {v[0]: k for k, v in self._shortcuts.items()}
+        app = QApplication.instance()
+        if app is not None:
+            app.focusChanged.connect(self._update_shortcut_enabled_state)
         self.refresh_favorite_shortcuts()
 
     def refresh_favorite_shortcuts(self):
         """Loads dynamic shortcuts assigned to favorite queries."""
         self._favorite_shortcuts.clear()
-        if not os.path.exists(FAVORITES_PATH):
-            return
-        try:
-            with open(FAVORITES_PATH, 'r', encoding='utf-8') as f:
-                favorites = json.load(f)
-                for fav in favorites:
-                    sc_str = fav.get('shortcut', '')
-                    if sc_str:
-                        seq = QKeySequence(sc_str)
-                        if not seq.isEmpty():
-                            self._favorite_shortcuts[
-                                (seq[0].key(), seq[0].keyboardModifiers())
+        if os.path.exists(FAVORITES_PATH):
+            try:
+                with open(FAVORITES_PATH, 'r', encoding='utf-8') as f:
+                    favorites = json.load(f)
+                    for fav in favorites:
+                        sc_str = fav.get('shortcut', '')
+                        if sc_str:
+                            seq = QKeySequence(sc_str)
+                            if not seq.isEmpty():
+                                self._favorite_shortcuts[
+                                    (int(seq[0].key()),
+                                     Qt.KeyboardModifiers(
+                                         seq[0].keyboardModifiers()))
                                 ] = fav.get('query')
-        except (json.JSONDecodeError, OSError):
-            pass
+            except (json.JSONDecodeError, OSError):
+                pass
+        self._refresh_native_shortcuts()
 
     def check_conflict(self, key, mods):
         """Checks if a shortcut is already assigned and returns its
@@ -549,54 +553,64 @@ class AppShortcutController(QObject):
                 self._shortcuts[key_combo] = (action, ignore, desc, category)
                 self.action_to_shortcut[action] = key_combo
 
-    def eventFilter(self, obj, event):
-        """Filters events to handle global key presses."""
-        if event.type() != QEvent.KeyPress:
-            return False
+    def _refresh_native_shortcuts(self):
+        """Rebuilds native Qt shortcuts from global and favorite mappings."""
+        for shortcut in self._native_shortcuts:
+            shortcut.setEnabled(False)
+            shortcut.deleteLater()
+        self._native_shortcuts.clear()
 
-        key = event.key()
-        mods = event.modifiers() & (Qt.ShiftModifier | Qt.ControlModifier |
-                                    Qt.AltModifier | Qt.MetaModifier)
+        key_combinations = set(self._shortcuts) | set(self._favorite_shortcuts)
+        for key, modifiers in key_combinations:
+            modifier_value = int(getattr(modifiers, "value", modifiers))
+            sequence = QKeySequence(int(key) | modifier_value)
+            shortcut = QShortcut(sequence, self.main_win)
+            shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+            shortcut.activated.connect(
+                lambda key=key, modifiers=modifiers:
+                self._activate_shortcut(key, modifiers))
+            self._native_shortcuts.append(shortcut)
 
-        # Special case: Ignore specific navigation keys when typing
+        self._update_shortcut_enabled_state()
+
+    def _update_shortcut_enabled_state(self, *_focus_change):
+        """Disables shortcuts while typing or in dialogs that own shortcuts."""
         focus_widget = QApplication.focusWidget()
         is_typing = isinstance(focus_widget, (QComboBox, QLineEdit, QTextEdit,
                                               QInputDialog, QPlainTextEdit))
-        # if is_typing and key in (Qt.Key_Home, Qt.Key_End, Qt.Key_Delete,
-        #                         Qt.Key_Left, Qt.Key_Right, Qt.Key_Backspace):
-        if is_typing:
-            return False
+        active_window = QApplication.activeWindow()
+        handles_own_shortcuts = (
+            active_window is not None and
+            getattr(active_window, "handles_own_shortcuts", False))
+        enabled = not is_typing and not handles_own_shortcuts
+        for shortcut in self._native_shortcuts:
+            shortcut.setEnabled(enabled)
 
-        # Dialogs that declare ``handles_own_shortcuts`` (e.g. the similar and
-        # duplicate management dialogs) resolve their context-menu keys
-        # themselves, so the global shortcuts must not be triggered while they
-        # are active.
+    def _activate_shortcut(self, key, mods):
+        """Dispatches a native shortcut using the existing mapping priority."""
+        focus_widget = QApplication.focusWidget()
+        if isinstance(focus_widget, (QComboBox, QLineEdit, QTextEdit,
+                                     QInputDialog, QPlainTextEdit)):
+            return
+
         active_window = QApplication.activeWindow()
         if active_window is not None and \
            getattr(active_window, "handles_own_shortcuts", False):
-            return False
+            return
 
-        # 1. Check Favorite Shortcuts FIRST (Priority Override)
         if (key, mods) in self._favorite_shortcuts:
-            query = self._favorite_shortcuts[(key, mods)]
-            self.main_win.process_term(query)
-            return True
+            self.main_win.process_term(self._favorite_shortcuts[(key, mods)])
+            return
 
-        # Check if we have a handler for this combination
-        if (key, mods) in self._shortcuts:
-            action_name, ignore_if_typing, _, _ = self._shortcuts[(key, mods)]
-
-            if ignore_if_typing:
-                focus_widget = QApplication.focusWidget()
-                if isinstance(focus_widget, (QComboBox, QLineEdit, QTextEdit,
-                                             QInputDialog)):
-                    return False
-
-            if action_name in self._actions:
-                self._actions[action_name]()
-            return True
-
-        return False
+        shortcut = self._shortcuts.get((key, mods))
+        if shortcut is None:
+            return
+        action_name, ignore_if_typing, _, _ = shortcut
+        if ignore_if_typing and isinstance(
+                focus_widget, (QComboBox, QLineEdit, QTextEdit, QInputDialog)):
+            return
+        if action_name in self._actions:
+            self._actions[action_name]()
 
     def show_help(self):
         """Displays a dialog listing all registered shortcuts."""
@@ -6423,7 +6437,7 @@ class MainWindow(QMainWindow):
 
 
 def main():
-    # os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu"
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu"
 
     """The main entry point for the Bagheera Image Viewer application."""
     app = QApplication(sys.argv)
@@ -6446,7 +6460,6 @@ def main():
     args = [a for a in sys.argv[1:] if a != "--x11"]
     args, resolution = _extract_resolution(args)
     win = MainWindow(cache, args, thread_pool_manager, duplicate_cache, resolution=resolution)
-    app.installEventFilter(win.shortcut_controller)
     if win.map_tab.is_active():
         win.map_tab.set_active(True)
 
