@@ -69,12 +69,13 @@ class PowerManager:
 @contextmanager
 def preserve_mtime(path_or_fd):
     """
-    Context manager to preserve the modification time (mtime) of a file.
+    Context manager to preserve a file's access and modification times.
 
     This is useful when performing operations that might inadvertently update
-    the file's modification time (like modifying extended attributes), but
-    where the original timestamp should be retained. Supports both file paths
-    and file descriptors.
+    filesystem timestamps (such as metadata writes), but where the original
+    timestamps should be retained. Supports paths and file descriptors.
+    The filesystem change time (ctime) is managed by the operating system and
+    cannot be restored by this context manager.
 
     Args:
         path_or_fd (str | int): The file path or file descriptor.
@@ -82,20 +83,13 @@ def preserve_mtime(path_or_fd):
     Yields:
         None: Control is yielded back to the caller context.
     """
-    mtime_ns = None
-    try:
-        # Check for valid input (non-empty string or integer)
-        if path_or_fd is not None and (not isinstance(path_or_fd, str) or path_or_fd):
-            stat_result = os.stat(path_or_fd)
-            mtime_ns = stat_result.st_mtime_ns
-    except (OSError, ValueError, TypeError):
-        pass
+    if path_or_fd is None or (isinstance(path_or_fd, str) and not path_or_fd):
+        raise ValueError("A file path or descriptor is required")
+    stat_result = os.stat(path_or_fd)
+    atime_ns = stat_result.st_atime_ns
+    mtime_ns = stat_result.st_mtime_ns
 
     try:
         yield
     finally:
-        if mtime_ns is not None:
-            # Keep access time changes from reading the file, but restore the
-            # exact original modification time even when the operation fails.
-            stat_result = os.stat(path_or_fd)
-            os.utime(path_or_fd, ns=(stat_result.st_atime_ns, mtime_ns))
+        os.utime(path_or_fd, ns=(atime_ns, mtime_ns))

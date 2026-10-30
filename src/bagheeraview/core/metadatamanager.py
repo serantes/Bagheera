@@ -191,50 +191,49 @@ class MetadataManager:
             return
 
         try:
-            image = exiv2.ImageFactory.open(path)
-            image.readMetadata()
-
-            exif = image.exifData()
-            iptc = image.iptcData()
-            xmp = image.xmpData()
-
-            # Remove keys that are no longer in the dictionary
-            containers = [
-                (exif, exiv2.ExifKey, "Exif."),
-                (iptc, exiv2.IptcKey, "Iptc."),
-                (xmp, exiv2.XmpKey, "Xmp.")
-            ]
-
-            for container, key_class, prefix in containers:
-                keys_to_remove = []
-                for datum in container:
-                    k = datum.key()
-                    # Only consider keys belonging to this specific container
-                    if k.startswith(prefix) and k not in metadata_dict:
-                        keys_to_remove.append(k)
-
-                for key in keys_to_remove:
-                    try:
-                        x_key = key_class(key)
-                        it = container.findKey(x_key)
-                        if it != container.end():
-                            container.erase(it)
-                    except Exception as e:
-                        print(f"Error removing metadata key {key}: {e}")
-
-            # Set or update values from the dictionary
-            for key, value in metadata_dict.items():
-                try:
-                    if key.startswith("Exif."):
-                        exif[key] = str(value)
-                    elif key.startswith("Iptc."):
-                        iptc[key] = str(value)
-                    elif key.startswith("Xmp."):
-                        xmp[key] = str(value)
-                except Exception as e:
-                    print(f"Error setting metadata key {key}: {e}")
-
             with preserve_mtime(path):
+                image = exiv2.ImageFactory.open(path)
+                image.readMetadata()
+
+                exif = image.exifData()
+                iptc = image.iptcData()
+                xmp = image.xmpData()
+
+                # Remove keys that are no longer in the dictionary
+                containers = [
+                    (exif, exiv2.ExifKey, "Exif."),
+                    (iptc, exiv2.IptcKey, "Iptc."),
+                    (xmp, exiv2.XmpKey, "Xmp.")
+                ]
+
+                for container, key_class, prefix in containers:
+                    keys_to_remove = []
+                    for datum in container:
+                        k = datum.key()
+                        if k.startswith(prefix) and k not in metadata_dict:
+                            keys_to_remove.append(k)
+
+                    for key in keys_to_remove:
+                        try:
+                            x_key = key_class(key)
+                            it = container.findKey(x_key)
+                            if it != container.end():
+                                container.erase(it)
+                        except Exception as e:
+                            print(f"Error removing metadata key {key}: {e}")
+
+                # Set or update values from the dictionary
+                for key, value in metadata_dict.items():
+                    try:
+                        if key.startswith("Exif."):
+                            exif[key] = str(value)
+                        elif key.startswith("Iptc."):
+                            iptc[key] = str(value)
+                        elif key.startswith("Xmp."):
+                            xmp[key] = str(value)
+                    except Exception as e:
+                        print(f"Error setting metadata key {key}: {e}")
+
                 image.writeMetadata()
             notify_baloo(path)
             mark_app_modified(path)
@@ -355,26 +354,24 @@ class MetadataManager:
         if not HAVE_EXIV2:
             raise RuntimeError("exiv2 library not available")
 
-        image = exiv2.ImageFactory.open(path)
-        image.readMetadata()
-        exif = image.exifData()
-
-        lat_ref = 'N' if lat >= 0 else 'S'
-        lon_ref = 'E' if lon >= 0 else 'W'
-        lat_dms = MetadataManager._decimal_to_dms_rational(lat)
-        lon_dms = MetadataManager._decimal_to_dms_rational(lon)
-
-        def _fmt_rational(dms):
-            return ' '.join(f"{n}/{d}" for n, d in dms)
-
-        exif["Exif.GPSInfo.GPSLatitude"] = _fmt_rational(lat_dms)
-        exif["Exif.GPSInfo.GPSLatitudeRef"] = lat_ref
-        exif["Exif.GPSInfo.GPSLongitude"] = _fmt_rational(lon_dms)
-        exif["Exif.GPSInfo.GPSLongitudeRef"] = lon_ref
-        # GPSMapDatum: standard value for most modern cameras
-        exif["Exif.GPSInfo.GPSMapDatum"] = "WGS-84"
-
         with preserve_mtime(path):
+            image = exiv2.ImageFactory.open(path)
+            image.readMetadata()
+            exif = image.exifData()
+
+            lat_ref = 'N' if lat >= 0 else 'S'
+            lon_ref = 'E' if lon >= 0 else 'W'
+            lat_dms = MetadataManager._decimal_to_dms_rational(lat)
+            lon_dms = MetadataManager._decimal_to_dms_rational(lon)
+
+            def _fmt_rational(dms):
+                return ' '.join(f"{n}/{d}" for n, d in dms)
+
+            exif["Exif.GPSInfo.GPSLatitude"] = _fmt_rational(lat_dms)
+            exif["Exif.GPSInfo.GPSLatitudeRef"] = lat_ref
+            exif["Exif.GPSInfo.GPSLongitude"] = _fmt_rational(lon_dms)
+            exif["Exif.GPSInfo.GPSLongitudeRef"] = lon_ref
+            exif["Exif.GPSInfo.GPSMapDatum"] = "WGS-84"
             image.writeMetadata()
         notify_baloo(path)
         mark_app_modified(path)
@@ -389,32 +386,32 @@ class MetadataManager:
         if not HAVE_EXIV2:
             return
         try:
-            image = exiv2.ImageFactory.open(path)
-            image.readMetadata()
-            exif = image.exifData()
-
-            gps_keys = [
-                "Exif.GPSInfo.GPSLatitude",
-                "Exif.GPSInfo.GPSLatitudeRef",
-                "Exif.GPSInfo.GPSLongitude",
-                "Exif.GPSInfo.GPSLongitudeRef",
-                "Exif.GPSInfo.GPSMapDatum",
-                "Exif.GPSInfo.GPSAltitude",
-                "Exif.GPSInfo.GPSAltitudeRef",
-                "Exif.GPSInfo.GPSTimeStamp",
-                "Exif.GPSInfo.GPSDateStamp",
-                "Exif.GPSInfo.GPSVersionID",
-            ]
-            for key_str in gps_keys:
-                try:
-                    key = exiv2.ExifKey(key_str)
-                    it = exif.findKey(key)
-                    if it != exif.end():
-                        exif.erase(it)
-                except Exception:
-                    pass
-
             with preserve_mtime(path):
+                image = exiv2.ImageFactory.open(path)
+                image.readMetadata()
+                exif = image.exifData()
+
+                gps_keys = [
+                    "Exif.GPSInfo.GPSLatitude",
+                    "Exif.GPSInfo.GPSLatitudeRef",
+                    "Exif.GPSInfo.GPSLongitude",
+                    "Exif.GPSInfo.GPSLongitudeRef",
+                    "Exif.GPSInfo.GPSMapDatum",
+                    "Exif.GPSInfo.GPSAltitude",
+                    "Exif.GPSInfo.GPSAltitudeRef",
+                    "Exif.GPSInfo.GPSTimeStamp",
+                    "Exif.GPSInfo.GPSDateStamp",
+                    "Exif.GPSInfo.GPSVersionID",
+                ]
+                for key_str in gps_keys:
+                    try:
+                        key = exiv2.ExifKey(key_str)
+                        it = exif.findKey(key)
+                        if it != exif.end():
+                            exif.erase(it)
+                    except Exception:
+                        pass
+
                 image.writeMetadata()
             notify_baloo(path)
             mark_app_modified(path)
