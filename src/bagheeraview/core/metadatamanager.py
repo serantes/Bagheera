@@ -246,7 +246,6 @@ class MetadataManager:
             logger.error(f"Error writing metadata for {path}: {e}")
             raise
 
-
     # ------------------------------------------------------------------ #
     #  GPS helpers                                                         #
     # ------------------------------------------------------------------ #

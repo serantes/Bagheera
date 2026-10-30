@@ -24,6 +24,7 @@ dependencies = [
     "psutil",
     "watchdog",
     "imagehash",
+    "geopy",
 ]
 
 [project.optional-dependencies]

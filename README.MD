@@ -19,7 +19,13 @@ developed and planned tools are:
 - **Image Similarity Search:** Powered by FAISS for fast feature vector matching.
 - **Person Identification:** Facial detection and recognition using deep learning
   embeddings.
-- **Geolocation:** OpenStreetMap integration to handle image geolocation.
+- **Geolocation:** OpenStreetMap map tab for viewing, assigning, and copying
+  image GPS locations. Search by decimal or DMS coordinates, complete Google
+  Plus Code, or place name using Nominatim. A map click outside edit mode
+  creates a temporary location marker; click it to remove it, or copy it to
+  the selected photo(s). Search and marker placement zoom to a one-kilometer
+  radius only when the current view is wider, and GPS updates preserve the
+  current map view.
 
 ## 📥 Installation (Development)
 
@@ -353,4 +359,3 @@ user's environment state in the local configuration files:
 - - -
 *Bagheera uses Baloo's documentation as a reference but extends it with custom
 logic for a more robust CLI and graphical experience.*
-

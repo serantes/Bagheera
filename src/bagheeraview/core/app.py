@@ -82,10 +82,11 @@ from .imagescanner import (CacheCleaner, ImageScanner, ThumbnailCache,
                            ThumbnailGenerator, ThreadPoolManager)
 from .imageviewer import ImageViewer
 from .propertiesdialog import PropertiesDialog
+from .geomapwidget import GeoMapWidget
 from .widgets import (
     CircularProgressBar,
     TagEditWidget, LayoutsWidget, HistoryWidget, RatingWidget, CommentWidget,
-    FavoritesWidget, GeoMapWidget
+    FavoritesWidget
 )
 from .metadatamanager import load_common_metadata
 from .filesystemwatcher import FileSystemWatcher
