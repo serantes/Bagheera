@@ -82,22 +82,20 @@ def preserve_mtime(path_or_fd):
     Yields:
         None: Control is yielded back to the caller context.
     """
-    mtime = None
+    mtime_ns = None
     try:
         # Check for valid input (non-empty string or integer)
         if path_or_fd is not None and (not isinstance(path_or_fd, str) or path_or_fd):
             stat_result = os.stat(path_or_fd)
-            mtime = stat_result.st_mtime
+            mtime_ns = stat_result.st_mtime_ns
     except (OSError, ValueError, TypeError):
         pass
 
-    yield
-
-    if mtime is not None:
-        try:
-            # Re-stat to get current atime, as reading might have updated it
+    try:
+        yield
+    finally:
+        if mtime_ns is not None:
+            # Keep access time changes from reading the file, but restore the
+            # exact original modification time even when the operation fails.
             stat_result = os.stat(path_or_fd)
-            atime = stat_result.st_atime
-            os.utime(path_or_fd, (atime, mtime))
-        except (OSError, ValueError, TypeError):
-            pass
+            os.utime(path_or_fd, ns=(stat_result.st_atime_ns, mtime_ns))

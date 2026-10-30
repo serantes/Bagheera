@@ -234,7 +234,8 @@ class MetadataManager:
                 except Exception as e:
                     print(f"Error setting metadata key {key}: {e}")
 
-            image.writeMetadata()
+            with preserve_mtime(path):
+                image.writeMetadata()
             notify_baloo(path)
             mark_app_modified(path)
         except Exception as e:
@@ -373,7 +374,8 @@ class MetadataManager:
         # GPSMapDatum: standard value for most modern cameras
         exif["Exif.GPSInfo.GPSMapDatum"] = "WGS-84"
 
-        image.writeMetadata()
+        with preserve_mtime(path):
+            image.writeMetadata()
         notify_baloo(path)
         mark_app_modified(path)
 
@@ -412,7 +414,8 @@ class MetadataManager:
                 except Exception:
                     pass
 
-            image.writeMetadata()
+            with preserve_mtime(path):
+                image.writeMetadata()
             notify_baloo(path)
             mark_app_modified(path)
         except Exception as e:

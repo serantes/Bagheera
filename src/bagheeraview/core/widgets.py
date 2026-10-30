@@ -15,6 +15,7 @@ import shutil
 import json
 import lmdb
 import logging
+import re
 import subprocess
 from datetime import datetime
 from collections import deque
@@ -2598,6 +2599,7 @@ class GeoMapWidget(QWidget):
         self._channel = None
         self._map_initialized = False
         self._map_loaded = False
+        self._pending_coordinates = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -2639,6 +2641,22 @@ class GeoMapWidget(QWidget):
 
         layout.addLayout(tb)
 
+        coordinate_row = QHBoxLayout()
+        self.coordinate_input = QLineEdit(self)
+        self.coordinate_input.setPlaceholderText(
+            UITexts.MAP_COORDINATES_PLACEHOLDER)
+        self.coordinate_input.returnPressed.connect(self._go_to_coordinates)
+        coordinate_row.addWidget(self.coordinate_input, stretch=1)
+
+        self.btn_go_to_coordinates = QPushButton(self)
+        self.btn_go_to_coordinates.setIcon(
+            QIcon.fromTheme("mark-location", QIcon.fromTheme("map-marker")))
+        self.btn_go_to_coordinates.setToolTip(
+            UITexts.MAP_GO_TO_COORDINATES_TOOLTIP)
+        self.btn_go_to_coordinates.clicked.connect(self._go_to_coordinates)
+        coordinate_row.addWidget(self.btn_go_to_coordinates)
+        layout.addLayout(coordinate_row)
+
         # ---- Status label ----
         self.status_lbl = QLabel(UITexts.MAP_NO_SELECTION)
         self.status_lbl.setWordWrap(True)
@@ -2658,6 +2676,121 @@ class GeoMapWidget(QWidget):
         self.ungeo_lbl.setWordWrap(True)
         self.ungeo_lbl.hide()
         layout.addWidget(self.ungeo_lbl)
+
+    @staticmethod
+    def parse_coordinates(value):
+        """Parse decimal, DMS, or complete Open Location Code coordinates."""
+        value = value.strip()
+        plus_code_coordinates = GeoMapWidget._decode_plus_code(value)
+        if plus_code_coordinates is not None:
+            return plus_code_coordinates
+
+        decimal_match = re.fullmatch(
+            r"\s*([+-]?\d+(?:\.\d+)?)\s*,\s*"
+            r"([+-]?\d+(?:\.\d+)?)\s*", value)
+        if decimal_match:
+            lat, lon = map(float, decimal_match.groups())
+            if -90 <= lat <= 90 and -180 <= lon <= 180:
+                return lat, lon
+            return None
+
+        dms_pattern = (
+            r"\s*(\d{1,3})\s*°\s*(\d{1,2})\s*['′]\s*"
+            r"(\d{1,2}(?:\.\d+)?)\s*[\"″]\s*([NSEW])\s+"
+            r"(\d{1,3})\s*°\s*(\d{1,2})\s*['′]\s*"
+            r"(\d{1,2}(?:\.\d+)?)\s*[\"″]\s*([NSEW])\s*"
+        )
+        dms_match = re.fullmatch(dms_pattern, value, re.IGNORECASE)
+        if not dms_match:
+            return None
+
+        parts = dms_match.groups()
+
+        def to_decimal(degrees, minutes, seconds, hemisphere, maximum,
+                       valid_hemispheres, positive_hemispheres):
+            degrees = int(degrees)
+            minutes = int(minutes)
+            seconds = float(seconds)
+            hemisphere = hemisphere.upper()
+            if (hemisphere not in valid_hemispheres or
+                    minutes >= 60 or seconds >= 60 or
+                    degrees > maximum or
+                    (degrees == maximum and (minutes or seconds))):
+                return None
+            coordinate = degrees + minutes / 60 + seconds / 3600
+            return coordinate if hemisphere in positive_hemispheres \
+                else -coordinate
+
+        latitude = to_decimal(*parts[:4], 90, {"N", "S"}, {"N"})
+        longitude = to_decimal(*parts[4:], 180, {"E", "W"}, {"E"})
+        if latitude is None or longitude is None:
+            return None
+        return latitude, longitude
+
+    @staticmethod
+    def _decode_plus_code(value):
+        """Decode a complete Open Location Code to the center of its cell."""
+        alphabet = "23456789CFGHJMPQRVWX"
+        match = re.fullmatch(
+            r"([23456789CFGHJMPQRVWX]{8})\+"
+            r"(?:[23456789CFGHJMPQRVWX]{2,7})?",
+            value.strip().upper())
+        if not match:
+            return None
+
+        code = match.group(1) + value.strip().upper().split("+", 1)[1]
+        latitude, longitude = -90.0, -180.0
+        resolution = 20.0
+        try:
+            pair_length = min(len(code), 10)
+            for index in range(0, pair_length, 2):
+                latitude += alphabet.index(code[index]) * resolution
+                longitude += alphabet.index(code[index + 1]) * resolution
+                if index < 8:
+                    resolution /= 20
+
+            latitude_size = longitude_size = resolution
+            for character in code[10:]:
+                grid_index = alphabet.index(character)
+                latitude_size /= 5
+                longitude_size /= 4
+                latitude += (grid_index // 4) * latitude_size
+                longitude += (grid_index % 4) * longitude_size
+        except (IndexError, ValueError):
+            return None
+
+        latitude += latitude_size / 2
+        longitude += longitude_size / 2
+        if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+            return None
+        return latitude, longitude
+
+    def _go_to_coordinates(self):
+        """Center the map on coordinates entered by the user."""
+        coordinates = self.parse_coordinates(self.coordinate_input.text())
+        if coordinates is None:
+            self.status_lbl.setText(UITexts.MAP_INVALID_COORDINATES)
+            self.status_lbl.setStyleSheet(
+                "color: #cc4444; font-style: italic;")
+            return
+
+        if self.web_view is None:
+            return
+
+        if not self._map_loaded:
+            self._pending_coordinates = coordinates
+            return
+
+        self._center_map_at(*coordinates)
+        self.status_lbl.setStyleSheet(
+            "color: gray; font-style: italic; font-size: 11px;")
+
+    def _center_map_at(self, lat, lon):
+        if self.web_view is None or not self._map_loaded:
+            return
+        self._pending_coordinates = None
+        self.web_view.page().runJavaScript(
+            f"map.setView([{lat}, {lon}], Math.max(map.getZoom(), 13));")
 
     def _initialize_map(self):
         """Create the WebEngine view only when the map tab is first opened."""
@@ -2700,6 +2833,8 @@ class GeoMapWidget(QWidget):
 
     def _on_map_load_finished(self, success):
         self._map_loaded = success
+        if success and self._pending_coordinates is not None:
+            self._center_map_at(*self._pending_coordinates)
         if success and self._is_active:
             self._invalidate_map_size()
             self._do_refresh()

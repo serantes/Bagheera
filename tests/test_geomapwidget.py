@@ -333,3 +333,102 @@ def test_cancel_google_maps_location_selection_does_not_open_url(monkeypatch):
     map_widget._open_google_maps()
 
     assert opened_urls == []
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("38.199083, 128.466750", (38.199083, 128.466750)),
+        ('38°11\'56.7"N 128°28\'00.3"E',
+         (38 + 11 / 60 + 56.7 / 3600,
+          128 + 28 / 60 + 0.3 / 3600)),
+        ('38°11\'56.7"S 128°28\'00.3"W',
+         (-(38 + 11 / 60 + 56.7 / 3600),
+          -(128 + 28 / 60 + 0.3 / 3600))),
+        ("849VCWC8+R9", (37.4220625, -122.0840625)),
+        ("849vcwc8+r9", (37.4220625, -122.0840625)),
+        ("-90, -180", (-90.0, -180.0)),
+    ],
+)
+def test_parse_coordinates_accepts_decimal_and_dms(value, expected):
+    coordinates = widgets.GeoMapWidget.parse_coordinates(value)
+
+    assert coordinates == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        "somewhere",
+        "91, 0",
+        "0, -181",
+        '38°60\'00"N 128°00\'00"E',
+        '90°00\'01"N 128°00\'00"E',
+        '38°11\'00"N 128°00\'00"Q',
+        "849VCWC8+R",
+        "849VCWC8+R9X234567",
+        "849VCWC8+R0",
+        "849VCWC+R9",
+    ],
+)
+def test_parse_coordinates_rejects_invalid_values(value):
+    assert widgets.GeoMapWidget.parse_coordinates(value) is None
+
+
+def test_coordinate_button_centers_map_and_invalid_input_shows_error():
+    map_widget = widgets.GeoMapWidget()
+    map_widget._map_loaded = True
+    scripts = []
+
+    class Page:
+        def runJavaScript(self, script):
+            scripts.append(script)
+
+    class WebView:
+        def page(self):
+            return Page()
+
+    map_widget.web_view = WebView()
+    assert not map_widget.btn_go_to_coordinates.text()
+    assert map_widget.btn_go_to_coordinates.toolTip()
+
+    map_widget.coordinate_input.setText('38°11\'56.7"N 128°28\'00.3"E')
+    map_widget.btn_go_to_coordinates.click()
+
+    assert scripts == [
+        "map.setView([38.19908333333333, 128.46675], "
+        "Math.max(map.getZoom(), 13));"
+    ]
+
+    map_widget.coordinate_input.setText("91, 0")
+    map_widget.btn_go_to_coordinates.click()
+    assert len(scripts) == 1
+    assert map_widget.status_lbl.text() == widgets.UITexts.MAP_INVALID_COORDINATES
+
+
+def test_coordinate_button_waits_until_map_loads():
+    map_widget = widgets.GeoMapWidget()
+    scripts = []
+
+    class Page:
+        def runJavaScript(self, script):
+            scripts.append(script)
+
+    class WebView:
+        def page(self):
+            return Page()
+
+    map_widget.web_view = WebView()
+    map_widget.coordinate_input.setText("38.2, 128.4")
+    map_widget.btn_go_to_coordinates.click()
+
+    assert scripts == []
+    assert map_widget._pending_coordinates == (38.2, 128.4)
+
+    map_widget._on_map_load_finished(True)
+
+    assert scripts == [
+        "map.setView([38.2, 128.4], Math.max(map.getZoom(), 13));"
+    ]
+    assert map_widget._pending_coordinates is None
