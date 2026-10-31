@@ -1492,7 +1492,7 @@ class MainWindow(QMainWindow):
         bg_color = APP_CONFIG.get("thumbnails_bg_color", THUMBNAILS_BG_COLOR_DEFAULT)
         self.thumbnail_view.setStyleSheet(f"background-color: {bg_color};")
         self.thumbnail_view.customContextMenuRequested.connect(self.show_context_menu)
-        self.thumbnail_view.activated.connect(self.on_view_double_clicked)
+        self.thumbnail_view.doubleClicked.connect(self.on_view_double_clicked)
 
         self._set_thumbnail_model(True)
 
@@ -2906,7 +2906,7 @@ class MainWindow(QMainWindow):
             next_vis_row -= cols
         elif e.key() in (Qt.Key_Return, Qt.Key_Enter):
             if current_proxy_idx and current_proxy_idx.isValid():
-                self.open_viewer(current_proxy_idx)
+                self.on_view_double_clicked(current_proxy_idx)
             return
         else:
             return
@@ -5862,6 +5862,13 @@ class MainWindow(QMainWindow):
             if shortcut in rating_actions:
                 rating = rating_actions[shortcut]
                 self.set_selected_rating(rating)
+                event.accept()
+                return True
+            if source is self.thumbnail_view and event.key() in (
+                    Qt.Key_Return, Qt.Key_Enter):
+                current_index = self.thumbnail_view.currentIndex()
+                if current_index.isValid():
+                    self.on_view_double_clicked(current_index)
                 event.accept()
                 return True
         if source is self._thumbnail_viewport and event.type() == QEvent.Resize:

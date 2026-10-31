@@ -181,3 +181,47 @@ def test_selected_paths_ignore_directory_rows(app):
     )
 
     assert MainWindow.get_selected_paths(window) == ["/photos/image.jpg"]
+
+
+@pytest.mark.parametrize(
+    ("item_type", "expected_navigation"),
+    [
+        ("directory", "/photos/child"),
+        ("parent_directory", "/photos"),
+    ],
+)
+def test_activating_directory_uses_navigation_not_image_viewer(
+        app, item_type, expected_navigation):
+    source = QStandardItemModel()
+    _append_item(source, item_type, expected_navigation, "directory")
+    index = source.index(0, 0)
+    navigated = []
+    opened = []
+    window = SimpleNamespace(
+        proxy_model=source,
+        open_and_search_location=navigated.append,
+        open_viewer=opened.append,
+    )
+
+    MainWindow.on_view_double_clicked(window, index)
+
+    assert navigated == [expected_navigation]
+    assert opened == []
+
+
+def test_activating_image_opens_viewer_not_directory_navigation(app):
+    source = QStandardItemModel()
+    _append_item(source, "thumbnail", "/photos/image.jpg", "image.jpg")
+    index = source.index(0, 0)
+    navigated = []
+    opened = []
+    window = SimpleNamespace(
+        proxy_model=source,
+        open_and_search_location=navigated.append,
+        open_viewer=opened.append,
+    )
+
+    MainWindow.on_view_double_clicked(window, index)
+
+    assert navigated == []
+    assert opened == [index]
