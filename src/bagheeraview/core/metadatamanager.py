@@ -508,7 +508,6 @@ class XattrManager:
             return
         try:
             with preserve_mtime(file_path):
-                mark_app_modified(file_path)
                 if value:
                     os.setxattr(file_path, attr_name, str(value).encode('utf-8'))
                 else:
@@ -516,6 +515,7 @@ class XattrManager:
                         os.removexattr(file_path, attr_name)
                     except OSError:
                         pass
+            mark_app_modified(file_path)
             notify_baloo(file_path)
         except Exception as e:
             raise IOError(f"Could not save xattr '{attr_name}' "

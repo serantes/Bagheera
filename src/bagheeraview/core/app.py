@@ -1442,6 +1442,7 @@ class MainWindow(QMainWindow):
         self._visible_paths_cache = None  # Cache for visible image paths
         self._path_to_model_index = {}
         self._paths_being_modified_by_app = set()  # For ignoring FS events
+        self._app_modified_path_timers = {}
         self._gps_status_cache = {}
         self._gps_status_versions = defaultdict(int)
         self._gps_status_pending = set()
@@ -3219,6 +3220,7 @@ class MainWindow(QMainWindow):
             else:
                 # Use 'gio trash' for moving to trash can on Linux
                 subprocess.run(["gio", "trash", path])
+            self._mark_path_as_app_modified(path)
             self._forget_path(path)
         except Exception as e:
             QMessageBox.critical(
@@ -6677,14 +6679,24 @@ class MainWindow(QMainWindow):
         """Marks a path as being modified by the application to ignore FS events."""
         abs_path = os.path.abspath(path)
         parent_path = os.path.dirname(abs_path)
-        self._paths_being_modified_by_app.add(abs_path)
-        self._paths_being_modified_by_app.add(parent_path)
+        for modified_path in {abs_path, parent_path}:
+            self._paths_being_modified_by_app.add(modified_path)
+            timer = self._app_modified_path_timers.get(modified_path)
+            if timer is None:
+                timer = QTimer(self)
+                timer.setSingleShot(True)
+                timer.setInterval(10000)
+                timer.timeout.connect(
+                    lambda p=modified_path: self._expire_app_modified_path(p))
+                self._app_modified_path_timers[modified_path] = timer
+            timer.start()
 
-        # Schedule removal after a delay to allow all FS events to propagate
-        QTimer.singleShot(
-            10000, lambda: self._paths_being_modified_by_app.discard(abs_path))
-        QTimer.singleShot(
-            10000, lambda: self._paths_being_modified_by_app.discard(parent_path))
+    def _expire_app_modified_path(self, path):
+        """Stop suppressing watcher events after the final app mutation."""
+        timer = self._app_modified_path_timers.pop(path, None)
+        if timer is not None:
+            timer.deleteLater()
+        self._paths_being_modified_by_app.discard(path)
 
     def on_fs_watcher_status_changed(self, is_monitoring):
         """Updates the UI indicator for the FileSystemWatcher."""
