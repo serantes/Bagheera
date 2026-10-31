@@ -16,6 +16,7 @@ import json
 import lmdb
 import logging
 import subprocess
+import time
 from datetime import datetime
 from collections import deque
 
@@ -1175,13 +1176,8 @@ class LayoutsWidget(QWidget):
         self.refresh_list()
 
     def save_selected_layout(self):
-        """Overwrites the selected layout with the current session state."""
-        path = self.get_selected_path()
-        if path:
-            self.main_win.save_layout(target_path=path)
-        else:
-            # If nothing is selected, treat it as a "create new" action
-            self.create_layout()
+        """Opens the layout name selector to save or overwrite a layout."""
+        self.main_win.save_layout()
 
     def delete_layout(self):
         """Deletes the selected layout file after confirmation."""
@@ -1226,10 +1222,140 @@ class LayoutsWidget(QWidget):
         if ok and new_name:
             new_path = os.path.join(os.path.dirname(path), new_name + ".layout")
             if not os.path.exists(new_path):
-                shutil.copy(path, new_path)
+                try:
+                    shutil.copy(path, new_path)
+                    with open(new_path, "r+", encoding="utf-8") as file_obj:
+                        data = json.load(file_obj)
+                        if not isinstance(data, dict):
+                            raise ValueError("Layout data must be a JSON object")
+                        data["created_at"] = time.time()
+                        data.pop("last_used_at", None)
+                        file_obj.seek(0)
+                        json.dump(data, file_obj, indent=4)
+                        file_obj.truncate()
+                except (OSError, ValueError, TypeError) as exc:
+                    QMessageBox.warning(
+                        self, UITexts.ERROR,
+                        UITexts.ERROR_SAVING_LAYOUT.format(exc))
+                    return
                 self.refresh_list()
             else:
                 QMessageBox.warning(self, UITexts.ERROR, UITexts.LAYOUT_ALREADY_EXISTS)
+
+
+class LayoutSelectionDialog(QDialog):
+    """Dialog for selecting a layout with configurable ordering."""
+
+    def __init__(self, layout_files, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(UITexts.LOAD_LAYOUT_TITLE)
+        self.resize(620, 420)
+
+        self._layouts = []
+        for path in layout_files:
+            modified_at = os.path.getmtime(path)
+            created_at = modified_at
+            last_used_at = modified_at
+            try:
+                with open(path, "r", encoding="utf-8") as file_obj:
+                    data = json.load(file_obj)
+                created_at = float(data.get("created_at", modified_at))
+                last_used_at = float(
+                    data.get("last_used_at", created_at))
+            except (OSError, ValueError, TypeError, AttributeError) as exc:
+                logger.warning(
+                    "Could not read layout dates from %s: %s", path, exc)
+            self._layouts.append({
+                "path": path,
+                "name": os.path.splitext(os.path.basename(path))[0],
+                "created_at": created_at,
+                "last_used_at": last_used_at,
+            })
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel(UITexts.SELECT_LAYOUT, self))
+
+        sort_layout = QHBoxLayout()
+        sort_layout.addWidget(QLabel(UITexts.LAYOUT_SORT_BY, self))
+        self.sort_field_combo = QComboBox(self)
+        self.sort_field_combo.addItem(
+            UITexts.LAYOUT_SORT_LAST_USED, "last_used_at")
+        self.sort_field_combo.addItem(UITexts.LAYOUT_SORT_NAME, "name")
+        self.sort_field_combo.addItem(
+            UITexts.LAYOUT_SORT_CREATED, "created_at")
+        sort_layout.addWidget(self.sort_field_combo)
+
+        sort_layout.addWidget(QLabel(UITexts.LAYOUT_SORT_ORDER, self))
+        self.sort_order_combo = QComboBox(self)
+        self.sort_order_combo.addItem(
+            UITexts.LAYOUT_SORT_DESCENDING, "descending")
+        self.sort_order_combo.addItem(
+            UITexts.LAYOUT_SORT_ASCENDING, "ascending")
+        sort_layout.addWidget(self.sort_order_combo)
+        layout.addLayout(sort_layout)
+
+        self.table = QTableWidget(0, 3, self)
+        self.table.setHorizontalHeaderLabels(UITexts.LAYOUT_SELECTION_HEADERS)
+        self.table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeToContents)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.verticalHeader().setVisible(False)
+        self.table.doubleClicked.connect(self.accept)
+        layout.addWidget(self.table)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Open | QDialogButtonBox.Cancel, parent=self)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self.sort_field_combo.currentIndexChanged.connect(self._sort_layouts)
+        self.sort_order_combo.currentIndexChanged.connect(self._sort_layouts)
+        self._sort_layouts()
+
+    def _sort_layouts(self):
+        """Sorts and displays layouts according to the selected criteria."""
+        current_path = self.selected_path()
+        key = self.sort_field_combo.currentData()
+        descending = self.sort_order_combo.currentData() == "descending"
+        layouts = sorted(
+            self._layouts,
+            key=lambda item: (
+                item[key].casefold() if key == "name" else item[key]),
+            reverse=descending)
+
+        self.table.setRowCount(len(layouts))
+        selected_row = 0
+        for row, item in enumerate(layouts):
+            name_item = QTableWidgetItem(item["name"])
+            name_item.setData(Qt.UserRole, item["path"])
+            last_used_item = QTableWidgetItem(datetime.fromtimestamp(
+                item["last_used_at"]).strftime("%Y-%m-%d %H:%M:%S"))
+            created_item = QTableWidgetItem(datetime.fromtimestamp(
+                item["created_at"]).strftime("%Y-%m-%d %H:%M:%S"))
+            self.table.setItem(row, 0, name_item)
+            self.table.setItem(row, 1, last_used_item)
+            self.table.setItem(row, 2, created_item)
+            if item["path"] == current_path:
+                selected_row = row
+
+        if layouts:
+            self.table.selectRow(selected_row)
+            self.table.setCurrentCell(selected_row, 0)
+
+    def selected_path(self):
+        """Returns the selected layout's path, or None if no row is selected."""
+        row = self.table.currentRow()
+        if row < 0:
+            return None
+        item = self.table.item(row, 0)
+        return item.data(Qt.UserRole) if item else None
 
 
 class HistoryWidget(QWidget):

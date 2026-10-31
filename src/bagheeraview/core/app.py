@@ -22,6 +22,7 @@ import subprocess
 import json
 import glob
 import shutil
+import time
 from datetime import datetime
 from collections import deque, defaultdict
 from itertools import groupby
@@ -85,8 +86,8 @@ from .propertiesdialog import PropertiesDialog
 from .geomapwidget import GeoMapWidget
 from .widgets import (
     CircularProgressBar,
-    TagEditWidget, LayoutsWidget, HistoryWidget, RatingWidget, CommentWidget,
-    FavoritesWidget
+    TagEditWidget, LayoutsWidget, LayoutSelectionDialog, HistoryWidget,
+    RatingWidget, CommentWidget, FavoritesWidget
 )
 from .metadatamanager import load_common_metadata
 from .filesystemwatcher import FileSystemWatcher
@@ -1869,19 +1870,30 @@ class MainWindow(QMainWindow):
             if confirm.exec() != QMessageBox.Yes:
                 return
         else:
-            # Prompt for a new layout name
+            # Offer existing names for overwrite, but start with no selection.
+            existing_names = sorted(
+                (os.path.splitext(os.path.basename(path))[0]
+                 for path in glob.glob(os.path.join(LAYOUTS_DIR, "*.layout"))),
+                key=str.casefold)
+            items = [""] + existing_names
             while True:
-                name, ok = QInputDialog.getText(
-                    self, UITexts.SAVE_LAYOUT_TITLE, UITexts.SAVE_LAYOUT_TEXT)
-                if not ok or not name.strip():
+                name, ok = QInputDialog.getItem(
+                    self, UITexts.SAVE_LAYOUT_TITLE, UITexts.SAVE_LAYOUT_TEXT,
+                    items, 0, True)
+                if not ok:
                     return
+                name = name.strip()
+                if not name:
+                    QMessageBox.warning(
+                        self, UITexts.ERROR, UITexts.LAYOUT_NAME_REQUIRED)
+                    continue
 
-                filename = os.path.join(LAYOUTS_DIR, f"{name.strip()}.layout")
+                filename = os.path.join(LAYOUTS_DIR, f"{name}.layout")
                 if os.path.exists(filename):
                     confirm = QMessageBox(self)
                     confirm.setIcon(QMessageBox.Warning)
                     confirm.setWindowTitle(UITexts.LAYOUT_EXISTS_TITLE)
-                    confirm.setText(UITexts.LAYOUT_EXISTS_TEXT.format(name.strip()))
+                    confirm.setText(UITexts.LAYOUT_EXISTS_TEXT.format(name))
                     confirm.setInformativeText(UITexts.LAYOUT_EXISTS_INFO)
                     confirm.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
                     confirm.setDefaultButton(QMessageBox.No)
@@ -1904,6 +1916,7 @@ class MainWindow(QMainWindow):
         #     "viewers": []
         # }
         layout_data = {
+            "created_at": time.time(),
             "main_window": {
                 "visible": self.isVisible(),
                 "search_text": self.search_input.currentText(),
@@ -1916,6 +1929,17 @@ class MainWindow(QMainWindow):
             },
             "viewers": []
         }
+        if os.path.exists(filename):
+            try:
+                with open(filename, "r", encoding="utf-8") as file_obj:
+                    previous_data = json.load(file_obj)
+                layout_data["created_at"] = float(
+                    previous_data.get("created_at", os.path.getmtime(filename)))
+                if "last_used_at" in previous_data:
+                    layout_data["last_used_at"] = float(
+                        previous_data["last_used_at"])
+            except (OSError, ValueError, TypeError, AttributeError):
+                layout_data["created_at"] = os.path.getmtime(filename)
 
         # Data from open viewers
         # We filter to ensure the widget is still alive and visible
@@ -1949,15 +1973,11 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, UITexts.INFO, UITexts.NO_LAYOUTS_FOUND)
             return
 
-        # Get clean names without extension
-        items = [os.path.basename(f).replace(".layout", "") for f in files]
-        items.sort()
-
-        item, ok = QInputDialog.getItem(
-            self, UITexts.LOAD_LAYOUT_TITLE, UITexts.SELECT_LAYOUT, items, 0, False)
-        if ok and item:
-            full_path = os.path.join(LAYOUTS_DIR, f"{item}.layout")
-            self.restore_layout(full_path)
+        dialog = LayoutSelectionDialog(files, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            path = dialog.selected_path()
+            if path:
+                self.restore_layout(path)
 
     def close_all_viewers(self):
         """Closes all currently open image viewer windows gracefully."""
@@ -1977,6 +1997,21 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, UITexts.ERROR,
                                  f"Failed to load layout file: {e}")
             return
+        if not isinstance(data, dict):
+            QMessageBox.critical(
+                self, UITexts.ERROR,
+                UITexts.ERROR_LOADING_LAYOUT_TEXT.format(filepath))
+            return
+
+        data.setdefault("created_at", os.path.getmtime(filepath))
+        data["last_used_at"] = time.time()
+        try:
+            with open(filepath, "w", encoding="utf-8") as file_obj:
+                json.dump(data, file_obj, indent=4)
+        except (OSError, TypeError, ValueError) as e:
+            QMessageBox.warning(
+                self, UITexts.ERROR,
+                UITexts.ERROR_RECORDING_LAYOUT_USAGE.format(e))
 
         # Ensure main window is visible before restoring
         if not self.isVisible():
