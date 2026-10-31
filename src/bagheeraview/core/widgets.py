@@ -414,6 +414,8 @@ class TagEditWidget(QWidget):
         self.tree_view.setHeaderHidden(True)
         self.tree_view.setExpandsOnDoubleClick(False)
         self.tree_view.setEditTriggers(QTreeView.NoEditTriggers)
+        self.tree_view.doubleClicked.connect(
+            self.on_tag_info_double_clicked)
         layout.addWidget(self.tree_view)
 
         # Apply button
@@ -648,10 +650,24 @@ class TagEditWidget(QWidget):
         font = node.font()
         # Use italic for partially applied tags, unless forced
         font.setItalic(italic if path not in self.forced_sync_tags else False)
+        font.setUnderline(os.path.isfile(self._tag_info_filepath(path)))
         node.setFont(font)
         # Highlight manually changed tags
         color = "#569cd6" if path in self.manually_changed else "#ffffff"
         node.setForeground(QColor(color))
+
+    @staticmethod
+    def _tag_info_filepath(tag):
+        """Returns the Markdown information file path for a tag."""
+        return os.path.join(
+            DIRECTORY_TAG_INFO, tag.replace('/', '_') + ".md")
+
+    def _refresh_tag_info_style(self, tag):
+        """Updates the font of displayed copies of a tag after its info is saved."""
+        for node in self.item_mapping.get(tag, []):
+            if node is not None:
+                self._style_node(node, tag, node.checkState() == Qt.Checked,
+                                 node.font().italic())
 
     def reconstruct_path(self, item):
         """Builds the full hierarchical tag path from a model item."""
@@ -862,7 +878,7 @@ class TagEditWidget(QWidget):
             return
 
         os.makedirs(DIRECTORY_TAG_INFO, exist_ok=True)
-        filepath = os.path.join(DIRECTORY_TAG_INFO, tag.replace('/', '_') + ".md")
+        filepath = self._tag_info_filepath(tag)
         template_text = ""
         template_file = os.path.join(APP_DATA_DIR, TAG_INFO_TEMPLATE)
 
@@ -881,8 +897,17 @@ class TagEditWidget(QWidget):
             auto_load=True,
             capture_keys=True,
         )
+        self.markdown_editor.file_saved.connect(
+            lambda _path: self._refresh_tag_info_style(tag))
         layout.addWidget(self.markdown_editor)
         dialog.show()
+
+    @Slot(object)
+    def on_tag_info_double_clicked(self, proxy_index):
+        """Opens the tag information editor when an existing file is available."""
+        tag = self._get_tag_path_from_proxy_index(proxy_index)
+        if tag and os.path.isfile(self._tag_info_filepath(tag)):
+            self.on_tag_info_requested(proxy_index)
 
     def _get_tag_path_from_proxy_index(self, proxy_index):
         """Reconstructs the full tag path from a proxy model index."""
