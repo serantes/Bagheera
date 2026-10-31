@@ -158,7 +158,8 @@ function showMarkers(data, preserveView) {
   var bounds = [];
   data.forEach(function(item) {
     var icon = item.selected ? redIcon : blueIcon;
-    var m = L.marker([item.lat, item.lon], {icon: icon, title: item.name});
+    var title = item.datetime ? item.name + ' - ' + item.datetime : item.name;
+    var m = L.marker([item.lat, item.lon], {icon: icon, title: title});
     m.bindPopup('<b>' + item.name + '</b>');
     m.on('click', function() {
       if(bridge) bridge.markerClicked(item.path);
@@ -312,6 +313,7 @@ class GeoMapWidget(QWidget):
         self._current_paths = []
         self._edit_paths = []    # paths being geolocated in edit mode
         self._gps_cache = {}     # path -> (lat, lon) or None, per refresh
+        self._datetime_cache = {}  # path -> capture datetime or None
         self.web_view = None     # set below if WebEngine is available
         self._bridge = None
         self._channel = None
@@ -592,9 +594,13 @@ class GeoMapWidget(QWidget):
                 self._gps_cache[path] = MetadataManager.read_gps(path)
             coords = self._gps_cache[path]
             if coords:
+                if path not in self._datetime_cache:
+                    self._datetime_cache[path] = MetadataManager.read_datetime(
+                        path)
                 gps_data.append({
                     "path": path,
                     "name": os.path.basename(path),
+                    "datetime": self._datetime_cache[path],
                     "lat": coords[0],
                     "lon": coords[1],
                     "selected": True,

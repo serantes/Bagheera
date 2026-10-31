@@ -1290,6 +1290,7 @@ class HistoryWidget(QWidget):
 
             item_name = QTableWidgetItem(text)
             item_name.setIcon(QIcon.fromTheme(icon_name))
+            item_name.setToolTip(text)
             item_name.setData(Qt.UserRole, raw_path)
             item_date = QTableWidgetItem(entry.get('date', ''))
             self.table.setItem(i, 0, item_name)
@@ -1463,8 +1464,12 @@ class FavoritesWidget(QWidget):
             query = fav.get('query', '')
             comment = fav.get('comment', '')
             shortcut = fav.get('shortcut', '')
-            self.table.setItem(i, 0, QTableWidgetItem(comment))
-            self.table.setItem(i, 1, QTableWidgetItem(query))
+            comment_item = QTableWidgetItem(comment)
+            comment_item.setToolTip(comment)
+            query_item = QTableWidgetItem(query)
+            query_item.setToolTip(query)
+            self.table.setItem(i, 0, comment_item)
+            self.table.setItem(i, 1, query_item)
             self.table.setItem(i, 2, QTableWidgetItem(shortcut))
 
     def filter_favorites(self, text):
@@ -1514,8 +1519,12 @@ class FavoritesWidget(QWidget):
 
         row = self.table.rowCount()
         self.table.insertRow(row)
-        self.table.setItem(row, 0, QTableWidgetItem(new_comment))
-        self.table.setItem(row, 1, QTableWidgetItem(query))
+        comment_item = QTableWidgetItem(new_comment)
+        comment_item.setToolTip(new_comment)
+        query_item = QTableWidgetItem(query)
+        query_item.setToolTip(query)
+        self.table.setItem(row, 0, comment_item)
+        self.table.setItem(row, 1, query_item)
         self.table.setItem(row, 2, QTableWidgetItem(""))
         self.table.setCurrentCell(row, 0)
         self.save_favorites()
@@ -1537,8 +1546,12 @@ class FavoritesWidget(QWidget):
         if not ok:
             return
 
-        self.table.item(row, 0).setText(new_comment)
-        self.table.item(row, 1).setText(query)
+        comment_item = self.table.item(row, 0)
+        comment_item.setText(new_comment)
+        comment_item.setToolTip(new_comment)
+        query_item = self.table.item(row, 1)
+        query_item.setText(query)
+        query_item.setToolTip(query)
         self.save_favorites()
 
     def edit_comment(self):
@@ -1555,7 +1568,8 @@ class FavoritesWidget(QWidget):
             QLineEdit.Normal, old_comment)
 
         if ok:
-            self.table.item(row, 0).setText(new_comment)
+            comment_item.setText(new_comment)
+            comment_item.setToolTip(new_comment)
             self.save_favorites()
 
     def edit_shortcut(self):

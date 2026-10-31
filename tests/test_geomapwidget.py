@@ -418,6 +418,29 @@ def test_map_placeholder_can_be_copied_to_single_selected_photo(monkeypatch):
     assert writes == [(photo_path, 12.5, -45.6)]
 
 
+def test_map_marker_title_includes_capture_datetime(app, monkeypatch):
+    photo_path = "/photos/photo.jpg"
+    map_widget = geomapwidget.GeoMapWidget()
+    map_widget._current_paths = [photo_path]
+    map_widget._gps_cache[photo_path] = (12.5, -45.6)
+    map_widget._map_loaded = True
+    javascript_calls = []
+
+    class FakePage:
+        def runJavaScript(self, script):
+            javascript_calls.append(script)
+
+    map_widget.web_view = SimpleNamespace(page=lambda: FakePage())
+    monkeypatch.setattr(
+        geomapwidget.MetadataManager, "read_datetime",
+        lambda _path: "2024-05-06 07:08:09")
+
+    map_widget._do_refresh()
+
+    assert '"datetime": "2024-05-06 07:08:09"' in javascript_calls[0]
+    assert "item.name + ' - ' + item.datetime" in geomapwidget._MAP_HTML
+
+
 def test_cancel_copy_location_does_not_write(monkeypatch):
     map_widget = geomapwidget.GeoMapWidget()
     map_widget._current_paths = ["/photos/source.jpg", "/photos/target.jpg"]

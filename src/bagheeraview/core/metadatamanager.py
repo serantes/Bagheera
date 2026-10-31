@@ -11,6 +11,7 @@ import os
 import sys
 import collections
 import logging
+from datetime import datetime
 from PySide6.QtDBus import QDBusConnection, QDBusMessage, QDBus, QDBusInterface
 try:
     import exiv2
@@ -334,6 +335,53 @@ class MetadataManager:
         except Exception as e:
             logger.debug(f"read_gps error for {path}: {e}")
             return None
+
+    @staticmethod
+    def read_datetime(path):
+        """Reads an image's capture date and time from EXIF metadata.
+
+        The original capture timestamp is preferred, followed by the digitized
+        timestamp and the generic image timestamp.
+
+        Args:
+            path (str): The path to the image file.
+
+        Returns:
+            str | None: The timestamp formatted as ``YYYY-MM-DD HH:MM:SS``,
+            or None when no usable EXIF timestamp is available.
+        """
+        if not HAVE_EXIV2:
+            return None
+
+        try:
+            image = exiv2.ImageFactory.open(path)
+            image.readMetadata()
+            exif = image.exifData()
+            values = {}
+            for datum in exif:
+                key = datum.key()
+                if key in (
+                        "Exif.Photo.DateTimeOriginal",
+                        "Exif.Photo.DateTimeDigitized",
+                        "Exif.Image.DateTime"):
+                    values[key] = datum.toString().strip()
+
+            for key in (
+                    "Exif.Photo.DateTimeOriginal",
+                    "Exif.Photo.DateTimeDigitized",
+                    "Exif.Image.DateTime"):
+                value = values.get(key)
+                if not value:
+                    continue
+                try:
+                    return datetime.strptime(
+                        value[:19], "%Y:%m:%d %H:%M:%S").strftime(
+                            "%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    continue
+        except Exception as e:
+            logger.debug(f"read_datetime error for {path}: {e}")
+        return None
 
     @staticmethod
     def write_gps(path, lat: float, lon: float) -> None:
