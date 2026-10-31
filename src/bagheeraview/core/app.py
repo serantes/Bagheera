@@ -3896,9 +3896,12 @@ class MainWindow(QMainWindow):
             self._on_directories_found)
 
         # Add directories to file system watcher
+        watch_recursively = configured_scan_max_level != 0
         for p in paths:
             if os.path.isdir(os.path.abspath(os.path.expanduser(p))):
-                self.fs_watcher.add_path(os.path.abspath(os.path.expanduser(p)))
+                self.fs_watcher.add_path(
+                    os.path.abspath(os.path.expanduser(p)),
+                    recursive=watch_recursively)
 
         self.scanner.progress_percent.connect(self.update_progress_bar)
         self.scanner.progress_msg.connect(self.status_lbl.setText)

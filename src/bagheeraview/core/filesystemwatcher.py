@@ -50,6 +50,7 @@ class FileSystemWatcher(QObject):
         """
         super().__init__(parent)
         self._watched_directories = set()
+        self._recursive_watches = {}
         self._debounce_interval = 500  # milliseconds
 
         if HAVE_WATCHDOG:
@@ -97,7 +98,7 @@ class FileSystemWatcher(QObject):
             self._modified_events_queue[path].deleteLater()
             del self._modified_events_queue[path]
 
-    def add_path(self, path):
+    def add_path(self, path, recursive=True):
         """
         Adds a directory to be monitored.
 
@@ -107,6 +108,7 @@ class FileSystemWatcher(QObject):
 
         Args:
             path (str): The directory path to monitor.
+            recursive (bool): Whether to monitor the directory's descendants.
         """
         if not HAVE_WATCHDOG or self._observer is None:
             return
@@ -117,9 +119,22 @@ class FileSystemWatcher(QObject):
         # 1. Check if path is already covered by an existing watch (exact or parent)
         for watched in self._watched_directories:
             if abs_path == watched:
+                if self._recursive_watches.get(watched, True) == recursive:
+                    return
+                try:
+                    self._observer.unschedule_all()
+                    self._recursive_watches[watched] = recursive
+                    for watched_path in self._watched_directories:
+                        self._observer.schedule(
+                            self._event_handler, watched_path,
+                            recursive=self._recursive_watches.get(
+                                watched_path, True))
+                except Exception as e:
+                    print(f"Error updating watchdog for {abs_path}: {e}")
                 return
             parent_prefix = watched if watched.endswith(os.sep) else watched + os.sep
-            if abs_path.startswith(parent_prefix):
+            if abs_path.startswith(parent_prefix) and \
+               self._recursive_watches.get(watched, True):
                 return  # Path is a subdirectory of an already watched directory
 
         old_monitoring_state = bool(self._watched_directories)
@@ -128,20 +143,26 @@ class FileSystemWatcher(QObject):
         # If so, consolidate them into this single parent watch
         child_prefix = abs_path if abs_path.endswith(os.sep) else abs_path + os.sep
         covered_children = [w for w in self._watched_directories
-                            if w.startswith(child_prefix)]
+                            if w.startswith(child_prefix)] if recursive else []
 
         try:
             if covered_children:
                 self._observer.unschedule_all()
                 for child in covered_children:
                     self._watched_directories.remove(child)
+                    self._recursive_watches.pop(child, None)
                 self._watched_directories.add(abs_path)
+                self._recursive_watches[abs_path] = True
                 for p in self._watched_directories:
-                    self._observer.schedule(self._event_handler, p, recursive=True)
+                    self._observer.schedule(
+                        self._event_handler, p,
+                        recursive=self._recursive_watches.get(p, True))
                 print(f"Consolidated monitoring at parent: {abs_path}")
             else:
-                self._observer.schedule(self._event_handler, abs_path, recursive=True)
+                self._observer.schedule(
+                    self._event_handler, abs_path, recursive=recursive)
                 self._watched_directories.add(abs_path)
+                self._recursive_watches[abs_path] = recursive
                 print(f"Monitoring: {abs_path}")
         except Exception as e:
             print(f"Error scheduling watchdog for {abs_path}: {e}")
@@ -164,8 +185,11 @@ class FileSystemWatcher(QObject):
             old_monitoring_state = bool(self._watched_directories)
             self._observer.unschedule_all()  # Simpler to unschedule all and re-add
             self._watched_directories.remove(abs_path)
+            self._recursive_watches.pop(abs_path, None)
             for p in list(self._watched_directories):  # Iterate over a copy
-                self._observer.schedule(self._event_handler, p, recursive=True)
+                self._observer.schedule(
+                    self._event_handler, p,
+                    recursive=self._recursive_watches.get(p, True))
             print(f"Stopped monitoring: {abs_path}")
             if HAVE_WATCHDOG and old_monitoring_state and not self._watched_directories:
                 self.monitoring_status_changed.emit(False)
@@ -178,6 +202,7 @@ class FileSystemWatcher(QObject):
         old_monitoring_state = bool(self._watched_directories)
         self._observer.unschedule_all()
         self._watched_directories.clear()
+        self._recursive_watches.clear()
         print("Cleared all monitored paths.")
         if old_monitoring_state:
             self.monitoring_status_changed.emit(False)
