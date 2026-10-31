@@ -9,7 +9,9 @@ import os
 from unittest.mock import MagicMock
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtTest import QTest
 
 from bagheeraview.core.duplicatedialog import DuplicateManagerDialog
 from bagheeraview.core.overlaycanvas import OverlayCanvas
@@ -232,6 +234,20 @@ def test_overlay_buttons_have_hotkey_tooltips(dialog):
     """Overlay action buttons advertise their associated hotkey."""
     assert "S" in dialog.btn_overlay_swap.toolTip()
     assert "Z" in dialog.btn_overlay_reset.toolTip()
+
+
+def test_dialog_hotkeys_work_with_focus_on_non_image_child(dialog, monkeypatch):
+    """Dialog hotkeys are active across the window, not only focused panes."""
+    triggered = []
+    monkeypatch.setattr(dialog, "_skip", lambda: triggered.append(True))
+    dialog.show()
+    dialog.activateWindow()
+    dialog.table_widget.setFocus()
+    QApplication.processEvents()
+
+    QTest.keyClick(dialog.table_widget, Qt.Key_P)
+
+    assert triggered == [True]
 
 
 def test_reset_per_subtab(dialog):

@@ -1527,11 +1527,10 @@ class DuplicateManagerDialog(QDialog):
 
     def _setup_dialog_shortcuts(self):
         """
-        Registers the deletion shortcuts for this dialog.
+        Registers the shortcuts handled exclusively by this dialog.
 
-        ``Delete`` sends the focused pane's image to the trash and
-        ``Shift+Delete`` deletes it permanently, reusing the global shortcut
-        assignments so the behaviour stays configurable.
+        Window-scoped shortcuts stay active when a child widget consumes key
+        events or no image pane currently has focus.
         """
         self._menu_action_shortcuts = {}
         controller = getattr(self.main_win, "shortcut_controller", None)
@@ -1543,19 +1542,39 @@ class DuplicateManagerDialog(QDialog):
                     self._menu_action_shortcuts[action] = key_combo
 
         self._shortcut_objects = []
-        for action, handler in (("move_to_trash", self._shortcut_trash),
-                                ("delete_permanently", self._shortcut_delete)):
-            key_combo = self._menu_action_shortcuts.get(action)
+        handlers = {
+            "dup_delete_left": self._delete_left,
+            "dup_delete_right": self._delete_right,
+            "dup_keep_both": self._keep_both,
+            "dup_skip": self._skip,
+            "dup_zoom_in": self._shortcut_zoom_in,
+            "dup_zoom_out": self._shortcut_zoom_out,
+            "dup_reset_zoom": self._shortcut_reset_zoom,
+            "dup_toggle_fit": self._shortcut_toggle_fit,
+            "dup_swap_layers": self._shortcut_swap_layers,
+            "dup_link_panes": self._shortcut_link_panes,
+            "dup_overwrite": self._overwrite_selected,
+            "move_to_trash": self._shortcut_trash,
+            "delete_permanently": self._shortcut_delete,
+        }
+        for action, handler in handlers.items():
+            if action == "dup_keep_both" and self.review_mode:
+                continue
+            key_combo = (self._dialog_shortcut(action)
+                         if action.startswith("dup_")
+                         else self._menu_action_shortcuts.get(action))
             if key_combo is None:
                 continue
             key, mods = key_combo
+            if key == Qt.Key_unknown:
+                continue
             try:
                 mod_val = int(mods)
             except TypeError:
                 mod_val = mods.value
             shortcut = QShortcut(
                 QKeySequence(mod_val | key), self)
-            shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+            shortcut.setContext(Qt.WindowShortcut)
             shortcut.activated.connect(handler)
             self._shortcut_objects.append(shortcut)
 
@@ -1564,6 +1583,44 @@ class DuplicateManagerDialog(QDialog):
         self._tab_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self._tab_shortcut.activated.connect(self._on_toggle_shortcut)
         self._shortcut_objects.append(self._tab_shortcut)
+
+    def _shortcut_zoom_in(self):
+        """Zooms the active comparison view in."""
+        if self.main_tabs.currentIndex() == 1:
+            self.overlay_canvas.zoom_view(1.1)
+        elif self.active_pane:
+            self.active_pane.zoom_manager.zoom(1.1)
+
+    def _shortcut_zoom_out(self):
+        """Zooms the active comparison view out."""
+        if self.main_tabs.currentIndex() == 1:
+            self.overlay_canvas.zoom_view(0.9)
+        elif self.active_pane:
+            self.active_pane.zoom_manager.zoom(0.9)
+
+    def _shortcut_reset_zoom(self):
+        """Resets zoom on the active comparison view."""
+        if self.main_tabs.currentIndex() == 1:
+            self._on_overlay_reset()
+        elif self.active_pane:
+            self.active_pane.zoom_manager.zoom(reset=True)
+
+    def _shortcut_toggle_fit(self):
+        """Toggles fit-to-screen for the active comparison view."""
+        if self.main_tabs.currentIndex() == 1:
+            self.overlay_canvas.toggle_fit_actual()
+        elif self.active_pane:
+            self.active_pane.zoom_manager.toggle_fit_to_screen()
+
+    def _shortcut_swap_layers(self):
+        """Swaps overlay layers when the overlay tab is active."""
+        if self.main_tabs.currentIndex() == 1:
+            self._swap_overlay_layers()
+
+    def _shortcut_link_panes(self):
+        """Toggles pane linking when the side-by-side tab is active."""
+        if self.main_tabs.currentIndex() == 0 and self.btn_link_panes.isEnabled():
+            self.btn_link_panes.click()
 
     def _on_toggle_shortcut(self):
         """
