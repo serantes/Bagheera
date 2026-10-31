@@ -27,7 +27,7 @@ from .constants import (
     DEFAULT_DIALOG_SHORTCUTS
 )
 from .faiss_worker import FAISSSimilarSearchWorker
-from .imageviewer import ImagePane
+from .imageviewer import ImagePane, rating_menu_label
 from .propertiesdialog import PropertiesDialog
 
 
@@ -365,6 +365,22 @@ class SimilarImagesDialog(QDialog):
             self._menu_text(UITexts.VIEWER_MENU_TAGS, "fast_tag"))
         action_fast_tag.triggered.connect(self._show_fast_tags)
 
+        rating_menu = menu.addMenu(
+            QIcon.fromTheme("rating"), UITexts.VIEWER_MENU_RATING)
+        for rating in range(1, 11):
+            action_name = f"rating_{rating}"
+            action = rating_menu.addAction(
+                self._menu_text(rating_menu_label(rating), action_name))
+            action.setToolTip(str(rating))
+            action.triggered.connect(
+                lambda _checked=False, value=rating:
+                    self.preview_pane.controller.set_rating(value))
+        rating_menu.addSeparator()
+        delete_rating = rating_menu.addAction(
+            self._menu_text(UITexts.DELETE_RATING, "delete_rating"))
+        delete_rating.triggered.connect(
+            lambda: self.preview_pane.controller.set_rating(None))
+
         # 3. Region management
         region_menu = menu.addMenu(
             QIcon.fromTheme("edit-image-face-recognize"),
@@ -643,6 +659,12 @@ class SimilarImagesDialog(QDialog):
             "move_to_trash": self._shortcut_trash,
             "delete_permanently": self._shortcut_delete,
         }
+        for rating in range(1, 11):
+            self._menu_handlers[f"rating_{rating}"] = (
+                lambda value=rating:
+                    self.preview_pane.controller.set_rating(value))
+        self._menu_handlers["delete_rating"] = (
+            lambda: self.preview_pane.controller.set_rating(None))
         # Reverse map used as a keyPressEvent fallback (same lookup that the
         # ImageViewer uses), so the shortcuts keep working even if the widget
         # that holds the focus forwards the key event to the dialog.
@@ -816,8 +838,9 @@ class SimilarImagesDialog(QDialog):
         pass
 
     def on_metadata_changed(self, path, metadata=None):
-        """No-op implementation required by the ImagePane API."""
-        pass
+        """Refresh the main thumbnail metadata after preview edits."""
+        if self.main_win:
+            self.main_win.update_metadata_for_path(path, metadata)
 
     def on_controller_list_updated(self, index):
         """No-op implementation required by the ImagePane API."""

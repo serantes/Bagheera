@@ -414,6 +414,11 @@ VIEWER_ACTIONS = {
     "detect_faces": ("Detect Faces", "Actions"),
     "detect_pets": ("Detect Pets", "Actions"),
     "fast_tag": ("Quick Tags", "Actions"),
+    **{
+        f"rating_{rating}": (f"Set rating to {rating}", "Actions")
+        for rating in range(1, 11)
+    },
+    "delete_rating": ("Delete rating", "Actions"),
     "detect_bodies": ("Detect Bodies", "Actions"),
     "rotate_right": ("Rotate Right", "Transform"),
     "rotate_left": ("Rotate Left", "Transform"),
@@ -449,6 +454,11 @@ DEFAULT_VIEWER_SHORTCUTS = {
     "detect_pets": (Qt.Key_P, Qt.NoModifier),
     "detect_bodies": (Qt.Key_B, Qt.NoModifier),
     "fast_tag": (Qt.Key_T, Qt.NoModifier),
+    **{
+        f"rating_{rating}": (getattr(Qt, f"Key_{rating % 10}"), Qt.NoModifier)
+        for rating in range(1, 11)
+    },
+    "delete_rating": (Qt.Key_0, Qt.ControlModifier),
     "rotate_right": (Qt.Key_Plus, Qt.ControlModifier),
     "rotate_left": (Qt.Key_Minus, Qt.ControlModifier),
     "zoom_in": (Qt.Key_Plus, Qt.NoModifier),
@@ -478,14 +488,14 @@ DEFAULT_DIALOG_SHORTCUTS = {
     "dup_zoom_in": (Qt.Key_Plus, Qt.NoModifier),
     "dup_zoom_out": (Qt.Key_Minus, Qt.NoModifier),
     "dup_reset_zoom": (Qt.Key_Z, Qt.NoModifier),
-    "dup_toggle_fit": (Qt.Key_F, Qt.NoModifier),
+    "dup_toggle_fit": (Qt.Key_Z, Qt.ControlModifier),
     "dup_swap_layers": (Qt.Key_S, Qt.NoModifier),
     "dup_link_panes": (Qt.Key_L, Qt.NoModifier),
     "dup_overwrite": (Qt.Key_W, Qt.NoModifier),
     "sim_zoom_in": (Qt.Key_Plus, Qt.NoModifier),
     "sim_zoom_out": (Qt.Key_Minus, Qt.NoModifier),
-    "sim_reset_zoom": (Qt.Key_0, Qt.NoModifier),
-    "sim_toggle_fit": (Qt.Key_Z, Qt.NoModifier),
+    "sim_reset_zoom": (Qt.Key_Z, Qt.NoModifier),
+    "sim_toggle_fit": (Qt.Key_Z, Qt.ControlModifier),
 }
 
 DIALOG_ACTIONS = {
@@ -1182,6 +1192,8 @@ _UI_TEXTS = {
         "VIEWER_MENU_FLIP_V": "Vertical",
         "VIEWER_MENU_SHOW_STATUSBAR": "Show Status Bar",
         "VIEWER_MENU_TAGS": "Quick tags",
+        "VIEWER_MENU_RATING": "Rating",
+        "DELETE_RATING": "Delete rating",
         "VIEWER_MENU_CROP": "Crop Mode",
         "VIEWER_MENU_SAVE_CROP": "Save Selection...",
         "VIEWER_MENU_COPY_PATH": "Copy File Path",
@@ -1918,6 +1930,8 @@ _UI_TEXTS = {
         "VIEWER_MENU_FLIP_V": "Vertical",
         "VIEWER_MENU_SHOW_STATUSBAR": "Mostrar Barra de Estado",
         "VIEWER_MENU_TAGS": "Etiquetas rápidas",
+        "VIEWER_MENU_RATING": "Valoración",
+        "DELETE_RATING": "Eliminar valoración",
         "VIEWER_MENU_CROP": "Modo Recorte",
         "VIEWER_MENU_SAVE_CROP": "Guardar Selección...",
         "VIEWER_MENU_COPY_PATH": "Copiar Ruta del Archivo",
@@ -2649,6 +2663,8 @@ _UI_TEXTS = {
         "VIEWER_MENU_FLIP_V": "Vertical",
         "VIEWER_MENU_SHOW_STATUSBAR": "Amosar Barra de Estado",
         "VIEWER_MENU_TAGS": "Etiquetas rápidas",
+        "VIEWER_MENU_RATING": "Valoración",
+        "DELETE_RATING": "Eliminar valoración",
         "VIEWER_MENU_CROP": "Modo Recorte",
         "VIEWER_MENU_SAVE_CROP": "Gardar Selección...",
         "VIEWER_MENU_COPY_PATH": "Copiar Ruta do Ficheiro",

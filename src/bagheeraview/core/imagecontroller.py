@@ -458,13 +458,15 @@ class ImageController(QObject):
         if not current_path:
             return
         try:
-            XattrManager.set_attribute(current_path, RATING_XATTR_NAME, str(new_rating))
-            self._current_rating = new_rating  # Update internal state
+            value = str(new_rating) if new_rating is not None else None
+            XattrManager.set_attribute(current_path, RATING_XATTR_NAME, value)
+            self._current_rating = new_rating or 0
             self.metadata_changed.emit(current_path,
                                        {'tags': self._current_tags,
-                                        'rating': new_rating})
+                                        'rating': self._current_rating})
         except IOError as e:
-            print(f"Error setting tags for {current_path}: {e}")
+            logger.error("Error setting rating for %s: %s", current_path, e)
+            raise
 
     def _clamp_and_validate_region(self, region_data):
         """

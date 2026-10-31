@@ -19,7 +19,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import (
     QPixmap, QIcon, QTransform, QDrag, QPainter, QPen, QColor, QAction, QCursor,
-    QImageReader, QMovie, QKeySequence, QPainterPath, QImage, QDesktopServices
+    QImageReader, QMovie, QKeySequence, QPainterPath, QImage, QDesktopServices,
+    QFontMetrics
 )
 from PySide6.QtCore import (
     Signal, QPoint, QSize, Qt, QMimeData, QUrl, QTimer, QEvent, QRect, Slot, QRectF,
@@ -40,6 +41,16 @@ from .widgets import FaceNameInputWidget, TagSelectorDialog
 from .utils import PowerManager
 from .propertiesdialog import PropertiesDialog
 from .personrecognition import PersonRecognitionDB, extract_face_encoding
+
+
+def rating_menu_label(rating, font=None):
+    """Return a star representation when the current font supports it."""
+    metrics = QFontMetrics(font or QApplication.font())
+    if not all(metrics.inFont(character) for character in ("★", "☆", "½")):
+        return str(rating)
+    full_stars, has_half_star = divmod(rating, 2)
+    empty_stars = 5 - full_stars - has_half_star
+    return "★" * full_stars + "½" * has_half_star + "☆" * empty_stars
 
 
 class HighlightWidget(QWidget):
@@ -1957,6 +1968,12 @@ class ImageViewer(QWidget):
             "add_landmark_mode": lambda: self.set_next_region_type("Landmark"),
             "detect_bodies": self.run_body_detection,
             "fast_tag": self.show_fast_tag_menu,
+            **{
+                f"rating_{rating}": (
+                    lambda rating=rating: self.controller.set_rating(rating))
+                for rating in range(1, 11)
+            },
+            "delete_rating": lambda: self.controller.set_rating(None),
             "rotate_right": lambda: self.apply_rotation(90, True),
             "rotate_left": lambda: self.apply_rotation(-90, True),
             "zoom_in": lambda: self.zoom_manager.zoom(1.1),
@@ -3088,6 +3105,17 @@ class ImageViewer(QWidget):
                 "separator",
                 {"text": UITexts.VIEWER_MENU_TAGS,
                  "action": "fast_tag", "icon": "document-properties"},
+                {"text": UITexts.VIEWER_MENU_RATING, "icon": "rating",
+                 "submenu": [
+                    {"text": rating_menu_label(rating),
+                     "action": f"rating_{rating}",
+                     "tooltip": str(rating)}
+                    for rating in range(1, 11)
+                 ] + [
+                    "separator",
+                    {"text": UITexts.DELETE_RATING,
+                     "action": "delete_rating"}
+                 ]},
                 {"text": UITexts.VIEWER_MENU_DETECT_AREAS,
                  "icon": "edit-image-face-recognize", "submenu": [
                     {"text": UITexts.VIEWER_MENU_DETECT_FACES,

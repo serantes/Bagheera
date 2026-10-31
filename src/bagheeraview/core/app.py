@@ -89,7 +89,9 @@ from .widgets import (
     TagEditWidget, LayoutsWidget, LayoutSelectionDialog, HistoryWidget,
     RatingWidget, CommentWidget, FavoritesWidget
 )
-from .metadatamanager import MetadataManager, load_common_metadata
+from .metadatamanager import (
+    MetadataManager, XattrManager, load_common_metadata
+)
 from .filesystemwatcher import FileSystemWatcher
 
 
@@ -1709,7 +1711,9 @@ class MainWindow(QMainWindow):
         # self.filter_refresh_timer.timeout.connect(self.update_tag_list)
 
         # Monitor viewport resize to recalculate item layout (for headers)
-        self.thumbnail_view.viewport().installEventFilter(self)
+        self._thumbnail_viewport = self.thumbnail_view.viewport()
+        self.thumbnail_view.installEventFilter(self)
+        self._thumbnail_viewport.installEventFilter(self)
         self.thumbnail_view.verticalScrollBar().valueChanged.connect(
             self._on_scroll_interaction)
 
@@ -1750,6 +1754,7 @@ class MainWindow(QMainWindow):
 
         # Initialize the shortcut controller (after config is loaded)
         self.shortcut_controller = AppShortcutController(self)
+        self._setup_thumbnail_rating_shortcuts()
         self.favorites_tab.favorites_changed.connect(
             self.shortcut_controller.refresh_favorite_shortcuts)
 
@@ -2502,12 +2507,56 @@ class MainWindow(QMainWindow):
     def refresh_shortcuts(self):
         """Saves current shortcuts configuration and updates running viewers."""
         self.save_config()
+        self._setup_thumbnail_rating_shortcuts()
         for viewer in list(self.viewers):
             try:
                 if isinstance(viewer, ImageViewer) and viewer.isVisible():
                     viewer.refresh_shortcuts()
             except RuntimeError:
                 continue
+
+    def _setup_thumbnail_rating_shortcuts(self):
+        """Map viewer-configured rating shortcuts for thumbnail key events."""
+        self._thumbnail_rating_actions = {}
+        for (key, modifiers), (action, _description) in \
+                self.viewer_shortcuts.items():
+            if action == "delete_rating":
+                rating = None
+            elif action.startswith("rating_"):
+                try:
+                    rating = int(action.removeprefix("rating_"))
+                except ValueError:
+                    continue
+                if not 1 <= rating <= 10:
+                    continue
+            else:
+                continue
+
+            self._thumbnail_rating_actions[
+                (int(key), Qt.KeyboardModifiers(modifiers))] = rating
+
+    def set_selected_rating(self, rating):
+        """Set or remove the rating on all selected thumbnails."""
+        paths = self.get_selected_paths()
+        if not paths:
+            current = self.thumbnail_view.currentIndex()
+            path = current.data(PATH_ROLE) if current.isValid() else None
+            paths = [path] if path else []
+        if not paths:
+            return
+
+        value = str(rating) if rating is not None else None
+        failures = []
+        for path in paths:
+            try:
+                XattrManager.set_attribute(path, RATING_XATTR_NAME, value)
+            except IOError as exc:
+                failures.append(f"{path}: {exc}")
+            else:
+                self.update_metadata_for_path(path)
+
+        if failures:
+            QMessageBox.critical(self, UITexts.ERROR, "\n".join(failures))
 
     def cache_maintenance(self):
         """Performs maintenance tasks on the cache."""
@@ -5647,7 +5696,20 @@ class MainWindow(QMainWindow):
 
     def eventFilter(self, source, event):
         """Filters events from child widgets, like viewport resize."""
-        if source is self.thumbnail_view.viewport() and event.type() == QEvent.Resize:
+        if (source is self.thumbnail_view or
+                source is self._thumbnail_viewport) \
+                and event.type() == QEvent.KeyPress:
+            modifiers = event.modifiers() & (
+                Qt.ShiftModifier | Qt.ControlModifier |
+                Qt.AltModifier | Qt.MetaModifier)
+            shortcut = (event.key(), modifiers)
+            rating_actions = getattr(self, "_thumbnail_rating_actions", {})
+            if shortcut in rating_actions:
+                rating = rating_actions[shortcut]
+                self.set_selected_rating(rating)
+                event.accept()
+                return True
+        if source is self._thumbnail_viewport and event.type() == QEvent.Resize:
             self.thumbnails_refresh_timer.start()
         return super().eventFilter(source, event)
 
