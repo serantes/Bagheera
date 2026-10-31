@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QSizePolicy, QInputDialog, QTableWidget, QTableWidgetItem,
     QMenu, QHeaderView, QAbstractItemView, QTreeView, QLabel, QTextEdit,
     QComboBox, QCompleter, QToolBar, QDialog, QDialogButtonBox, QListWidget,
-    QProgressBar, QRadioButton
+    QProgressBar, QRadioButton, QFormLayout
 )
 from PySide6.QtGui import (
     QIcon, QStandardItemModel, QStandardItem, QColor, QPainter, QPen,
@@ -1566,9 +1566,10 @@ class FavoritesWidget(QWidget):
         overwrite_action.triggered.connect(self.overwrite_favorite)
         toolbar.addAction(overwrite_action)
 
-        edit_action = QAction(QIcon.fromTheme("edit-rename"), UITexts.RENAME, self)
+        edit_action = QAction(
+            QIcon.fromTheme("edit-rename"), UITexts.EDIT_FAVORITE_TITLE, self)
         edit_action.setToolTip(UITexts.EDIT_FAVORITE_TOOLTIP)
-        edit_action.triggered.connect(self.edit_comment)
+        edit_action.triggered.connect(self.edit_favorite)
         toolbar.addAction(edit_action)
 
         shortcut_action = QAction(
@@ -1705,23 +1706,43 @@ class FavoritesWidget(QWidget):
         query_item.setToolTip(query)
         self.save_favorites()
 
-    def edit_comment(self):
+    def edit_favorite(self):
         row = self.table.currentRow()
         if row < 0:
             return
         comment_item = self.table.item(row, 0)
-        query = self.table.item(row, 1).text()
-        old_comment = comment_item.text() if comment_item else ""
+        query_item = self.table.item(row, 1)
+        shortcut_item = self.table.item(row, 2)
+        if comment_item is None or query_item is None:
+            return
 
-        new_comment, ok = QInputDialog.getText(
-            self, UITexts.EDIT_COMMENT_TITLE,
-            UITexts.EDIT_COMMENT_TEXT.format(query),
-            QLineEdit.Normal, old_comment)
+        dialog = QDialog(self)
+        dialog.setWindowTitle(UITexts.EDIT_FAVORITE_TITLE)
+        dialog.setMinimumWidth(500)
+        form = QFormLayout(dialog)
+        comment_edit = QLineEdit(comment_item.text(), dialog)
+        query_edit = QLineEdit(query_item.text(), dialog)
+        form.addRow(UITexts.FAVORITE_COMMENT_LABEL, comment_edit)
+        form.addRow(UITexts.FAVORITE_QUERY_LABEL, query_edit)
 
-        if ok:
-            comment_item.setText(new_comment)
-            comment_item.setToolTip(new_comment)
-            self.save_favorites()
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        new_comment = comment_edit.text()
+        new_query = query_edit.text()
+        comment_item.setText(new_comment)
+        comment_item.setToolTip(new_comment)
+        query_item.setText(new_query)
+        query_item.setToolTip(new_query)
+        if shortcut_item:
+            shortcut_item.setToolTip(shortcut_item.text())
+        self.save_favorites()
 
     def edit_shortcut(self):
         row = self.table.currentRow()
