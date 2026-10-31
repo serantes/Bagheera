@@ -52,6 +52,17 @@ meaning it can handle thousands of images without performance degradation.
   multiple selections, and `Shift+Click` for range selection.
 * **Double-Click**: Double-clicking a thumbnail opens it in the dedicated Image
   Viewer, optimizing the display for full-size viewing.
+* **Directory Navigation**: When `scan_max_level` is set to `0`, a directory
+  search in Flat mode shows its immediate subdirectories alongside the images
+  in the current directory; images inside those subdirectories are not scanned.
+  The parent-directory item navigates upward; directory items are unaffected by
+  image filters and are hidden in grouped view modes. Double-click or Enter opens
+  the selected directory in the same search flow. Grouped views retain their
+  normal image-scanning behavior; switching between Flat and grouped views
+  refreshes the current directory accordingly.
+* **RAW Thumbnails**: For supported RAW formats with an embedded JPEG preview,
+  Bagheera uses that preview to generate thumbnails before falling back to
+  decoding the full RAW image.
 * **Context Menu**: Right-clicking on a thumbnail or a group header brings up a
   context menu with various actions (see Section 5).
 

@@ -4,6 +4,7 @@ import pytest
 from PySide6.QtWidgets import QApplication, QInputDialog
 
 from bagheeraview.core import app as app_module
+from bagheeraview.core.constants import ITEM_TYPE_ROLE, PATH_ROLE
 
 
 @pytest.fixture
@@ -56,14 +57,19 @@ def test_cancel_stops_renaming_remaining_selected_files(
 
 def test_rename_selected_images_deduplicates_selected_indexes(qapp):
     indexes = [
-        SimpleNamespace(path="/images/a.jpg"),
-        SimpleNamespace(path="/images/a.jpg"),
-        SimpleNamespace(path="/images/b.jpg"),
+        SimpleNamespace(path="/images/a.jpg", item_type="thumbnail"),
+        SimpleNamespace(path="/images/a.jpg", item_type="thumbnail"),
+        SimpleNamespace(path="/images/folder", item_type="directory"),
+        SimpleNamespace(path="/images/b.jpg", item_type="thumbnail"),
     ]
     window = SimpleNamespace(
         thumbnail_view=SimpleNamespace(selectedIndexes=lambda: indexes),
-        proxy_model=SimpleNamespace(data=lambda index, _role: index.path),
+        proxy_model=SimpleNamespace(
+            data=lambda index, role: (
+                index.path if role == PATH_ROLE else index.item_type)),
     )
+    window.get_selected_paths = lambda: \
+        app_module.MainWindow.get_selected_paths(window)
     renamed = []
     window.rename_images = lambda paths: renamed.extend(paths)
 

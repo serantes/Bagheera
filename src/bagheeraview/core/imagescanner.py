@@ -35,7 +35,7 @@ import lmdb
 from PySide6.QtCore import (
     QObject, QThread, Signal, QMutex, QReadWriteLock, QSize, QSemaphore,
     QWaitCondition, QByteArray, QBuffer, QIODevice, Qt, QTimer, QRunnable,
-    QThreadPool, QFile
+    QThreadPool, QFile, QUrl
 )
 from PySide6.QtGui import QImage, QImageReader, QImageIOHandler, QIcon
 from PySide6.QtWidgets import QApplication
@@ -43,7 +43,7 @@ from PySide6.QtWidgets import QApplication
 from .constants import (
     APP_CONFIG, CACHE_PATH, CACHE_MAX_SIZE, CACHE_MAX_RAM_BYTES,
     APP_DATA_DIR, MIN_FREE_RAM_PERCENT, DISK_CACHE_MAX_BYTES,
-    HAVE_BAGHEERASEARCH_LIB, IMAGE_EXTENSIONS,
+    HAVE_BAGHEERASEARCH_LIB, IMAGE_EXTENSIONS, RAW_IMAGE_EXTENSIONS,
     SCANNER_SETTINGS_DEFAULTS, SEARCH_CMD, THUMBNAIL_SIZES,
     UITexts, METADATA_DB_NAME, DIRECTORY_DB_NAME
 )
@@ -53,6 +53,11 @@ from .metadatamanager import load_common_metadata
 
 if HAVE_BAGHEERASEARCH_LIB:
     from bagheerasearch.core.search_lib.search import BagheeraSearcher
+
+try:
+    import exiv2
+except ImportError:
+    exiv2 = None
 
 # Set up logging for better debugging
 logger = logging.getLogger(__name__)
@@ -237,8 +242,79 @@ class ScannerWorker(QRunnable):
                 self.semaphore.release()
 
 
+def _read_embedded_jpeg_thumbnail(path, size):
+    """Return a scaled JPEG preview embedded in a RAW file, if available."""
+    if exiv2 is None:
+        return None
+
+    try:
+        image = exiv2.ImageFactory.open(path)
+        image.readMetadata()
+        preview_manager = exiv2.PreviewManager(image)
+        properties = preview_manager.getPreviewProperties()
+        jpeg_previews = []
+
+        for preview_properties in properties:
+            mime_type = getattr(preview_properties, "mimeType", "")
+            extension = getattr(preview_properties, "extension", "")
+            if str(mime_type).lower() != "image/jpeg" and \
+               str(extension).lower() not in ("jpg", "jpeg", ".jpg", ".jpeg"):
+                continue
+            width = int(getattr(preview_properties, "width", 0))
+            height = int(getattr(preview_properties, "height", 0))
+            if width > 0 and height > 0:
+                jpeg_previews.append((preview_properties, width * height,
+                                      max(width, height)))
+
+        if not jpeg_previews:
+            return None
+
+        large_enough = [entry for entry in jpeg_previews if entry[2] >= size]
+        preview_properties = min(
+            large_enough or jpeg_previews,
+            key=lambda entry: entry[1] if large_enough else -entry[1]
+        )[0]
+        preview = preview_manager.getPreviewImage(preview_properties)
+        preview_data = QByteArray(bytes(preview.data()))
+        if not preview_data:
+            return None
+
+        buffer = QBuffer()
+        buffer.setData(preview_data)
+        if not buffer.open(QIODevice.ReadOnly):
+            return None
+        try:
+            reader = QImageReader(buffer)
+            reader.setAutoTransform(True)
+            if reader.supportsOption(QImageIOHandler.ImageOption.ScaledSize):
+                original_size = reader.size()
+                if original_size.isValid() and (
+                        original_size.width() > size or
+                        original_size.height() > size):
+                    target_size = QSize(original_size)
+                    target_size.scale(size, size, Qt.KeepAspectRatio)
+                    reader.setScaledSize(target_size)
+            image = reader.read()
+        finally:
+            buffer.close()
+
+        if image.isNull():
+            return None
+        return image.scaled(
+            size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    except Exception as exc:
+        logger.debug("Could not read embedded JPEG preview from %s: %s",
+                     path, exc)
+        return None
+
+
 def generate_thumbnail(path, size, fd=None):
     """Generates a QImage thumbnail for a given path and size."""
+    if os.path.splitext(path)[1].lower() in RAW_IMAGE_EXTENSIONS:
+        preview = _read_embedded_jpeg_thumbnail(path, size)
+        if preview is not None and not preview.isNull():
+            return preview
+
     qfile = None
     reader = None
     try:
@@ -1716,6 +1792,7 @@ class ImageScanner(QThread):
     # List of tuples (path, QImage_thumb, mtime, tags, rating)
     # Updated tuple: (path, QImage_thumb, mtime, tags, rating, inode, device_id)
     images_found = Signal(list)
+    directories_found = Signal(str, list)
     progress_msg = Signal(str)
     progress_percent = Signal(int)
     finished_scan = Signal(int)  # Total images found
@@ -1724,7 +1801,7 @@ class ImageScanner(QThread):
     def __init__(self, cache, paths, is_file_list=False, viewers=None,
                  thread_pool_manager=None, target_sizes=None,
                  force_thumbnail_refresh=False,
-                 scan_max_level=None):
+                 scan_max_level=None, directory_navigation=False):
         if not paths or not isinstance(paths, (list, tuple)):
             logger.warning("ImageScanner initialized with empty or invalid paths")
             paths = []
@@ -1737,6 +1814,7 @@ class ImageScanner(QThread):
         self._seen_files = set()
         self._is_file_list = is_file_list
         self._scan_max_level = scan_max_level
+        self._directory_navigation = directory_navigation
         if self._is_file_list:
             self.paths = []
             for p in paths:
@@ -1804,8 +1882,11 @@ class ImageScanner(QThread):
     def run(self):
         # LowPriority ensures UI thread gets CPU time to process events (mouse, draw)
         self.setPriority(QThread.IdlePriority)
-        self.progress_msg.emit(UITexts.SCANNING_DIRS)
-        self.scan_files()
+        if self._directory_navigation:
+            self._scan_navigation_directory()
+        else:
+            self.progress_msg.emit(UITexts.SCANNING_DIRS)
+            self.scan_files()
 
         while self._is_running:
             self.mutex.lock()
@@ -1820,6 +1901,46 @@ class ImageScanner(QThread):
             self.mutex.unlock()
 
             self._process_images(i, to_load)
+
+    def _scan_navigation_directory(self):
+        """List child directories and scan images in the current directory only."""
+        for raw_path in self.paths:
+            if not self._is_running:
+                return
+            if raw_path.startswith("file://"):
+                raw_path = QUrl(raw_path).toLocalFile()
+            elif raw_path.startswith("file:/"):
+                raw_path = raw_path[6:]
+            directory = Path(os.path.abspath(os.path.expanduser(raw_path)))
+            if directory.is_file():
+                directory = directory.parent
+            if not directory.is_dir():
+                continue
+            directories = []
+            include_hidden = APP_CONFIG.get(
+                "show_hidden_dirs",
+                APP_CONFIG.get("scan_hidden_dirs",
+                               SCANNER_SETTINGS_DEFAULTS.get(
+                                   "scan_hidden_dirs", False)))
+            try:
+                for child in directory.iterdir():
+                    if not self._is_running:
+                        return
+                    if child.is_dir() and (
+                            include_hidden or not child.name.startswith(".")):
+                        directories.append(str(child))
+                    elif child.is_file() and child.suffix.lower() in IMAGE_EXTENSIONS \
+                            and (self._scan_hidden_files or
+                                 not child.name.startswith(".")):
+                        path = str(child.resolve())
+                        if path not in self._seen_files:
+                            self.all_files.append(path)
+                            self._seen_files.add(path)
+            except OSError as exc:
+                logger.warning("Could not list subdirectories of %s: %s",
+                               directory, exc)
+            self.directories_found.emit(str(directory), directories)
+            return
 
     def _update_viewers(self, force=False):
         if not self._viewers:

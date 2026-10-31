@@ -779,10 +779,48 @@ class ThumbnailDelegate(QStyledItemDelegate):
 
         if item_type == 'header':
             self.paint_header(painter, option, index)
+        elif item_type in ("directory", "parent_directory"):
+            self.paint_directory(painter, option, index, item_type)
         else:
             self.paint_thumbnail(painter, option, index)
 
         painter.restore()
+
+    def paint_directory(self, painter, option, index, item_type):
+        """Draw a navigable directory using the system's folder icon."""
+        rect = option.rect
+        if option.state & QStyle.State_Selected:
+            painter.fillRect(rect, option.palette.highlight())
+            text_color = option.palette.highlightedText().color()
+        else:
+            text_color = option.palette.text().color()
+
+        icon_name = "go-up" if item_type == "parent_directory" else "folder"
+        fallback = QStyle.SP_ArrowUp if item_type == "parent_directory" \
+            else QStyle.SP_DirIcon
+        icon = QIcon.fromTheme(icon_name, self.main_win.style().standardIcon(fallback))
+        icon_rect = QRect(rect.x(), rect.y() + 5, rect.width(),
+                          self.main_win.current_thumb_size)
+        icon_size = QSize(self.main_win.current_thumb_size,
+                          self.main_win.current_thumb_size)
+        icon.paint(painter, QRect(icon_rect.center().x() - icon_size.width() // 2,
+                                  icon_rect.center().y() - icon_size.height() // 2,
+                                  icon_size.width(), icon_size.height()))
+
+        if APP_CONFIG.get("thumbnails_show_filename", True):
+            painter.setPen(text_color)
+            font = painter.font()
+            font.setPointSize(APP_CONFIG.get(
+                "thumbnails_filename_font_size",
+                THUMBNAILS_FILENAME_FONT_SIZE_DEFAULT))
+            painter.setFont(font)
+            painter.drawText(
+                QRect(rect.x() + 2,
+                      rect.y() + self.main_win.current_thumb_size + 8,
+                      rect.width() - 4, rect.height() -
+                      self.main_win.current_thumb_size - 8),
+                Qt.AlignHCenter | Qt.AlignTop,
+                index.data(Qt.DisplayRole) or "")
 
     def paint_header(self, painter, option, index):
         """Draws a group header item."""
@@ -1247,10 +1285,15 @@ class ThumbnailSortFilterProxyModel(QSortFilterProxyModel):
     def filterAcceptsRow(self, source_row, source_parent):
         """Determines if a row should be visible based on current filters."""
         index = self.sourceModel().index(source_row, 0, source_parent)
+        item_type = index.data(ITEM_TYPE_ROLE)
+        if item_type in ("directory", "parent_directory"):
+            return not (self.group_by_folder or self.group_by_day or
+                        self.group_by_week or self.group_by_month or
+                        self.group_by_year or self.group_by_rating)
+
         path = index.data(PATH_ROLE)
 
         if not path:
-            item_type = index.data(ITEM_TYPE_ROLE)
             if item_type == 'header':
                 return (self.group_by_folder or self.group_by_day or
                         self.group_by_week or self.group_by_month or
@@ -1290,6 +1333,20 @@ class ThumbnailSortFilterProxyModel(QSortFilterProxyModel):
     def lessThan(self, left, right):
         """Custom sorting logic for name and date."""
         sort_role = self.sortRole()
+        left_type = self.sourceModel().data(left, ITEM_TYPE_ROLE)
+        right_type = self.sourceModel().data(right, ITEM_TYPE_ROLE)
+        nav_types = ("directory", "parent_directory")
+        left_is_nav = left_type in nav_types
+        right_is_nav = right_type in nav_types
+        descending = self.sortOrder() == Qt.DescendingOrder
+
+        if left_is_nav != right_is_nav:
+            return left_is_nav if not descending else right_is_nav
+        if left_is_nav and right_is_nav:
+            left_is_parent = left_type == "parent_directory"
+            right_is_parent = right_type == "parent_directory"
+            if left_is_parent != right_is_parent:
+                return left_is_parent if not descending else right_is_parent
 
         if sort_role == MTIME_ROLE:
             left_data = self.sourceModel().data(left, sort_role)
@@ -1359,6 +1416,9 @@ class MainWindow(QMainWindow):
         self.mru_tags = deque(maxlen=APP_CONFIG.get(
             "tags_menu_max_items", TAGS_MENU_MAX_ITEMS_DEFAULT))
         self.scanner = None
+        self._directory_navigation_root = None
+        self._directory_navigation_paths = []
+        self._directory_navigation_source_root = None
         self.thumbnail_generator = None
         self.show_viewer_status_bar = True
         self.show_filmstrip = False
@@ -1432,7 +1492,7 @@ class MainWindow(QMainWindow):
         bg_color = APP_CONFIG.get("thumbnails_bg_color", THUMBNAILS_BG_COLOR_DEFAULT)
         self.thumbnail_view.setStyleSheet(f"background-color: {bg_color};")
         self.thumbnail_view.customContextMenuRequested.connect(self.show_context_menu)
-        self.thumbnail_view.doubleClicked.connect(self.on_view_double_clicked)
+        self.thumbnail_view.activated.connect(self.on_view_double_clicked)
 
         self._set_thumbnail_model(True)
 
@@ -2540,7 +2600,8 @@ class MainWindow(QMainWindow):
         paths = self.get_selected_paths()
         if not paths:
             current = self.thumbnail_view.currentIndex()
-            path = current.data(PATH_ROLE) if current.isValid() else None
+            path = current.data(PATH_ROLE) if current.isValid() and \
+                current.data(ITEM_TYPE_ROLE) == 'thumbnail' else None
             paths = [path] if path else []
         if not paths:
             return
@@ -2726,6 +2787,12 @@ class MainWindow(QMainWindow):
         item_type = self.proxy_model.data(proxy_index, ITEM_TYPE_ROLE)
         if item_type == 'thumbnail':
             self.open_viewer(proxy_index)
+        elif item_type == 'directory':
+            self.open_and_search_location(
+                self.proxy_model.data(proxy_index, PATH_ROLE))
+        elif item_type == 'parent_directory':
+            self.open_and_search_location(
+                self.proxy_model.data(proxy_index, PATH_ROLE))
         elif item_type == 'header':
             group_name = self.proxy_model.data(proxy_index, GROUP_NAME_ROLE)
             if group_name:
@@ -2736,10 +2803,9 @@ class MainWindow(QMainWindow):
 
     def get_current_selected_path(self):
         """Returns the file path of the first selected item in the view."""
-        selected_indexes = self.thumbnail_view.selectedIndexes()
-        if selected_indexes:
-            proxy_index = selected_indexes[0]
-            return self.proxy_model.data(proxy_index, PATH_ROLE)
+        for proxy_index in self.thumbnail_view.selectedIndexes():
+            if self.proxy_model.data(proxy_index, ITEM_TYPE_ROLE) == 'thumbnail':
+                return self.proxy_model.data(proxy_index, PATH_ROLE)
         return None
 
     def get_all_image_paths(self):
@@ -2964,6 +3030,8 @@ class MainWindow(QMainWindow):
         paths = []
         seen = set()
         for idx in self.thumbnail_view.selectedIndexes():
+            if self.proxy_model.data(idx, ITEM_TYPE_ROLE) != 'thumbnail':
+                continue
             path = self.proxy_model.data(idx, PATH_ROLE)
             if path and path not in seen:
                 paths.append(path)
@@ -3080,8 +3148,12 @@ class MainWindow(QMainWindow):
             open_viewers = [w for w in QApplication.topLevelWidgets()
                             if isinstance(w, ImageViewer) and w.isVisible()]
 
-            if not open_viewers and self.thumbnail_view.selectedIndexes():
-                self.open_viewer(self.thumbnail_view.selectedIndexes()[0])
+            selected_image = next(
+                (idx for idx in self.thumbnail_view.selectedIndexes()
+                 if self.proxy_model.data(idx, ITEM_TYPE_ROLE) == 'thumbnail'),
+                None)
+            if not open_viewers and selected_image:
+                self.open_viewer(selected_image)
                 self.hide()
             elif open_viewers:
                 self.hide()
@@ -3093,15 +3165,7 @@ class MainWindow(QMainWindow):
 
     def delete_current_image(self, permanent=False):
         """Deletes the selected image(s), either to trash or permanently."""
-        selected_indexes = self.thumbnail_view.selectedIndexes()
-        if not selected_indexes:
-            return
-
-        paths = []
-        for idx in selected_indexes:
-            path = self.proxy_model.data(idx, PATH_ROLE)
-            if path and path not in paths:
-                paths.append(path)
+        paths = self.get_selected_paths()
 
         if not paths:
             return
@@ -3746,7 +3810,8 @@ class MainWindow(QMainWindow):
                     w.load_and_fit_image()
 
     def start_scan(self, paths, sync_viewer=False, active_viewer=None,
-                   select_paths=None, scan_max_level=None):
+                   select_paths=None, scan_max_level=None,
+                   allow_directory_navigation=True):
         """
         Starts a new background scan for images.
 
@@ -3789,16 +3854,46 @@ class MainWindow(QMainWindow):
         self.progress_bar.show()
 
         self.is_cleaning = False
+        effective_scan_max_level = scan_max_level
+        configured_scan_max_level = APP_CONFIG.get(
+            "scan_max_level", SCANNER_SETTINGS_DEFAULTS["scan_max_level"])
+        if effective_scan_max_level is None:
+            effective_scan_max_level = configured_scan_max_level
+        directory_root = None
+        if allow_directory_navigation and not self._scan_all and \
+           configured_scan_max_level == 0 and effective_scan_max_level == 0:
+            for path in paths:
+                local_path = path
+                if local_path.startswith(("file://", "file:/")):
+                    local_path = QUrl(local_path).toLocalFile() or \
+                        local_path.split(":/", 1)[-1]
+                local_path = os.path.abspath(os.path.expanduser(local_path))
+                if os.path.isdir(local_path):
+                    directory_root = local_path
+                    break
+                if os.path.isfile(local_path):
+                    directory_root = os.path.dirname(local_path)
+                    break
+
+        navigation_root = directory_root if \
+            self.view_mode_combo.currentIndex() == 0 else None
+        self._directory_navigation_source_root = directory_root
+        self._directory_navigation_root = navigation_root
+        self._directory_navigation_paths = []
         self.scanner = ImageScanner(self.cache, paths, is_file_list=self._scan_all,
                                     thread_pool_manager=self.thread_pool_manager,
                                     viewers=self.viewers,  # Line 1071
                                     force_thumbnail_refresh=self._force_thumbnail_refresh,
                                     target_sizes=[self._current_thumb_tier],
-                                    scan_max_level=scan_max_level)
+                                    scan_max_level=scan_max_level,
+                                    directory_navigation=(
+                                        navigation_root is not None))
         if self._is_loading_all:
             self.scanner.set_auto_load(True)
         self._is_loading = True
         self.scanner.images_found.connect(self.collect_found_images)
+        self.scanner.directories_found.connect(
+            self._on_directories_found)
 
         # Add directories to file system watcher
         for p in paths:
@@ -3813,6 +3908,54 @@ class MainWindow(QMainWindow):
         self.scanner.start()
         self._scan_all = False
         self._force_thumbnail_refresh = False  # Reset the flag after starting scan
+
+    def _on_directories_found(self, root, directories):
+        """Store directory rows for the current Flat-mode navigation scan."""
+        self._directory_navigation_root = root
+        self._directory_navigation_paths = directories
+
+    def _insert_navigation_items(self):
+        """Add the parent and child directory rows to the source model."""
+        if not hasattr(self, "thumbnail_model"):
+            return
+        for row in reversed(range(self.thumbnail_model.rowCount())):
+            item = self.thumbnail_model.item(row)
+            if item and item.data(ITEM_TYPE_ROLE) in (
+                    "directory", "parent_directory"):
+                self.thumbnail_model.removeRow(row)
+
+        root = self._directory_navigation_root
+        if not root:
+            return
+
+        root = os.path.abspath(root)
+        parent = os.path.dirname(os.path.normpath(root))
+        if parent != root:
+            parent_item = QStandardItem("..")
+            parent_item.setEditable(False)
+            parent_item.setData("parent_directory", ITEM_TYPE_ROLE)
+            parent_item.setData(parent, PATH_ROLE)
+            parent_item.setData(os.path.basename(parent) or parent, DIR_ROLE)
+            try:
+                parent_item.setData(os.stat(parent).st_mtime, MTIME_ROLE)
+            except OSError:
+                parent_item.setData(0, MTIME_ROLE)
+            parent_item.setToolTip(parent)
+            self.thumbnail_model.appendRow(parent_item)
+
+        for path in self._directory_navigation_paths:
+            name = os.path.basename(path.rstrip(os.sep)) or path
+            item = QStandardItem(name)
+            item.setEditable(False)
+            item.setData("directory", ITEM_TYPE_ROLE)
+            item.setData(path, PATH_ROLE)
+            item.setData(os.path.dirname(path), DIR_ROLE)
+            try:
+                item.setData(os.stat(path).st_mtime, MTIME_ROLE)
+            except OSError:
+                item.setData(0, MTIME_ROLE)
+            item.setToolTip(path)
+            self.thumbnail_model.appendRow(item)
 
     def _on_scan_finished(self, n, select_paths=None):
         """Slot for when the image scanner has finished."""
@@ -4454,6 +4597,7 @@ class MainWindow(QMainWindow):
             print(f"Error in rebuild_view: {e}")
         finally:
             self._suppress_updates = False
+            self._insert_navigation_items()
             self.apply_filters()
             self.thumbnail_view.setUpdatesEnabled(True)
             if selected_paths:
@@ -4630,9 +4774,12 @@ class MainWindow(QMainWindow):
 
         files_data = {}
         for proxy_idx in selected_indexes:
+            if self.proxy_model.data(proxy_idx, ITEM_TYPE_ROLE) != 'thumbnail':
+                continue
             path = proxy_idx.data(PATH_ROLE)
             tags = proxy_idx.data(TAGS_ROLE)
-            files_data[path] = tags
+            if path:
+                files_data[path] = tags
         self.tag_edit_widget.set_files_data(files_data)
 
     def update_info_widget(self):
@@ -4640,13 +4787,7 @@ class MainWindow(QMainWindow):
         data."""
         if self._suppress_updates:
             return
-        selected_indexes = self.thumbnail_view.selectedIndexes()
-        paths = []
-        if selected_indexes:
-            for proxy_idx in selected_indexes:
-                path = self.proxy_model.data(proxy_idx, PATH_ROLE)
-                if path:
-                    paths.append(path)
+        paths = self.get_selected_paths()
         self.rating_widget.set_files(paths)
         self.comment_widget.set_files(paths)
 
@@ -4675,6 +4816,8 @@ class MainWindow(QMainWindow):
     def on_tags_edited(self, tags_per_file=None):
         """Callback to update model items after their tags have been edited."""
         for proxy_idx in self.thumbnail_view.selectedIndexes():
+            if self.proxy_model.data(proxy_idx, ITEM_TYPE_ROLE) != 'thumbnail':
+                continue
             source_idx = self.proxy_model.mapToSource(proxy_idx)
             item = self.thumbnail_model.itemFromIndex(source_idx)
             if item:
@@ -4721,6 +4864,8 @@ class MainWindow(QMainWindow):
         """Callback to update a model item after its rating has been edited."""
         # The rating widget acts on the selected files, so we iterate through them.
         for proxy_idx in self.thumbnail_view.selectedIndexes():
+            if self.proxy_model.data(proxy_idx, ITEM_TYPE_ROLE) != 'thumbnail':
+                continue
             source_idx = self.proxy_model.mapToSource(proxy_idx)
             item = self.thumbnail_model.itemFromIndex(source_idx)
             if item:
@@ -5274,7 +5419,15 @@ class MainWindow(QMainWindow):
             self.thumbnail_view.setGridSize(QSize())
         else:
             self.thumbnail_view.setGridSize(self.delegate.sizeHint(None, None))
-        self.rebuild_view(full_reset=True)
+        directory_root = self._directory_navigation_source_root
+        needs_directory_rescan = bool(
+            directory_root and
+            ((index == 0 and not self._directory_navigation_root) or
+             (index > 0 and self._directory_navigation_root)))
+        if needs_directory_rescan:
+            self.start_scan([directory_root])
+        else:
+            self.rebuild_view(full_reset=True)
 
         self.save_config()
         self.setFocus()
@@ -5457,7 +5610,9 @@ class MainWindow(QMainWindow):
 
             else:
                 # If a directory or search term, start a scan
-                self.start_scan([path], select_paths=select_paths)
+                self.start_scan(
+                    [path], select_paths=select_paths,
+                    allow_directory_navigation=not term.startswith("search:/"))
 
     def update_search_input(self):
         """Updates the search input combo box with history items and icons."""
@@ -5766,6 +5921,11 @@ class MainWindow(QMainWindow):
         # Check if clicked on a header (which isn't usually selectable)
         index_at_pos = self.thumbnail_view.indexAt(pos)
         if index_at_pos.isValid() and \
+           self.proxy_model.data(index_at_pos, ITEM_TYPE_ROLE) in (
+               "directory", "parent_directory"):
+            self.show_directory_context_menu(index_at_pos, pos)
+            return
+        if index_at_pos.isValid() and \
            self.proxy_model.data(index_at_pos, ITEM_TYPE_ROLE) == 'header':
             group_name = self.proxy_model.data(index_at_pos, GROUP_NAME_ROLE)
             if group_name:
@@ -5777,6 +5937,9 @@ class MainWindow(QMainWindow):
         menu.setStyleSheet("QMenu { border: 1px solid #555; }")
 
         selected_indexes = self.thumbnail_view.selectedIndexes()
+        selected_indexes = [
+            index for index in selected_indexes
+            if self.proxy_model.data(index, ITEM_TYPE_ROLE) == 'thumbnail']
         if not selected_indexes:
             return
 
@@ -5835,7 +5998,7 @@ class MainWindow(QMainWindow):
         action_open_location = menu.addAction(QIcon.fromTheme("folder-search"),
                                               UITexts.CONTEXT_MENU_OPEN_SEARCH_LOCATION)
         action_open_location.triggered.connect(
-            lambda: self.process_term(f"file:/{os.path.dirname(path)}"))
+            lambda: self.open_and_search_location(path))
 
         action_open_default_app = menu.addAction(
             QIcon.fromTheme("system-run"),
@@ -5935,6 +6098,33 @@ class MainWindow(QMainWindow):
 
         menu.exec(self.thumbnail_view.mapToGlobal(pos))
 
+    def show_directory_context_menu(self, proxy_index, pos):
+        """Show only navigation and system-open actions for a directory."""
+        path = self.proxy_model.data(proxy_index, PATH_ROLE)
+        if not path:
+            return
+        menu = QMenu(self)
+        open_menu = menu.addMenu(
+            QIcon.fromTheme("document-open"), UITexts.CONTEXT_MENU_OPEN)
+        self.populate_open_with_submenu(
+            open_menu, path, mime_type="inode/directory")
+        menu.addAction(
+            QIcon.fromTheme("folder-search"),
+            UITexts.CONTEXT_MENU_OPEN_SEARCH_LOCATION
+        ).triggered.connect(lambda: self.open_and_search_location(path))
+        menu.addAction(
+            QIcon.fromTheme("system-run"),
+            UITexts.CONTEXT_MENU_OPEN_WITH_DOLPHIN
+        ).triggered.connect(lambda: subprocess.Popen(["dolphin", path]))
+        menu.exec(self.thumbnail_view.mapToGlobal(pos))
+
+    def open_and_search_location(self, path):
+        """Navigate using the same search flow as the existing context action."""
+        if not path:
+            return
+        target = path if os.path.isdir(path) else os.path.dirname(path)
+        self.process_term(f"file:/{target}")
+
     def toggle_group_collapse(self, group_name):
         """Toggles the collapsed state of a group."""
         if group_name in self.proxy_model.collapsed_groups:
@@ -6021,14 +6211,14 @@ class MainWindow(QMainWindow):
         self._app_info_cache[desktop_file_id] = result
         return result
 
-    def populate_open_with_submenu(self, menu, full_path):
+    def populate_open_with_submenu(self, menu, full_path, mime_type=None):
         """Populates the 'Open With' submenu with associated applications."""
         if not full_path:
             return
         try:
             # 1. Get the mimetype of the file
-            mime_query = subprocess.check_output(["kmimetypefinder", full_path],
-                                                 text=True).strip()
+            mime_query = mime_type or subprocess.check_output(
+                ["kmimetypefinder", full_path], text=True).strip()
 
             if mime_query in self._open_with_cache:
                 app_entries = self._open_with_cache[mime_query]
@@ -6125,8 +6315,12 @@ class MainWindow(QMainWindow):
         tags = []
         rating = 0
         selected_indexes = self.thumbnail_view.selectedIndexes()
-        if selected_indexes:
-            idx = selected_indexes[0]
+        selected_image = next(
+            (idx for idx in selected_indexes
+             if self.proxy_model.data(idx, ITEM_TYPE_ROLE) == 'thumbnail'),
+            None)
+        if selected_image:
+            idx = selected_image
             tags = self.proxy_model.data(idx, TAGS_ROLE)
             rating = self.proxy_model.data(idx, RATING_ROLE) or 0
 
@@ -6350,8 +6544,7 @@ class MainWindow(QMainWindow):
                 self.proxy_model.invalidate()
 
             # Update sidebar/status panel if this file is selected
-            selected_indexes = self.thumbnail_view.selectedIndexes()
-            selected_paths = [self.proxy_model.data(idx, PATH_ROLE) for idx in selected_indexes]
+            selected_paths = self.get_selected_paths()
             if path in selected_paths:
                 self.update_tag_edit_widget()
                 self.update_info_widget()
@@ -6495,14 +6688,7 @@ class MainWindow(QMainWindow):
 
     def rename_selected_images(self):
         """Renames each selected image in turn; Cancel stops the whole batch."""
-        paths = []
-        seen_paths = set()
-        for index in self.thumbnail_view.selectedIndexes():
-            path = self.proxy_model.data(index, PATH_ROLE)
-            if path and path not in seen_paths:
-                paths.append(path)
-                seen_paths.add(path)
-        self.rename_images(paths)
+        self.rename_images(self.get_selected_paths())
 
     def rename_image(self, proxy_row_index):
         """Renames a single image row in the main thumbnail view."""
@@ -6572,11 +6758,12 @@ class MainWindow(QMainWindow):
         if not self.thumbnail_view.isVisible() or self.proxy_model.rowCount() == 0:
             return
         selection_model = self.thumbnail_view.selectionModel()
-        # Create a selection that covers all rows in the proxy model
-        top_left = self.proxy_model.index(0, 0)
-        bottom_right = self.proxy_model.index(self.proxy_model.rowCount() - 1, 0)
-        selection = QItemSelection(top_left, bottom_right)
-        selection_model.select(selection, QItemSelectionModel.Select)
+        selection = QItemSelection()
+        for row in range(self.proxy_model.rowCount()):
+            index = self.proxy_model.index(row, 0)
+            if self.proxy_model.data(index, ITEM_TYPE_ROLE) == 'thumbnail':
+                selection.select(index, index)
+        selection_model.select(selection, QItemSelectionModel.ClearAndSelect)
 
     def select_none_thumbnails(self):
         """Clears the selection in the thumbnail view."""
@@ -6590,15 +6777,14 @@ class MainWindow(QMainWindow):
             return
         selection_model = self.thumbnail_view.selectionModel()
 
-        # Get all selectable items
-        all_items_selection = QItemSelection()
+        to_select = QItemSelection()
         for row in range(self.proxy_model.rowCount()):
             index = self.proxy_model.index(row, 0)
-            if self.proxy_model.data(index, ITEM_TYPE_ROLE) == 'thumbnail':
-                all_items_selection.select(index, index)
-
-        # Invert the current selection against all selectable items
-        selection_model.select(all_items_selection, QItemSelectionModel.Toggle)
+            if self.proxy_model.data(index, ITEM_TYPE_ROLE) == 'thumbnail' and \
+               not selection_model.isSelected(index):
+                to_select.select(index, index)
+        selection_model.clearSelection()
+        selection_model.select(to_select, QItemSelectionModel.Select)
 
     def update_load_all_button_state(self):
         """Updates the text and tooltip of the 'load all' button based on its state."""

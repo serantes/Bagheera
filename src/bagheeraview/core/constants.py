@@ -131,8 +131,18 @@ ICON_THEME_VIEWER = "bagheeraview"
 ICON_THEME_VIEWER_FALLBACK = "image"
 
 # --- FILE HANDLING ---
-IMAGE_EXTENSIONS = {'.bmp', '.dds', '.gif', '.heic', '.ico', '.icns', '.j2k', '.jp2', '.jpeg', '.jpg', '.nef', '.nrw', '.pbm',
-                    '.pgm', '.png', '.ppm', '.tga', '.tiff', '.wbmp', '.webp', '.xbm', '.xpm'}
+RAW_IMAGE_EXTENSIONS = {
+    '.3fr', '.ari', '.arw', '.bay', '.cap', '.cr2', '.cr3', '.dcs',
+    '.dcr', '.dng', '.drf', '.eip', '.erf', '.fff', '.gpr', '.iiq',
+    '.k25', '.kdc', '.mdc', '.mef', '.mos', '.mrw', '.nef', '.nrw',
+    '.obm', '.orf', '.pef', '.ptx', '.pxn', '.r3d', '.raf', '.raw',
+    '.rwl', '.rw2', '.rwz', '.sr2', '.srf', '.sti', '.x3f',
+}
+IMAGE_EXTENSIONS = {
+    '.bmp', '.dds', '.gif', '.heic', '.ico', '.icns', '.j2k', '.jp2',
+    '.jpeg', '.jpg', '.pbm', '.pgm', '.png', '.ppm', '.tga', '.tiff',
+    '.wbmp', '.webp', '.xbm', '.xpm',
+} | RAW_IMAGE_EXTENSIONS
 IMAGE_MIME_TYPES = "Image files (*" + ' *'.join(IMAGE_EXTENSIONS) + ")"
 
 # Path to KDE's screen configuration file. Used for more accurate screen
@@ -159,7 +169,7 @@ TAGS_MENU_MAX_ITEMS_DEFAULT = 25
 
 # --- SCANNER SETTINGS ---
 SCANNER_SETTINGS_DEFAULTS = {
-    "scan_max_level": 2,
+    "scan_max_level": 0,
     "scan_batch_size": 64,
     "scan_full_on_start": True,
     "person_tags": "",
@@ -1223,6 +1233,7 @@ _UI_TEXTS = {
         "CONTEXT_MENU_OPEN": "Open",
         "CONTEXT_MENU_OPEN_SEARCH_LOCATION": "Open and search location",
         "CONTEXT_MENU_OPEN_DEFAULT_APP": "Open location with Dolphin",
+        "CONTEXT_MENU_OPEN_WITH_DOLPHIN": "Open with Dolphin",
         "CONTEXT_MENU_OPEN_BAGHEERAVIEW": "Open location with BagheeraView",
         "CONTEXT_MENU_FULLSCREEN_VIEWER": "Open in Fullscreen Viewer",
         "CONTEXT_MENU_MOVE_TO": "Move to...",
@@ -1961,6 +1972,7 @@ _UI_TEXTS = {
         "CONTEXT_MENU_OPEN": "Abrir",
         "CONTEXT_MENU_OPEN_SEARCH_LOCATION": "Abrir y buscar en ubicación",
         "CONTEXT_MENU_OPEN_DEFAULT_APP": "Abrir ubicación con Dolphin",
+        "CONTEXT_MENU_OPEN_WITH_DOLPHIN": "Abrir con Dolphin",
         "CONTEXT_MENU_OPEN_BAGHEERAVIEW": "Abrir ubicación con BagheeraView",
         "CONTEXT_MENU_FULLSCREEN_VIEWER": "Abrir con Visor a Pantalla Completa",
         "CONTEXT_MENU_MOVE_TO": "Mover a...",
@@ -2694,6 +2706,7 @@ _UI_TEXTS = {
         "CONTEXT_MENU_OPEN": "Abrir",
         "CONTEXT_MENU_OPEN_SEARCH_LOCATION": "Abrir e buscar na localización",
         "CONTEXT_MENU_OPEN_DEFAULT_APP": "Abrir localización con Dolphin",
+        "CONTEXT_MENU_OPEN_WITH_DOLPHIN": "Abrir con Dolphin",
         "CONTEXT_MENU_OPEN_BAGHEERAVIEW": "Abrir localización con BagheeraView",
         "CONTEXT_MENU_MOVE_TO": "Mover a...",
         "CONTEXT_MENU_COPY_TO": "Copiar a...",
