@@ -87,7 +87,7 @@ from .geomapwidget import GeoMapWidget
 from .widgets import (
     CircularProgressBar,
     TagEditWidget, LayoutsWidget, LayoutSelectionDialog, HistoryWidget,
-    RatingWidget, CommentWidget, FavoritesWidget
+    RatingWidget, CommentWidget, FavoritesWidget, TagSelectorDialog
 )
 from .metadatamanager import (
     MetadataManager, XattrManager, load_common_metadata
@@ -6025,9 +6025,18 @@ class MainWindow(QMainWindow):
             )
         )
 
-        menu.addSeparator()
+        quick_tag_paths = []
+        for index in selected_indexes:
+            image_path = self.proxy_model.data(index, PATH_ROLE)
+            extension = os.path.splitext(image_path or "")[1].lower()
+            if image_path and extension in IMAGE_EXTENSIONS:
+                quick_tag_paths.append(image_path)
+        if quick_tag_paths:
+            menu.addSeparator()
+            self.add_thumbnail_quick_tags_menu(menu, quick_tag_paths)
 
         if HAVE_IMAGEHASH:
+            menu.addSeparator()
             action_find_similar = menu.addAction(QIcon.fromTheme("edit-find"), UITexts.MENU_FIND_SIMILAR)
             action_find_similar.triggered.connect(lambda: self.find_similar_images(path))
 
@@ -6107,6 +6116,94 @@ class MainWindow(QMainWindow):
         action_props.triggered.connect(self.show_properties)
 
         menu.exec(self.thumbnail_view.mapToGlobal(pos))
+
+    def add_thumbnail_quick_tags_menu(self, menu, paths):
+        """Add the image viewer's quick-tag actions for selected thumbnails."""
+        quick_tags_menu = menu.addMenu(
+            QIcon.fromTheme("tag"), UITexts.QUICK_TAGS)
+        if not paths:
+            quick_tags_menu.setEnabled(False)
+            return
+
+        tags_by_path = {}
+        for path in paths:
+            item_index = self._path_to_model_index.get(
+                os.path.abspath(os.path.expanduser(path)))
+            if item_index and item_index.isValid():
+                item = self.thumbnail_model.itemFromIndex(QModelIndex(item_index))
+                tags = item.data(TAGS_ROLE) if item else None
+            else:
+                tags = None
+            if tags is None:
+                tags = load_common_metadata(path).tags
+            tags_by_path[path] = set(tags or [])
+
+        all_tags = set.union(*tags_by_path.values()) if tags_by_path else set()
+        common_tags = set.intersection(*tags_by_path.values()) \
+            if tags_by_path else set()
+        mru_tags = [tag for tag in self.mru_tags if tag not in common_tags]
+
+        for tag in mru_tags:
+            action = quick_tags_menu.addAction(tag)
+            action.setCheckable(True)
+            action.setChecked(False)
+            action.triggered.connect(
+                lambda checked, tag=tag:
+                self.apply_quick_tag_to_selection(tag, checked, paths))
+
+        if mru_tags:
+            quick_tags_menu.addSeparator()
+
+        add_tag_action = quick_tags_menu.addAction(UITexts.QUICK_TAG_ADD_TAG)
+        add_tag_action.triggered.connect(
+            lambda: self.add_quick_tag_to_selection(paths))
+
+        current_tags_to_show = all_tags - set(mru_tags)
+        if current_tags_to_show:
+            quick_tags_menu.addSeparator()
+            for tag in sorted(current_tags_to_show):
+                action = quick_tags_menu.addAction(tag)
+                action.setCheckable(True)
+                action.setChecked(tag in common_tags)
+                action.triggered.connect(
+                    lambda checked, tag=tag:
+                    self.apply_quick_tag_to_selection(tag, checked, paths))
+
+    def apply_quick_tag_to_selection(self, tag, add_tag, paths):
+        """Apply a quick-tag action to all selected image thumbnails."""
+        failed_paths = []
+        added_tag = False
+        for path in paths:
+            try:
+                current_tags = set(load_common_metadata(path).tags)
+                if add_tag:
+                    current_tags.add(tag)
+                else:
+                    current_tags.discard(tag)
+                new_tags = sorted(current_tags)
+                XattrManager.set_attribute(
+                    path, XATTR_NAME,
+                    ",".join(new_tags) if new_tags else None)
+            except OSError as exc:
+                failed_paths.append(f"{path}: {exc}")
+                continue
+
+            if add_tag:
+                added_tag = True
+            self.update_metadata_for_path(path)
+
+        if added_tag:
+            self.add_to_mru_tags(tag)
+        if failed_paths:
+            QMessageBox.critical(self, UITexts.ERROR, "\n".join(failed_paths))
+
+    def add_quick_tag_to_selection(self, paths):
+        """Prompt for a tag and add it to all selected image thumbnails."""
+        dialog = TagSelectorDialog(self)
+        if dialog.exec() == QDialog.Accepted:
+            tag = dialog.get_selected_tag()
+            if tag:
+                self.apply_quick_tag_to_selection(tag, True, paths)
 
     def show_directory_context_menu(self, proxy_index, pos):
         """Show only navigation and system-open actions for a directory."""
