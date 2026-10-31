@@ -2095,6 +2095,11 @@ class MainWindow(QMainWindow):
         h_idx = self.tags_tabs.indexOf(self.history_tab)
         show_history_action.triggered.connect(lambda: self.open_sidebar_tab(h_idx))
 
+        show_map_action = menu.addAction(QIcon.fromTheme("map-symbolic"),
+                                         UITexts.MENU_SHOW_MAP)
+        m_idx = self.tags_tabs.indexOf(self.map_tab)
+        show_map_action.triggered.connect(lambda: self.open_sidebar_tab(m_idx))
+
         menu.addSeparator()
 
         # Cache management actions
@@ -4614,6 +4619,7 @@ class MainWindow(QMainWindow):
             display_text = f"{tag} ({count})"
 
             item = QTableWidgetItem(display_text)
+            item.setToolTip(display_text)
             item.setData(Qt.UserRole, tag)
             item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
             item.setCheckState(Qt.Checked if tag in checked_tags else Qt.Unchecked)
