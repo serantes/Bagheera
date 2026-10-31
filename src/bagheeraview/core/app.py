@@ -3948,6 +3948,21 @@ class MainWindow(QMainWindow):
                     hi = mid
         return lo
 
+    def _is_reverse_group_order(self):
+        """Return whether grouped items should be ordered in reverse."""
+        if self.proxy_model.group_by_folder:
+            return False
+
+        is_date_grouped = (
+            self.proxy_model.group_by_day or
+            self.proxy_model.group_by_week or
+            self.proxy_model.group_by_month or
+            self.proxy_model.group_by_year
+        )
+        date_is_ascending = (
+            self.sort_combo.currentText() == UITexts.SORT_DATE_ASC)
+        return not (is_date_grouped and date_is_ascending)
+
     def rebuild_view(self, full_reset=False):
         """
         Sorts all collected image data and rebuilds the source model, inserting
@@ -4072,7 +4087,7 @@ class MainWindow(QMainWindow):
                     decorated_data.append((sort_key, display_name, item))
 
                 # 2. Sort by group key (stable sort preserves previous user order)
-                is_reverse_group = not self.proxy_model.group_by_folder
+                is_reverse_group = self._is_reverse_group_order()
                 decorated_data.sort(key=lambda x: x[0], reverse=is_reverse_group)
 
                 # Update master list to reflect the new group order
