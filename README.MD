@@ -313,7 +313,8 @@ abandoning classic folder-based navigation.
 - **Tagging, Rating & Comments System:** Effortlessly manage tags, ratings, and
   comments that integrate directly with your filesystem's extended attributes
   and are natively used by **Baloo**.
-- **Result Filtering:** Results can be filtered instantly by tags or filename.
+- **Result Filtering:** Filter results by tags, filename, and discovered file
+  extensions.
 - **Duplicates Management:** A system to detect and manage duplicate images using
   perceptual hashing, including an image comparison form and an ignore list.
 - **Image Similarity Management:** A search and discovery system to find visually

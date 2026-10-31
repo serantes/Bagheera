@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QTabWidget, QProgressDialog, QDockWidget,
     QAbstractItemView, QRadioButton, QButtonGroup, QListView,
     QStyledItemDelegate, QStyle, QDialog, QKeySequenceEdit, QDialogButtonBox,
-    QPlainTextEdit
+    QPlainTextEdit, QCheckBox, QGroupBox, QScrollArea
 )
 from PySide6.QtGui import (
     QDesktopServices, QFont, QFontMetrics, QIcon, QTransform, QImageReader,
@@ -1011,6 +1011,7 @@ class ThumbnailSortFilterProxyModel(QSortFilterProxyModel):
         self.include_tags = set()
         self.exclude_tags = set()
         self.name_filter = ""
+        self.excluded_extensions = set()
         self.match_mode = "AND"
         self._name_to_paths_index = defaultdict(set)
         self._name_matching_paths = set()
@@ -1218,6 +1219,9 @@ class ThumbnailSortFilterProxyModel(QSortFilterProxyModel):
                 return (self.group_by_folder or self.group_by_day or
                         self.group_by_week or self.group_by_month or
                         self.group_by_year or self.group_by_rating)
+            return False
+
+        if os.path.splitext(path)[1].lower() in self.excluded_extensions:
             return False
 
         # 1. Optimization: Check tags first using pre-calculated set (O(1) lookup)
@@ -1531,6 +1535,31 @@ class MainWindow(QMainWindow):
         self.filter_name_input.setClearButtonEnabled(True)
         filter_layout.addWidget(self.filter_name_input)
 
+        self.extension_filter_group = QGroupBox(
+            UITexts.FILTER_EXTENSIONS_TITLE)
+        self.extension_filter_group.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        self.extension_filter_group.hide()
+        extension_group_layout = QVBoxLayout(self.extension_filter_group)
+        self.extension_filter_scroll = QScrollArea()
+        self.extension_filter_scroll.setWidgetResizable(True)
+        self.extension_filter_scroll.setFrameShape(QScrollArea.NoFrame)
+        self.extension_filter_widget = QWidget()
+        self.extension_filter_layout = QVBoxLayout(
+            self.extension_filter_widget)
+        self.extension_filter_layout.setContentsMargins(0, 0, 0, 0)
+        self.extension_filter_layout.setSpacing(0)
+        self.extension_filter_scroll.setWidget(self.extension_filter_widget)
+        extension_group_layout.addWidget(self.extension_filter_scroll)
+        filter_layout.addWidget(self.extension_filter_group)
+        self._extension_checkboxes = {}
+
+        self.tag_search_input = QLineEdit()
+        self.tag_search_input.setPlaceholderText(UITexts.TAG_SEARCH_PLACEHOLDER)
+        self.tag_search_input.textChanged.connect(self.filter_tags_list)
+        self.tag_search_input.setClearButtonEnabled(True)
+        filter_layout.addWidget(self.tag_search_input)
+
         mode_layout = QHBoxLayout()
         self.filter_mode_group = QButtonGroup(self)
         rb_and = QRadioButton(UITexts.FILTER_AND)
@@ -1552,14 +1581,6 @@ class MainWindow(QMainWindow):
         btn_clear.setFixedWidth(60)
         btn_clear.clicked.connect(self.clear_filters)
         mode_layout.addWidget(btn_clear)
-        filter_layout.addLayout(mode_layout)
-        self.filter_mode_group.buttonClicked.connect(self.apply_filters)
-
-        self.tag_search_input = QLineEdit()
-        self.tag_search_input.setPlaceholderText(UITexts.TAG_SEARCH_PLACEHOLDER)
-        self.tag_search_input.textChanged.connect(self.filter_tags_list)
-        self.tag_search_input.setClearButtonEnabled(True)
-        filter_layout.addWidget(self.tag_search_input)
 
         self.tags_list = QTableWidget()
         self.tags_list.setColumnCount(2)
@@ -2635,6 +2656,10 @@ class MainWindow(QMainWindow):
                     continue
 
             if name_filter and name_filter not in os.path.basename(path).lower():
+                continue
+
+            if os.path.splitext(path)[1].lower() in \
+               self.proxy_model.excluded_extensions:
                 continue
 
             tags = set(item[3]) if item[3] else set()
@@ -3773,6 +3798,8 @@ class MainWindow(QMainWindow):
 
         if unique_batch:
             self.found_items_data.extend(unique_batch)
+            self._update_extension_filter_list(
+                item[0] for item in unique_batch)
 
             if is_first_batch:
                 self._suppress_updates = False
@@ -4367,6 +4394,7 @@ class MainWindow(QMainWindow):
             self.update_tag_edit_widget()
         elif widget == self.filter_widget:
             self.update_tag_list()
+            self._update_extension_filter_list()
         elif widget == self.info_widget:
             self.update_info_widget()
         elif widget == self.favorites_tab:
@@ -4377,6 +4405,36 @@ class MainWindow(QMainWindow):
             self.map_tab.set_active(is_map)
             if is_map:
                 self.map_tab.refresh(self.get_selected_paths())
+
+    def _update_extension_filter_list(self, paths=None):
+        """Add checkboxes for newly discovered file extensions."""
+        if not hasattr(self, "extension_filter_layout"):
+            return
+
+        if paths is None:
+            paths = (item[0] for item in self.found_items_data)
+
+        for path in paths:
+            extension = os.path.splitext(path)[1].lower()
+            if extension in self._extension_checkboxes:
+                continue
+
+            label = extension or UITexts.FILTER_NO_EXTENSION
+            checkbox = QCheckBox(label, self.extension_filter_widget)
+            checkbox.setChecked(True)
+            checkbox.toggled.connect(lambda _checked: self.apply_filters())
+            self.extension_filter_layout.addWidget(checkbox)
+            self._extension_checkboxes[extension] = checkbox
+        self._resize_extension_filter_list()
+
+    def _resize_extension_filter_list(self):
+        """Size the extension list for its visible rows, capped at two."""
+        checkboxes = list(self._extension_checkboxes.values())
+        visible_checkboxes = checkboxes[:2]
+        height = sum(checkbox.sizeHint().height()
+                     for checkbox in visible_checkboxes)
+        self.extension_filter_scroll.setFixedHeight(height)
+        self.extension_filter_group.setVisible(bool(checkboxes))
 
     def _on_main_dock_visibility_changed(self, visible):
         if hasattr(self, 'map_tab'):
@@ -4665,6 +4723,10 @@ class MainWindow(QMainWindow):
                 other_item = self.tags_list.item(i, 1)  # 'NOT' checkbox
                 other_item.setCheckState(Qt.Unchecked)
         self.tags_list.blockSignals(False)
+        for checkbox in self._extension_checkboxes.values():
+            checkbox.blockSignals(True)
+            checkbox.setChecked(True)
+            checkbox.blockSignals(False)
         self.apply_filters()
 
     def apply_filters(self):
@@ -4700,6 +4762,11 @@ class MainWindow(QMainWindow):
         self.proxy_model.exclude_tags = exclude_tags
         name_filter = self.filter_name_input.text().strip().lower()
         self.proxy_model.name_filter = name_filter
+        self.proxy_model.excluded_extensions = {
+            extension for extension, checkbox
+            in self._extension_checkboxes.items()
+            if not checkbox.isChecked()
+        }
         self.proxy_model.match_mode = "AND" \
             if self.filter_mode_group.buttons()[0].isChecked() else "OR"
 
@@ -4725,7 +4792,9 @@ class MainWindow(QMainWindow):
                 UITexts.FILTER_STATS_HIDDEN.format(hidden_count, visible_count))
             # self.filter_stats_lbl.hide()
 
-        is_filter_active = bool(include_tags or exclude_tags or name_filter)
+        is_filter_active = bool(
+            include_tags or exclude_tags or name_filter or
+            self.proxy_model.excluded_extensions)
         if is_filter_active:
             self.filtered_count_lbl.setText(
                 UITexts.FILTERED_COUNT.format(visible_count))
@@ -5935,6 +6004,7 @@ class MainWindow(QMainWindow):
                 # tuple: (path, qi, mtime, tags, rating, inode, dev)
                 new_item_data = (path, None, mtime, res.tags, res.rating, inode, dev)
                 self.found_items_data.append(new_item_data)
+                self._update_extension_filter_list([path])
                 self._known_paths.add(path)
                 self.proxy_model.add_to_cache(path, res.tags)
             except Exception:
