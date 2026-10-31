@@ -2,19 +2,32 @@
 
 ## 1. Introduction
 
-Welcome to the Bagheera Image Viewer! This application is designed to help you browse, organize, and manage your image collection efficiently, with a focus on performance and integration with Baloo, KDE's file indexing service. Bagheera provides a fast, virtualized thumbnail grid, advanced filtering capabilities, duplicate detection, and a feature-rich image viewer.
+Welcome to the Bagheera Image Viewer! This application is designed to help you
+browse, organize, and manage your image collection efficiently, with a focus on
+integration with Baloo, KDE's file indexing service. Bagheera provides a
+virtualized thumbnail grid, advanced filtering capabilities, duplicate
+detection, and a feature-rich image viewer.
 
 ### Key Features:
 
-* **Fast Thumbnail Grid**: Browse large image collections with a responsive, virtualized view.
-* **Advanced Filtering**: Filter images by filename, tags (including hierarchical tags), and metadata.
-* **Baloo Integration**: Leverage Baloo's indexing for quick tag management and metadata retrieval.
+* **Thumbnail Grid**: Browse large image collections with a responsive,
+  virtualized view.
+* **Advanced Filtering**: Filter images by filename, tags (including hierarchical
+  tags), and file extension.
+* **Baloo Integration**: Leverage Baloo's indexing for quick tag management and
+  metadata retrieval.
 * **Duplicate Detection**: Find and manage duplicate images using various methods.
 * **Customizable Layouts**: Save and restore your window and viewer arrangements.
-* **Image Viewer**: A dedicated viewer with navigation, zoom, slideshow, and image manipulation tools.
-* **Region Detection**: Automatically detects and tags faces and pets. Users can also manually add custom regions (e.g., bodies, objects, landmarks) to enhance categorization.
+* **Image Viewer**: A dedicated viewer with navigation, zoom, slideshow, and
+  image manipulation tools.
+* **Region Detection**: Automatically detects and tags faces and pets. Users can
+  also manually add custom regions (e.g., bodies, objects, landmarks) to
+  enhance categorization.
+* **Person Recognition**: Identifies people in photos using facial-recognition
+  embeddings and provides face-tagging tools.
 * **Keyboard Shortcuts**: Fully customizable shortcuts for efficient workflow.
-* **File System Watcher**: Automatically updates the view when files are added, modified, or deleted externally.
+* **File System Watcher**: Automatically updates the view when files are added,
+  modified, or deleted externally.
 
 ## 2. Main Interface Overview
 
@@ -24,34 +37,48 @@ The main window of Bagheera Image Viewer consists of several key areas:
 
 Located at the top of the window, the search bar allows you to:
 
-* **Enter Search Queries**: Type keywords, tags (e.g., `tags=landscape`), or specific Bagheera queries.
-* **Enter File Paths**: Directly type a directory path to scan, or a file path to open it in the viewer.
+* **Enter Search Queries**: Type keywords, tags (e.g., `tags=landscape`), or
+  specific Bagheera queries.
+* **Enter File Paths**: Directly type a directory path to scan, or a file path to
+  open it in the viewer.
 * **Browse Button**: Opens a file dialog to select an image to scan.
 
 ### 2.2. Thumbnail Grid
 
-The central area displays your images as thumbnails. This view is virtualized, meaning it can handle thousands of images without performance degradation.
+The central area displays your images as thumbnails. This view is virtualized,
+meaning it can handle thousands of images without performance degradation.
 
-* **Selection**: Click on a thumbnail to select it. Use `Ctrl+Click` for multiple selections, and `Shift+Click` for range selection.
-* **Double-Click**: Double-clicking a thumbnail opens it in the dedicated Image Viewer, optimizing the display for full-size viewing.
-* **Context Menu**: Right-clicking on a thumbnail or a group header brings up a context menu with various actions (see Section 5).
+* **Selection**: Click on a thumbnail to select it. Use `Ctrl+Click` for
+  multiple selections, and `Shift+Click` for range selection.
+* **Double-Click**: Double-clicking a thumbnail opens it in the dedicated Image
+  Viewer, optimizing the display for full-size viewing.
+* **Context Menu**: Right-clicking on a thumbnail or a group header brings up a
+  context menu with various actions (see Section 5).
 
 ### 2.3. Status Bar
 
-At the bottom of the window, the status bar provides feedback on application activity:
+At the bottom of the window, the status bar provides feedback on application
+activity:
 
-* **Status Label**: Displays messages like "Ready", "Loading...", "Done", or error messages.
-* **Progress Bar**: Shows the progress of ongoing operations like scanning or duplicate detection.
-* **File System Watcher Indicator**: A small icon (e.g., folder-open) indicates if the file system watcher is actively monitoring directories.
-* **Filtered Count**: Shows how many images are currently visible after applying filters.
+* **Status Label**: Displays messages like "Ready", "Loading...", "Done", or
+  error messages.
+* **Progress Bar**: Shows the progress of ongoing operations like scanning or
+  duplicate detection.
+* **File System Watcher Indicator**: A small icon (e.g., folder-open) indicates
+  if the file system watcher is actively monitoring directories.
+* **Filtered Count**: Shows how many images are currently visible after applying
+  filters.
 
 ### 2.4. Bottom Controls
 
 Next to the status bar, you'll find controls for managing the thumbnail view:
 
-* **Load More Images Button**: (Hidden by default, appears when more images are available) Loads the next batch of images from the current scan.
-* **Load All Images Button**: (Hidden by default, appears when more images are available) Continuously loads all remaining images from the current scan.
-* **Cancel Duplicates Button**: (Only visible during duplicate detection) Stops the ongoing duplicate detection process.
+* **Load More Images Button**: (Hidden by default, appears when more images are
+  available) Loads the next batch of images from the current scan.
+* **Load All Images Button**: (Hidden by default, appears when more images are
+  available) Continuously loads all remaining images from the current scan.
+* **Cancel Duplicates Button**: (Only visible during duplicate detection) Stops
+  the ongoing duplicate detection process.
 * **View Mode Dropdown**: Changes how images are grouped in the grid:
   * **Flat**: No grouping, all images displayed in a single list.
   * **Separate by Folder**: Groups images by their parent directory.
@@ -59,78 +86,115 @@ Next to the status bar, you'll find controls for managing the thumbnail view:
   * **Separate by Rating**: Groups images by their star rating.
 * **Sort Dropdown**: Changes the sorting order of images:
   * **Name ↑ / Name ↓**: Sorts alphabetically by filename (ascending/descending).
-  * **Date ↑ / Date ↓**: Sorts by modification date (oldest/newest first).
+  * **Date ↑ / Date ↓**: Sorts by modification date (oldest first / newest
+    first). In date-grouped views, **Date ↑** orders groups from oldest to
+    newest; all other sort choices keep date groups newest-first.
 * **Thumbnail Size Slider**: Adjusts the size of the thumbnails in the grid.
 * **Size Label**: Displays the current thumbnail size in pixels.
 
 ## 3. Sidebar Docks
 
-The main window features a dockable sidebar (initially hidden) that provides access to various tools and information. You can toggle its visibility via the main menu or keyboard shortcut.
+The main window features a dockable sidebar (initially hidden) that provides
+access to various tools and information. You can toggle its visibility via the
+main menu or keyboard shortcut.
 
 ### 3.1. Tags Tab
 
-This tab allows you to view and edit tags associated with the currently selected images.
+This tab allows you to view and edit tags associated with the currently
+selected images.
 
 * **Tag Tree View**: Displays a hierarchical list of tags.
   * **⭐ USED TAGS**: Shows tags currently applied to the selected images.
   * **📂 ALL TAGS**: Shows all available tags from your Baloo index.
 * **Search Bar**: Filters the tags displayed in the tree view.
-* **Add Tag Button (`+`)**: Opens a dialog to create a new tag. You can use `/` to create hierarchical tags (e.g., `Nature/Animals`).
-* **Refresh Tags Button**: Reloads the list of available tags from the Baloo database.
-* **Apply Changes Button**: Saves any changes made to the tags of the selected images.
-* **Ctrl+Click on Tag**: Forcefully toggles the check state of a tag, allowing you to mark it as added or removed even if it's already in that state for some files.
+* **Add Tag Button (`+`)**: Opens a dialog to create a new tag. You can use `/`
+  to create hierarchical tags (e.g., `Nature/Animals`).
+* **Refresh Tags Button**: Reloads the list of available tags from the Baloo
+  database.
+* **Apply Changes Button**: Saves any changes made to the tags of the selected
+  images.
+* **Ctrl+Click on Tag**: Forcefully toggles the check state of a tag, allowing
+  you to mark it as added or removed even if it's already in that state for
+  some files.
 * **Tag Context Menu**: Right-click on a tag in the tree view for options:
   * **Search by this tag**: Performs a search for images with this specific tag.
-  * **Add AND this tag to search**: Adds the tag to your current search query using an `AND` operator.
-  * **Add OR this tag to search**: Adds the tag to your current search query using an `OR` operator.
-* The text font style and color convey specific information about the state of each tag:
-  * Italic Font: Indicates that the tag is not applied to all currently selected files (partial selection).
-  * Blue Text: Indicates that the tag change is pending and has not yet been saved to the file's metadata.
+  * **Add AND this tag to search**: Adds the tag to your current search query
+    using an `AND` operator.
+  * **Add OR this tag to search**: Adds the tag to your current search query
+    using an `OR` operator.
+* The text font style and color convey specific information about the state of
+  each tag:
+  * Italic Font: Indicates that the tag is not applied to all currently
+    selected files (partial selection).
+  * Blue Text: Indicates that the tag change is pending and has not yet been
+    saved to the file's metadata.
 
 ### 3.2. Information Tab
 
-This tab displays and allows editing of general information for the selected images.
+This tab displays and allows editing of general information for the selected
+images.
 
-* **Rating**: Assign a star rating (0-5 stars) to your images. Click on a star to cycle its state (Off -> Full -> Half -> Off).
+* **Rating**: Assign a star rating (0-5 stars) to your images. Click on a star to
+  cycle its state (Off -> Full -> Half -> Off).
 * **Comment**: Add or edit a user comment for the selected images.
-* **Apply Changes Button**: Saves any changes made to the rating or comment. This button is hidden if there are no changes.
+* **Apply Changes Button**: Saves any changes made to the rating or comment. This
+  button is hidden if there are no changes.
 
 ### 3.3. Filter Tab
 
 This tab helps you filter the images displayed in the thumbnail grid.
 
-* **Filter by Filename Input**: Type text to filter images by their filename (case-insensitive).
+* **Filter by Filename Input**: Type text to filter images by their filename
+  (case-insensitive).
+* **Show files by extension**: Lists file extensions discovered during the scan.
+  All extensions are shown by default; uncheck an extension to hide those
+  files. The list grows as more images are found and can be scrolled when it
+  contains more than two entries.
+* **Tag Search Input**: Filters the tag list below. It appears above the AND/OR
+  and tag-selection controls.
 * **Filter Mode (AND/OR)**:
   * **AND**: Images must have ALL selected tags to be shown.
   * **OR**: Images must have AT LEAST ONE of the selected tags to be shown.
-* **Invert Button**: Inverts the selection of tags in the list below.
+  * Filename, extension, and tag filters are combined: an image must pass each
+    active filter. AND/OR controls how included tags are matched.
+* **Invert Button**: Inverts the selection of included tags in the list below.
+* **Clear Button**: Clears tag selections and restores all file extensions.
 * **Filter Stats Label**: Shows how many items are hidden by the current filters.
-* **Tag Search Input**: Filters the list of tags in this panel.
 * **Tags List**: A table listing all unique tags found in your collection.
   * **Tag Column**: Check the box to include images with this tag.
-  * **NOT Column**: Check the box to exclude images with this tag. (Checking one will uncheck the other in the same row).
+  * **NOT Column**: Check the box to exclude images with this tag. (Checking one
+    will uncheck the other in the same row).
 
 ### 3.4. Favorites Tab
 
 Save and manage your frequently used search queries.
 
 * **Search Bar**: Filters your list of favorite queries.
-* **Favorites Table**: Lists your saved queries with a comment, the query itself, and an optional keyboard shortcut.
+* **Favorites Table**: Lists your saved queries with a comment, the query itself,
+  and an optional keyboard shortcut.
 * **Load Button**: Executes the selected favorite query.
-* **Add Button**: Adds the current search bar content as a new favorite. You'll be prompted for a comment.
+* **Add Button**: Adds the current search bar content as a new favorite. You'll
+  be prompted for a comment.
 * **Rename Button**: Edits the comment for the selected favorite.
-* **Shortcut Button**: Assigns a global keyboard shortcut to the selected favorite query.
+* **Shortcut Button**: Assigns a global keyboard shortcut to the selected
+  favorite query.
 * **Delete Button**: Removes the selected favorite.
 * **Move Up/Down Buttons**: Reorders your favorite queries in the list.
 
 ### 3.5. Layouts Tab (X11 only)
 
-This tab allows you to save and restore the arrangement of your main window and any open image viewers. This feature is currently only available on X11display servers because Wayland does not support set window positions programatically.
+This tab allows you to save and restore the arrangement of your main window and
+any open image viewers. This feature is currently only available on X11 display
+servers because Wayland does not support setting window positions
+programmatically.
 
-* **Layouts Table**: Lists your saved layouts with their names and last modified dates.
+* **Layouts Table**: Lists your saved layouts with their names and last modified
+  dates.
 * **Load Button**: Restores the selected layout.
-* **Create Button**: Saves the current window arrangement as a new layout. You'll be prompted for a name.
-* **Save Button**: Overwrites the selected layout with the current window arrangement.
+* **Create Button**: Saves the current window arrangement as a new layout. You'll
+  be prompted for a name.
+* **Save Button**: Overwrites the selected layout with the current window
+  arrangement.
 * **Rename Button**: Renames the selected layout.
 * **Copy Button**: Creates a copy of the selected layout with a new name.
 * **Delete Button**: Deletes the selected layout file.
@@ -139,24 +203,60 @@ This tab allows you to save and restore the arrangement of your main window and 
 
 Keeps a record of your past searches and opened files/directories.
 
-* **History Table**: Lists your browsing history with the query/path and the date it was accessed.
+* **History Table**: Lists your browsing history with the query/path and the date
+  it was accessed.
 * **Double-Click**: Re-executes the selected history entry.
 * **Clear All Button**: Clears the entire history.
 * **Delete Selected Button**: Removes the selected entry from history.
-* **Delete Older Button**: Removes the selected entry and all older entries from history.
+* **Delete Older Button**: Removes the selected entry and all older entries from
+  history.
+
+### 3.7. Map Tab
+
+The Map tab displays GPS locations for the currently selected images. It
+requires QtWebEngine and an internet connection to load the map.
+
+* **Search field**: Enter decimal coordinates (`38.199083, 128.466750`), DMS
+  coordinates (`38°11'56.7"N 128°28'00.3"E`), a complete Google Plus Code, or a
+  place name. Press Enter or click the map-marker button to search. Place names
+  are looked up using Nominatim.
+* **Search result marker**: A successful search places a temporary marker on the
+  map. Clicking the marker removes it. A free map click also creates a
+  temporary marker when location editing is not active.
+* **Open in Google Maps**: Opens the selected image location in Google Maps. If
+  the selected images have different locations, a chooser lets you select one.
+  A temporary search or map-click marker is offered first as a location without
+  an associated photo.
+* **Set / edit location**: Enables map-click assignment of the clicked
+  coordinates to all selected images. This action is available when images are
+  selected and the required metadata support is installed.
+* **Copy location**: Copies a location from a selected image or a temporary
+  marker to the selected images. When locations differ, choose which location
+  to copy; then choose all selected images or only those without a location.
+  Cancel leaves the images unchanged.
+* **Clear GPS location**: Removes GPS coordinates from the selected image.
+
+When a temporary marker exists, it can also be used as the source for copying
+coordinates, including when only one image is selected. Searching recenters the
+map and zooms to approximately a one-kilometre radius only when the current
+view is wider; it does not zoom in further when the map is already closer.
+Assigning GPS coordinates preserves the current map view.
 
 ## 4. Image Viewer
 
-The Image Viewer is a separate window that opens when you double-click a thumbnail or open a single image file.
+The Image Viewer is a separate window that opens when you double-click a
+thumbnail or open a single image file.
 
 ### 4.1. Navigation
 
-* **Next/Previous Image**: Use the arrow keys, mouse wheel, or dedicated buttons/shortcuts to move through images in the current list.
+* **Next/Previous Image**: Use the arrow keys, mouse wheel, or dedicated
+  buttons/shortcuts to move through images in the current list.
 * **First/Last Image**: Jump to the beginning or end of the image list.
 
 ### 4.2. Zooming
 
-* **Zoom In/Out**: Use `+`/`-` keys, mouse wheel (with `Ctrl`), or menu options.
+* **Zoom In/Out**: Use `+`/`-` keys, mouse wheel (with `Ctrl`), or menu
+  options.
 * **Reset Zoom**: Resets the image to 100% or fits it to the screen.
 
 ### 4.3. Fullscreen Mode
@@ -165,13 +265,15 @@ Toggle fullscreen mode to view images without distractions.
 
 ### 4.4. Slideshow
 
-* **Start/Stop Slideshow**: Automatically cycles through images at a configurable interval.
+* **Start/Stop Slideshow**: Automatically cycles through images at a configurable
+  interval.
 * **Reverse Slideshow**: Cycles through images in reverse order.
 * **Set Interval**: Configure the delay between images in the slideshow.
 
 ### 4.5. Filmstrip
 
-A small strip of thumbnails at the bottom, left, top, or right of the viewer, showing nearby images in the list.
+A small strip of thumbnails at the bottom, left, top, or right of the viewer,
+showing nearby images in the list.
 
 * **Toggle Filmstrip**: Show or hide the filmstrip.
 * **Filmstrip Position**: Configure its position in the Settings.
@@ -182,15 +284,19 @@ Bagheera can detect and tag specific areas within your images.
 
 * **Detect Faces/Pets**: Automatically identifies these features.
 * **Add Face/Pet/Body/Object/Landmark**: Manually define and name an area.
-* **Show Faces & other areas**: Toggles the visibility of bounding boxes around detected regions.
+* **Show Faces & other areas**: Toggles the visibility of bounding boxes around
+  detected regions.
 * **Rename Region**: Rename an existing detected region.
 * **Delete Region**: Remove a detected region.
 
 ### 4.7. Image Manipulation
 
-* **Rotate Right/Left**: Rotates the image by 90 degrees clockwise or counter-clockwise in the viewer without modify the image.
-* **Flip Horizontal/Vertical**: Flips the image along its horizontal or vertical axis.
-* **Crop Mode**: Enter cropping mode to select a region of the image. Use Shift + mouse to maintain selection aspect ratio.
+* **Rotate Right/Left**: Rotates the displayed image by 90 degrees clockwise or
+  counter-clockwise without modifying the image file.
+* **Flip Horizontal/Vertical**: Flips the image along its horizontal or vertical
+  axis.
+* **Crop Mode**: Enter cropping mode to select a region of the image. Use Shift +
+  mouse to maintain selection aspect ratio.
 * **Save Cropped Image**: Saves the selected cropped region as a new image.
 
 ### 4.8. File Operations
@@ -200,11 +306,14 @@ Bagheera can detect and tag specific areas within your images.
 * **Delete Permanently**: Deletes the image permanently (bypassing trash).
 * **Copy Image to Clipboard**: Copies the image data to the clipboard.
 * **Copy File Path**: Copies the full path of the image to the clipboard.
-* **Open with other application**: Opens a submenu to choose an external application to open the image.
+* **Open with other application**: Opens a submenu to choose an external
+  application to open the image.
 
 ### 4.9. Properties Dialog
 
-Opens a dialog displaying detailed information about the image, including general file properties, metadata, and EXIF data. You can also add/edit extended attributes here.
+Opens a dialog displaying detailed information about the image, including
+general file properties, metadata, and EXIF data. You can also add/edit
+extended attributes here.
 
 ## 5. Context Menus
 
@@ -217,22 +326,26 @@ Opens a dialog displaying detailed information about the image, including genera
   * **Invert Selection**: Inverts the current selection.
 * **Open Submenu**:
   * **Open in Fullscreen Viewer**: Opens the image in the viewer in fullscreen.
-  * **Open and search location**: Scans the directory containing the image and applies it as the current search.
-  * **Open location with default application**: Opens the image's directory in your system's default file manager.
-  * **Open with other application...**: Provides a list of applications associated with the image's MIME type.
+  * **Open and search location**: Scans the directory containing the image and
+    applies it as the current search.
+  * **Open location with default application**: Opens the image's directory in
+    your system's default file manager.
+  * **Open with other application...**: Provides a list of applications
+    associated with the image's MIME type.
 * **Rename...**: Renames the selected image.
 * **Move to...**: Moves the selected image to a new location.
 * **Copy to...**: Copies the selected image to a new location.
 * **Rotate Submenu**:
-  * **Left**: Rotates the image 90 degrees counter-clockwise. This option modified the image.
-  * **Right**: Rotates the image 90 degrees clockwise. . This option modified the image.
+  * **Left**: Rotates the image file 90 degrees counter-clockwise.
+  * **Right**: Rotates the image file 90 degrees clockwise.
 * **Move to Trash**: Moves the image to the system trash.
 * **Delete**: Deletes the image permanently.
 * **Clipboard Submenu**:
   * **Copy Image to Clipboard**: Copies the image data.
   * **Copy File Path**: Copies the full path of the image.
   * **Copy Directory Path**: Copies the path of the image's directory.
-* **Regenerate Thumbnail**: Forces the regeneration of the thumbnail for the selected image.
+* **Regenerate Thumbnail**: Forces the regeneration of the thumbnail for the
+  selected image.
 * **Properties**: Opens the Properties dialog for the selected image.
 
 ### 5.2. Group Header Context Menu (Right-click on a group header)
@@ -241,28 +354,34 @@ Opens a dialog displaying detailed information about the image, including genera
 
 ## 6. Main Menu Options
 
-The main menu is accessed via the application menu button (usually a  three points icon or similar) in the top bar.
+The main menu is accessed via the application menu button (usually a  three
+points icon or similar) in the top bar.
 
 ### 6.1. Cache Management
 
-* **Clear cache (X items, Y MB, Z MB on disk)**: Clears the entire in-memory and on-disk thumbnail cache. This action is irreversible.
-* **Clean up invalid cache entries**: Removes entries from the cache that no longer correspond to existing files.
-* **Clean up stale metadata cache**: Removes outdated metadata entries from the cache.
-* **Clean up stale directory cache**: Removes outdated directory entries from the cache.
+* **Clear cache (X items, Y MB, Z MB on disk)**: Clears the entire in-memory and
+  on-disk thumbnail cache. This action is irreversible.
+* **Cache maintenance**: Removes cache entries for files that no longer exist,
+  along with outdated metadata and directory entries.
 
 ### 6.2. Duplicate Detection
 
 (Requires `imagehash` library to be installed)
 
-* **Detect in current search**: Finds duplicate images only among the images currently displayed in the thumbnail grid.
-* **Force full analysis**: Forces a complete re-analysis of hashes for the current search, even if cached data exists.
-* **Detect all**: Scans predefined whitelist directories (configured in Settings) for duplicates, excluding blacklisted paths.
-* **Force full all analysis**: Forces a complete re-analysis of hashes for all whitelisted directories.
-* **Review ignored**: Opens a dialog to review and manage previously ignored duplicate pairs.
-* **Clean up**: Removes stale hash entries from the duplicate database.
-* **Repair index**: Rebuilds the internal index (BK-Tree) used for duplicate detection.
-* **Clear ignored pairs**: Clears the list of all ignored duplicate pairs.
-* **Clear hashes (X items, Y MB on disk)**: Deletes the entire duplicate hash database. This action is irreversible.
+* **Detect in current search**: Finds duplicate images only among the images
+  currently displayed in the thumbnail grid.
+* **Force full analysis**: Forces a complete re-analysis of hashes for the
+  current search, even if cached data exists.
+* **Detect all**: Scans predefined whitelist directories (configured in Settings)
+  for duplicates, excluding blacklisted paths.
+* **Force full all analysis**: Forces a complete re-analysis of hashes for all
+  whitelisted directories.
+* **Review ignored**: Opens a dialog to review and manage previously ignored
+  duplicate pairs.
+* **Hashes maintenance**: Removes stale hash entries from the duplicate database
+  and rebuilds the internal index (BK-Tree) used for duplicate detection.
+* **Clear hashes (X items, Y MB on disk)**: Deletes the entire duplicate hash
+  database. This action is irreversible.
 
 ### 6.2.1. Duplicate Manager dialog
 
@@ -290,8 +409,8 @@ Bottom action bar (always visible):
 
 * **Trash Left / Trash Right** (U / I): sends the image of the pane to trash.
 * **Overwrite** (W): renames the selected image to the name of the other one,
-  replacing it (a copy is used when the rename is not possible). A
-  confirmation dialog always shows both full paths first.
+  replacing it (a copy is used when the rename is not possible). A confirmation
+  dialog always shows both full paths first.
 * **Keep Both** (O) and **Skip** (P) resolve the current pair.
 * In **Review ignored** mode, the Skip button becomes **Remove from ignored**.
 
@@ -305,39 +424,51 @@ Opens the Settings dialog (see Section 7).
 
 ### 6.4. Language
 
-Allows you to change the application's display language. A restart is required for changes to take full effect.
+Allows you to change the application's display language. A restart is required
+for changes to take full effect.
 
 ### 6.5. About
 
-Displays information about the Bagheera Image Viewer, including its version and author.
+Displays information about the Bagheera Image Viewer, including its version and
+author.
 
 ## 7. Settings
 
-The Settings dialog (accessible via the main menu) allows you to customize various aspects of Bagheera's behavior.
+The Settings dialog (accessible via the main menu) allows you to customize
+various aspects of Bagheera's behavior.
 
 ### 7.1. Scanner
 
 * **Scan Max Level**: Maximum directory depth to scan recursively.
 * **Scan Batch Size**: Number of images to load in each batch during scanning.
 * **Scan Full On Start**: Automatically scan all images in the folder on startup.
-* **Generation Threads**: Maximum number of simultaneous threads to generate thumbnails.
-* **File search engine**: Engine to use for finding files. 'Bagheera' uses the BagheeraSearch library. 'Baloo' uses the 'baloosearch' command.
+* **Generation Threads**: Maximum number of simultaneous threads to generate
+  thumbnails.
+* **File search engine**: Engine to use for finding files. 'Bagheera' uses the
+  BagheeraSearch library. 'Baloo' uses the 'baloosearch' command.
 
 ### 7.2. Regions
 
 Configure settings related to face, pet, body, object, and landmark detection.
 
-* **[Region Name] tags**: Default tags to apply for detected regions (e.g., `Person` for faces).
-* **[Region Name] Detection Engine**: Library used for detection (e.g., MediaPipe for faces).
-* **[Region Name] box color**: Color of the bounding box drawn around detected regions.
-* **Max [Region Name] history**: Maximum number of recently used names to remember for autocompletion.
-* **Use last name by default**: Automatically fill the assignment window with the last used name.
-* **Reset to 'Face' after selection**: Automatically switch back to 'Face' mode after adding a different region type (Pet, Body, etc.).
+* **[Region Name] tags**: Default tags to apply for detected regions (e.g.,
+  `Person` for faces).
+* **[Region Name] Detection Engine**: Library used for detection (e.g.,
+  MediaPipe for faces).
+* **[Region Name] box color**: Color of the bounding box drawn around detected
+  regions.
+* **Max [Region Name] history**: Maximum number of recently used names to
+  remember for autocompletion.
+* **Use last name by default**: Automatically fill the assignment window with the
+  last used name.
+* **Reset to 'Face' after selection**: Automatically switch back to 'Face' mode
+  after adding a different region type (Pet, Body, etc.).
 * **Download Model**: Button to download required models for MediaPipe detection.
 
 ### 7.3. Thumbnails
 
-* **Thumbs refresh interval (ms)**: Delay before refreshing thumbnails after resizing.
+* **Thumbs refresh interval (ms)**: Delay before refreshing thumbnails after
+  resizing.
 * **Thumbnails background color**: Background color of the thumbnail grid view.
 * **Thumbnails filename color**: Font color for filenames in thumbnails.
 * **Thumbnails tags color**: Font color for tags in thumbnails.
@@ -348,36 +479,56 @@ Configure settings related to face, pet, body, object, and landmark detection.
 * **Tag lines**: Number of lines for the tags text under the thumbnail.
 * **Tooltip background color**: Background color for tooltips on thumbnails.
 * **Tooltip text color**: Text color for tooltips on thumbnails.
-* **Show filename/rating/tags**: Toggle visibility of these elements under thumbnails.
+* **Show filename/rating/tags**: Toggle visibility of these elements under
+  thumbnails.
 
 ### 7.4. Image Viewer
 
-* **Viewer mouse wheel speed**: Adjusts how fast scrolling the mouse wheel changes images in the viewer.
-* **Auto resize window on zoom**: Automatically resize the window when zooming or changing images, fitting to the content.
-* **Filmstrip Position**: Sets the default position of the filmstrip in new viewer windows (Bottom, Left, Top, Right).
+* **Viewer mouse wheel speed**: Adjusts how fast scrolling the mouse wheel
+  changes images in the viewer.
+* **Auto resize window on zoom**: Automatically resize the window when zooming or
+  changing images, fitting to the content.
+* **Filmstrip Position**: Sets the default position of the filmstrip in new
+  viewer windows (Bottom, Left, Top, Right).
 
 ### 7.5. Duplicates
 
-* **Method**: Select the method for duplicate detection. Only phash is available.
-* **Similarity Threshold**: Set the similarity threshold (50-100%). Higher values mean images must be more similar to be considered duplicates.
-* **Confirm before deleting duplicates**: Show a confirmation dialog before moving a duplicate image to the trash.
-* **Whitelist (folders to include)**: Comma-separated paths of folders to scan when using 'Detect all'.
-* **Blacklist (folders to exclude)**: Comma-separated paths of folders to ignore during 'Detect all' scans.
-* **Delete button sends to trash by default**: If checked, pressing the Delete key will move files to the trash. If unchecked, it will permanently delete them.
+* **Method**: Choose **Histogram + Hashing** or **ResNet (AI Based)**. ResNet is
+  disabled unless its required libraries are installed.
+* **Similarity Threshold**: Set the perceptual-hash similarity threshold
+  (50-100%). Higher values require images to be more similar to be considered
+  duplicates.
+* **Use AI similarity (FAISS/MediaPipe) for duplicate detection**: Enables the
+  optional AI-based comparison when its required libraries are available.
+* **AI similarity threshold**: Set the AI similarity threshold (70-100%),
+  independently of the hash threshold.
+* **Confirm before deleting duplicates**: Show a confirmation dialog before
+  moving a duplicate image to the trash.
+* **Whitelist (folders to include)**: Comma-separated paths of folders to scan
+  when using 'Detect all'.
+* **Blacklist (folders to exclude)**: Comma-separated paths of folders to ignore
+  during 'Detect all' scans.
+* **Delete button sends to trash by default**: If checked, pressing the Delete
+  key will move files to the trash. If unchecked, it will permanently delete
+  them.
 
 ## 8. Keyboard Shortcuts
 
-Bagheera Image Viewer provides extensive keyboard shortcuts for efficient navigation and operation. You can view and customize these shortcuts via the main menu: `Menu Button > Configure Keyboard Shortcuts...`.
+Bagheera Image Viewer provides extensive keyboard shortcuts for efficient
+navigation and operation. You can view and customize these shortcuts via the
+main menu: `Menu Button > Configure Keyboard Shortcuts...`.
 
-The shortcuts are categorized into "Global" (affecting the main window) and "Viewer" (affecting the image viewer).
+The shortcuts are categorized into "Global" (affecting the main window) and
+"Viewer" (affecting the image viewer).
 
 ### 8.1. Customizing Shortcuts
 
 In the "Keyboard Shortcuts" dialog:
 
-1. Double-click on an action's shortcut to edit it.
-2. Press the desired key combination.
-3. If a conflict is detected, you will be warned and can choose to override the existing shortcut.
+1.  Double-click on an action's shortcut to edit it.
+2.  Press the desired key combination.
+3.  If a conflict is detected, you will be warned and can choose to override
+    the existing shortcut.
 
 ## 9. Command Line Usage
 
@@ -386,4 +537,5 @@ You can launch Bagheera Image Viewer with specific arguments:
 ```bash
 bagheeraview [file:/path_to_file | file:/directory | search:/query]
 bagheeraview --x11 [file:/path_to_file | file:/directory | search:/query] # Force X11 platform (for layouts)
+bagheeraview --resolution 1920x1080 [file:/path_to_file | file:/directory | search:/query] # Force window resolution
 ```
