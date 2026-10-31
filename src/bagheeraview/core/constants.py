@@ -305,6 +305,7 @@ INODE_ROLE = Qt.UserRole + 7
 DEVICE_ROLE = Qt.UserRole + 8
 IMAGE_DATA_ROLE = Qt.UserRole + 9
 GROUP_NAME_ROLE = Qt.UserRole + 10
+GPS_STATUS_ROLE = Qt.UserRole + 11
 
 HAVE_IMAGEHASH = importlib.util.find_spec("imagehash") is not None
 
@@ -1006,6 +1007,7 @@ _UI_TEXTS = {
         "ERROR_DELETING_FILE": "Error trying to delete file:\n{}",
         "RENAME_FILE_TITLE": "Rename File",
         "RENAME_FILE_TEXT": "New name for '{}':",
+        "RENAME_EMPTY_NAME": "The file name cannot be empty.",
         "RENAME_ERROR_TITLE": "Rename Error",
         "RENAME_ERROR_EXISTS": "File '{}' already exists.",
         "FILE_RENAMED": "File renamed to {}",
@@ -1064,6 +1066,7 @@ _UI_TEXTS = {
         "INFO_TAB": "Information",
         "INFO_RATING_LABEL": "Rating:",
         "INFO_COMMENT_LABEL": "Comment:",
+        "INFO_VALUES_DIFFER": "Selected files have different values.",
         "COMMENT_APPLY_CHANGES": "Apply Changes",
         "ENTER_COMMENT": "Enter comment...",
         "TAGS_TAB": "Tags",
@@ -1751,6 +1754,7 @@ _UI_TEXTS = {
         "ERROR_DELETING_FILE": "Error al intentar borrar el archivo:\n{}",
         "RENAME_FILE_TITLE": "Renombrar Archivo",
         "RENAME_FILE_TEXT": "Nuevo nombre para '{}':",
+        "RENAME_EMPTY_NAME": "El nombre del archivo no puede estar vacío.",
         "RENAME_ERROR_TITLE": "Error al Renombrar",
         "RENAME_ERROR_EXISTS": "El archivo '{}' ya existe.",
         "FILE_RENAMED": "Archivo renombrado a {}",
@@ -1793,6 +1797,7 @@ _UI_TEXTS = {
         "INFO_TAB": "Información",
         "INFO_RATING_LABEL": "Puntuación:",
         "INFO_COMMENT_LABEL": "Comentario:",
+        "INFO_VALUES_DIFFER": "Los archivos seleccionados tienen valores diferentes.",
         "COMMENT_APPLY_CHANGES": "Aplicar Cambios",
         "ENTER_COMMENT": "Escribe un comentario...",
         "TAGS_TAB": "Etiquetas",
@@ -2477,6 +2482,7 @@ _UI_TEXTS = {
         "ERROR_DELETING_FILE": "Erro ao intentar borrar o ficheiro:\n{}",
         "RENAME_FILE_TITLE": "Renomear Ficheiro",
         "RENAME_FILE_TEXT": "Novo nome para '{}':",
+        "RENAME_EMPTY_NAME": "O nome do ficheiro non pode estar baleiro.",
         "RENAME_ERROR_TITLE": "Erro ao renomear",
         "RENAME_ERROR_EXISTS": "O ficheiro '{}' xa existe.",
         "FILE_RENAMED": "Ficheiro renomeado a {}",
@@ -2519,6 +2525,7 @@ _UI_TEXTS = {
         "INFO_TAB": "Información",
         "INFO_RATING_LABEL": "Puntuación:",
         "INFO_COMMENT_LABEL": "Comentario:",
+        "INFO_VALUES_DIFFER": "Os ficheiros seleccionados teñen valores diferentes.",
         "COMMENT_APPLY_CHANGES": "Aplicar Cambios",
         "ENTER_COMMENT": "Escribe un comentario...",
         "TAGS_TAB": "Etiquetas",

@@ -306,6 +306,7 @@ class GeoMapWidget(QWidget):
     """
 
     selection_requested = Signal(list)
+    geolocation_changed = Signal(list)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -767,6 +768,7 @@ class GeoMapWidget(QWidget):
 
         errors = []
         copied_count = 0
+        updated_paths = []
         for path in targets:
             try:
                 MetadataManager.write_gps(path, *coords)
@@ -775,7 +777,10 @@ class GeoMapWidget(QWidget):
             else:
                 self._gps_cache.pop(path, None)
                 copied_count += 1
+                updated_paths.append(path)
 
+        if updated_paths:
+            self.geolocation_changed.emit(updated_paths)
         self._do_refresh(preserve_map_view=True)
         if errors:
             path, error = errors[0]
@@ -836,6 +841,7 @@ class GeoMapWidget(QWidget):
             return
 
         errors = []
+        updated_paths = []
         for path in paths:
             try:
                 MetadataManager.write_gps(path, lat, lon)
@@ -843,7 +849,10 @@ class GeoMapWidget(QWidget):
                 errors.append((path, exc))
             else:
                 self._gps_cache.pop(path, None)
+                updated_paths.append(path)
 
+        if updated_paths:
+            self.geolocation_changed.emit(updated_paths)
         self._do_refresh(preserve_map_view=True)
         if errors:
             path, error = errors[0]
@@ -865,6 +874,7 @@ class GeoMapWidget(QWidget):
         try:
             MetadataManager.clear_gps(path)
             self._gps_cache.pop(path, None)
+            self.geolocation_changed.emit([path])
             self._do_refresh(preserve_map_view=True)
         except Exception as e:
             self.status_lbl.setText(UITexts.MAP_GPS_WRITE_ERROR.format(str(e)))

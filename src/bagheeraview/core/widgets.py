@@ -1834,7 +1834,8 @@ class RatingWidget(QWidget):
         layout.setSpacing(2)
 
         rating_layout = QHBoxLayout()
-        rating_layout.addWidget(QLabel(UITexts.INFO_RATING_LABEL))
+        self.rating_label = QLabel(UITexts.INFO_RATING_LABEL)
+        rating_layout.addWidget(self.rating_label)
         self.stars = []
         for i in range(1, 6):
             star_label = RatingStar(i, self)
@@ -1860,18 +1861,26 @@ class RatingWidget(QWidget):
         """Sets the current files and loads rating from the first one."""
         self.file_paths = file_paths if file_paths else []
         self.load_rating()
-        self.btn_apply.hide()
+        self.btn_apply.setVisible(self._mixed_rating)
 
     def load_rating(self):
-        """Loads the rating using the XattrManager."""
+        """Loads the first selected rating and detects differing values."""
         self._current_rating = 0
+        ratings = []
         if self.file_paths:
-            rating_str = XattrManager.get_attribute(self.file_paths[0],
-                                                    RATING_XATTR_NAME, "0")
-            try:
-                self._current_rating = int(rating_str)
-            except (ValueError, TypeError):
-                self._current_rating = 0
+            for path in self.file_paths:
+                rating_str = XattrManager.get_attribute(
+                    path, RATING_XATTR_NAME, "0")
+                try:
+                    ratings.append(int(rating_str))
+                except (ValueError, TypeError):
+                    ratings.append(0)
+        self._current_rating = ratings[0] if ratings else 0
+        self._mixed_rating = len(set(ratings)) > 1
+        self.rating_label.setStyleSheet(
+            "color: #d32f2f;" if self._mixed_rating else "")
+        self.rating_label.setToolTip(
+            UITexts.INFO_VALUES_DIFFER if self._mixed_rating else "")
         self.update_stars()
 
     @Slot(int)
@@ -1933,6 +1942,7 @@ class RatingWidget(QWidget):
                 if self._current_rating > 0 else None
             for path in self.file_paths:
                 XattrManager.set_attribute(path, RATING_XATTR_NAME, value_to_set)
+            self.load_rating()
             self.btn_apply.hide()
             self.rating_updated.emit()
         except IOError as e:
@@ -2299,11 +2309,13 @@ class CommentWidget(QWidget):
         super().__init__(parent)
         self.file_paths = []
         self._original_comment = ""
+        self._mixed_comment = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
 
-        layout.addWidget(QLabel(UITexts.INFO_COMMENT_LABEL))
+        self.comment_label = QLabel(UITexts.INFO_COMMENT_LABEL)
+        layout.addWidget(self.comment_label)
 
         self.comment_edit = QTextEdit()
         self.comment_edit.setAcceptRichText(False)
@@ -2324,23 +2336,34 @@ class CommentWidget(QWidget):
         """Sets the file paths and loads the comment from the first one."""
         self.file_paths = file_paths if file_paths else []
         self.load_comment()
-        self.btn_apply.hide()
 
     def load_comment(self):
-        """Loads the comment using the XattrManager."""
+        """Loads the first selected comment and detects differing values."""
         self.comment_edit.blockSignals(True)
-        comment = ""
-        if self.file_paths:
-            comment = XattrManager.get_attribute(
-                self.file_paths[0], XATTR_COMMENT_NAME, "")
+        comments = [
+            XattrManager.get_attribute(path, XATTR_COMMENT_NAME, "")
+            for path in self.file_paths
+        ]
+        comment = comments[0] if comments else ""
+        self._mixed_comment = len(set(comments)) > 1
         self._original_comment = comment
         self.comment_edit.setText(comment)
         self.comment_edit.blockSignals(False)
+        self.comment_edit.setStyleSheet(
+            "QTextEdit { color: #d32f2f; }" if self._mixed_comment else "")
+        self.comment_edit.setToolTip(
+            UITexts.INFO_VALUES_DIFFER if self._mixed_comment else "")
+        self.comment_label.setStyleSheet(
+            "color: #d32f2f;" if self._mixed_comment else "")
+        self.comment_label.setToolTip(
+            UITexts.INFO_VALUES_DIFFER if self._mixed_comment else "")
+        self.btn_apply.setVisible(self._mixed_comment)
 
     def on_text_changed(self):
         """Shows the apply button if the text has changed."""
         self.btn_apply.setVisible(
-            self.comment_edit.toPlainText() != self._original_comment)
+            self._mixed_comment
+            or self.comment_edit.toPlainText() != self._original_comment)
 
     def save_comment(self):
         """Saves the comment using the XattrManager."""
@@ -2352,7 +2375,7 @@ class CommentWidget(QWidget):
             value_to_set = new_comment if new_comment.strip() else None
             for path in self.file_paths:
                 XattrManager.set_attribute(path, XATTR_COMMENT_NAME, value_to_set)
-            self._original_comment = new_comment
+            self.load_comment()
             self.btn_apply.hide()
         except IOError as e:
             QMessageBox.critical(self, UITexts.ERROR, str(e))

@@ -42,7 +42,7 @@ from PySide6.QtGui import (
     QPainter, QKeySequence, QShortcut, QAction, QActionGroup, QImage
 )
 from PySide6.QtCore import (
-    Qt, QPoint, QUrl, QObject, QEvent, QTimer, QByteArray,
+    Qt, QPoint, QUrl, QObject, QEvent, QTimer, QByteArray, QRunnable, Signal,
     QItemSelection, QSortFilterProxyModel, QItemSelectionModel, QRect, QSize,
     QThread, QPersistentModelIndex, QModelIndex
 )
@@ -69,7 +69,7 @@ from .constants import (
     THUMBNAILS_REFRESH_INTERVAL_DEFAULT, THUMBNAIL_SIZES, XATTR_NAME,
     UITexts, save_app_config, PATH_ROLE, MTIME_ROLE, TAGS_ROLE, RATING_ROLE,
     ITEM_TYPE_ROLE, DIR_ROLE, INODE_ROLE, DEVICE_ROLE, IMAGE_DATA_ROLE,
-    GROUP_NAME_ROLE
+    GROUP_NAME_ROLE, GPS_STATUS_ROLE
 )
 from .settings import SettingsDialog
 if HAVE_IMAGEHASH:
@@ -89,7 +89,7 @@ from .widgets import (
     TagEditWidget, LayoutsWidget, LayoutSelectionDialog, HistoryWidget,
     RatingWidget, CommentWidget, FavoritesWidget
 )
-from .metadatamanager import load_common_metadata
+from .metadatamanager import MetadataManager, load_common_metadata
 from .filesystemwatcher import FileSystemWatcher
 
 
@@ -653,8 +653,7 @@ class AppShortcutController(QObject):
         if active_viewer:
             active_viewer.rename_current_image()
         elif self.main_win.thumbnail_view.selectedIndexes():
-            self.main_win.rename_image(
-                self.main_win.thumbnail_view.selectedIndexes()[0].row())
+            self.main_win.rename_selected_images()
 
     def _handle_home_end(self, key):
         active_viewer = next((w for w in QApplication.topLevelWidgets()
@@ -737,6 +736,24 @@ class AppShortcutController(QObject):
                 self.main_win.slider.setValue(size)
 
 
+class GpsLookupSignals(QObject):
+    finished = Signal(str, float, int, bool)
+
+
+class GpsLookupWorker(QRunnable):
+    def __init__(self, path, mtime, version):
+        super().__init__()
+        self.path = path
+        self.mtime = mtime
+        self.version = version
+        self.signals = GpsLookupSignals()
+
+    def run(self):
+        has_gps = MetadataManager.read_gps(self.path) is not None
+        self.signals.finished.emit(
+            self.path, self.mtime, self.version, has_gps)
+
+
 class ThumbnailDelegate(QStyledItemDelegate):
     """Draws each thumbnail in the virtualized view.
 
@@ -749,6 +766,8 @@ class ThumbnailDelegate(QStyledItemDelegate):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.main_win = parent
+        self.gps_icon = QIcon.fromTheme(
+            "mark-location", QIcon.fromTheme("map-marker"))
 
     def paint(self, painter, option, index):
         painter.save()
@@ -872,6 +891,20 @@ class ThumbnailDelegate(QStyledItemDelegate):
         pixmap_rect = QRect(QPoint(0, 0), pic_size)
         pixmap_rect.moveCenter(img_bbox.center())
         painter.drawPixmap(pixmap_rect, source_pixmap)
+
+        gps_status = index.data(GPS_STATUS_ROLE)
+        if gps_status is None:
+            self.main_win.request_gps_status(path, mtime)
+        elif gps_status:
+            icon_anchor = pixmap_rect if not source_pixmap.isNull() else img_bbox
+            badge_rect = QRect(
+                icon_anchor.right() - 23, icon_anchor.top() + 3, 20, 20)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(0, 0, 0, 145))
+            painter.drawEllipse(badge_rect)
+            self.gps_icon.paint(
+                painter, badge_rect.adjusted(2, 2, -2, -2),
+                Qt.AlignCenter)
 
         # Start drawing text below the thumbnail
         text_y = full_rect.y() + thumb_size + 8
@@ -1347,6 +1380,9 @@ class MainWindow(QMainWindow):
         self._visible_paths_cache = None  # Cache for visible image paths
         self._path_to_model_index = {}
         self._paths_being_modified_by_app = set()  # For ignoring FS events
+        self._gps_status_cache = {}
+        self._gps_status_versions = defaultdict(int)
+        self._gps_status_pending = set()
 
         # Keep references to open viewers to manage their lifecycle
         self.viewers = []
@@ -1621,6 +1657,8 @@ class MainWindow(QMainWindow):
         self.map_tab = GeoMapWidget(self)
         self.tags_tabs.addTab(self.map_tab, UITexts.MAP_TAB)
         self.map_tab.selection_requested.connect(self.select_by_paths)
+        self.map_tab.geolocation_changed.connect(
+            self.invalidate_geolocation_status)
 
         self.main_dock.setWidget(self.tags_tabs)
         self.main_dock.visibilityChanged.connect(
@@ -4395,6 +4433,10 @@ class MainWindow(QMainWindow):
         thumb_item.setData('thumbnail', ITEM_TYPE_ROLE)
         thumb_item.setData(path, PATH_ROLE)
         thumb_item.setData(mtime, MTIME_ROLE)
+        cached_gps = self._gps_status_cache.get(path)
+        gps_status = cached_gps[1] if cached_gps and cached_gps[0] == mtime \
+            else None
+        thumb_item.setData(gps_status, GPS_STATUS_ROLE)
         thumb_item.setData(dir_path, DIR_ROLE)
         if qi:
             thumb_item.setData(qi, IMAGE_DATA_ROLE)
@@ -4406,6 +4448,53 @@ class MainWindow(QMainWindow):
             thumb_item.setData(inode, INODE_ROLE)
             thumb_item.setData(dev, DEVICE_ROLE)
         return thumb_item
+
+    def request_gps_status(self, path, mtime):
+        """Read GPS metadata off the UI thread for a visible thumbnail."""
+        if not path:
+            return
+        cached = self._gps_status_cache.get(path)
+        if cached and cached[0] == mtime:
+            return
+        version = self._gps_status_versions[path]
+        request = (path, mtime, version)
+        if request in self._gps_status_pending:
+            return
+        self._gps_status_pending.add(request)
+        worker = GpsLookupWorker(path, mtime, version)
+        worker.signals.finished.connect(self._on_gps_status_read)
+        self.thread_pool_manager.get_pool().start(worker)
+
+    def _on_gps_status_read(self, path, mtime, version, has_gps):
+        self._gps_status_pending.discard((path, mtime, version))
+        if self._gps_status_versions[path] != version:
+            return
+        try:
+            if os.path.getmtime(path) != mtime:
+                return
+        except OSError:
+            return
+        self._gps_status_cache[path] = (mtime, has_gps)
+        persistent_index = self._path_to_model_index.get(path)
+        if persistent_index is not None and persistent_index.isValid():
+            item = self.thumbnail_model.itemFromIndex(
+                QModelIndex(persistent_index))
+            if item and item.data(MTIME_ROLE) == mtime:
+                item.setData(has_gps, GPS_STATUS_ROLE)
+                self.thumbnail_view.viewport().update()
+
+    def invalidate_geolocation_status(self, paths):
+        """Invalidate GPS indicators after GPS metadata is edited."""
+        for path in paths:
+            self._gps_status_versions[path] += 1
+            self._gps_status_cache.pop(path, None)
+            persistent_index = self._path_to_model_index.get(path)
+            if persistent_index is not None and persistent_index.isValid():
+                item = self.thumbnail_model.itemFromIndex(
+                    QModelIndex(persistent_index))
+                if item:
+                    item.setData(None, GPS_STATUS_ROLE)
+        self.thumbnail_view.viewport().update()
 
     def update_progress_bar(self, value):
         """Updates the circular progress bar value."""
@@ -5711,7 +5800,7 @@ class MainWindow(QMainWindow):
 
         add_action_with_shortcut(menu, UITexts.CONTEXT_MENU_RENAME, "edit-rename",
                                  "rename_image",
-                                 lambda: self.rename_image(selected_indexes[0].row()))
+                                 self.rename_selected_images)
 
         action_move = menu.addAction(QIcon.fromTheme("edit-move"), UITexts.CONTEXT_MENU_MOVE_TO)
         action_move.triggered.connect(self.move_current_image)
@@ -6342,46 +6431,69 @@ class MainWindow(QMainWindow):
         # quirúrgicamente sin parpadeos ni re-escaneos de disco.
         self.rebuild_view(full_reset=False)
 
-    def rename_image(self, proxy_row_index):
-        """Handles the logic for renaming a file from the main thumbnail view."""
-        proxy_index = self.proxy_model.index(proxy_row_index, 0)
-        if not proxy_index.isValid():
-            return
+    def rename_selected_images(self):
+        """Renames each selected image in turn; Cancel stops the whole batch."""
+        paths = []
+        seen_paths = set()
+        for index in self.thumbnail_view.selectedIndexes():
+            path = self.proxy_model.data(index, PATH_ROLE)
+            if path and path not in seen_paths:
+                paths.append(path)
+                seen_paths.add(path)
+        self.rename_images(paths)
 
-        while True:
-            old_path = self.proxy_model.data(proxy_index, PATH_ROLE)
-            if not old_path:
-                return
+    def rename_image(self, proxy_row_index):
+        """Renames a single image row in the main thumbnail view."""
+        proxy_index = self.proxy_model.index(proxy_row_index, 0)
+        if proxy_index.isValid():
+            path = self.proxy_model.data(proxy_index, PATH_ROLE)
+            if path:
+                self.rename_images([path])
+
+    def rename_images(self, paths):
+        """Prompts for names and renames files until done or the user cancels."""
+        for old_path in paths:
+            if not os.path.exists(old_path):
+                continue
             old_dir = os.path.dirname(old_path)
             old_filename = os.path.basename(old_path)
             base_name, extension = os.path.splitext(old_filename)
 
-            new_base, ok = QInputDialog.getText(
-                self, UITexts.RENAME_FILE_TITLE,
-                UITexts.RENAME_FILE_TEXT.format(old_filename),
-                QLineEdit.Normal, base_name
-            )
+            while True:
+                new_base, ok = QInputDialog.getText(
+                    self, UITexts.RENAME_FILE_TITLE,
+                    UITexts.RENAME_FILE_TEXT.format(old_filename),
+                    QLineEdit.Normal, base_name
+                )
+                if not ok:
+                    return
 
-            if ok and new_base and new_base != base_name:
-                # Re-add extension if the user omitted it
+                new_base = new_base.strip()
+                if not new_base:
+                    QMessageBox.warning(
+                        self, UITexts.RENAME_ERROR_TITLE,
+                        UITexts.RENAME_EMPTY_NAME)
+                    continue
+                if new_base == base_name:
+                    break
+
+                # Re-add the original extension when the user omitted it.
                 new_base_name, new_extension = os.path.splitext(new_base)
-                if new_extension == extension:
-                    new_filename = new_base
-                else:
-                    new_filename = new_base_name + extension
-
+                new_filename = (
+                    new_base if new_extension == extension
+                    else new_base_name + extension)
                 new_path = os.path.join(old_dir, new_filename)
-                self._mark_path_as_app_modified(old_path)
-                self._mark_path_as_app_modified(new_path)
-
+                if os.path.abspath(new_path) == os.path.abspath(old_path):
+                    break
                 if os.path.exists(new_path):
                     QMessageBox.warning(self,
                                         UITexts.RENAME_ERROR_TITLE,
                                         UITexts.RENAME_ERROR_EXISTS.format(
                                             new_filename))
-                    # Loop again to ask for a different name
                 else:
                     try:
+                        self._mark_path_as_app_modified(old_path)
+                        self._mark_path_as_app_modified(new_path)
                         os.rename(old_path, new_path)
                         self.propagate_rename(old_path, new_path)
                         self.status_lbl.setText(
@@ -6392,8 +6504,6 @@ class MainWindow(QMainWindow):
                                              UITexts.SYSTEM_ERROR,
                                              UITexts.ERROR_RENAME.format(str(e)))
                         break
-            else:
-                break
 
     def select_all_thumbnails(self):
         """Selects all visible items in the thumbnail view."""
