@@ -546,7 +546,7 @@ _UI_TEXTS = {
         "RENAME_TAG_TITLE": "Rename Tag",
         "RENAME_TAG_LABEL": "Tag path:",
         "RENAME_TAG_ITEMS_COUNT": "Number of elements with this tag: {}",
-        "EDIT_TAG_INFO": "Editar tag info",
+        "EDIT_TAG_INFO": "Edit tag information",
         "COPY": "Copy",
         "DELETE": "Delete",
         "UNKNOWN": "Unknown",
