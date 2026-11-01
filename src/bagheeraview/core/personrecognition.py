@@ -161,7 +161,7 @@ def _load_face_recognition():
         is not installed.
     """
     global _face_recognition_module, _face_recognition_checked
-    if not _face_recognition_checked:
+    if HAVE_FACE_RECOGNITION and not _face_recognition_checked:
         try:
             _face_recognition_module = face_recognition
         except ImportError:
