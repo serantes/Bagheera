@@ -24,7 +24,6 @@ dependencies = [
     "psutil",
     "pyparsing",
     "PySide6",
-    "setuptools>=61.0,<80.0",
     "watchdog",
 ]
 

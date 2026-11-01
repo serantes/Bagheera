@@ -32,7 +32,9 @@ import lmdb
 import numpy as np
 from PIL import Image
 
-from .constants import PERSON_RECOGNITION_PATH, PERSON_RECOGNITION_DB_NAME
+from .constants import (
+    PERSON_RECOGNITION_PATH, PERSON_RECOGNITION_DB_NAME, face_recognition, HAVE_FACE_RECOGNITION
+)
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +163,6 @@ def _load_face_recognition():
     global _face_recognition_module, _face_recognition_checked
     if not _face_recognition_checked:
         try:
-            import face_recognition
             _face_recognition_module = face_recognition
         except ImportError:
             logger.debug(

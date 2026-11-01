@@ -16,7 +16,9 @@ import json
 import os
 import shutil
 import sys
+import types
 import warnings
+import contextlib
 
 from PySide6.QtCore import Qt
 
@@ -251,24 +253,67 @@ if importlib.util.find_spec("mediapipe") is not None:
             HAVE_MEDIAPIPE = True
     except Exception:
         pass
-HAVE_FACE_RECOGNITION = False
-if importlib.util.find_spec("face_recognition") is not None:
+
+
+def _resource_filename(package, resource):
+    """Minimal replacement for pkg_resources.resource_filename."""
+    spec = importlib.util.find_spec(package)
+    if spec is None:
+        raise ModuleNotFoundError(package)
+    if spec.submodule_search_locations:
+        base = list(spec.submodule_search_locations)[0]
+    else:
+        base = os.path.dirname(spec.origin)
+    return os.path.join(base, resource)
+
+
+@contextlib.contextmanager
+def _pkg_resources_shim():
+    """Provide a temporary pkg_resources if the real one is missing.
+
+    face_recognition_models binds resource_filename at import time, so the
+    shim is only needed while it is being imported. It is removed afterwards
+    so no other library ever sees a half-working pkg_resources.
+    """
     try:
-        # The face_recognition_models dependency (third-party) still imports
-        # pkg_resources, which setuptools marks as deprecated. This is not
-        # fixable from our own sources, so suppress that single upstream
-        # DeprecationWarning while probing for the optional library.
+        import pkg_resources  # noqa: F401
+    except ImportError:
+        shim = types.ModuleType("pkg_resources")
+        shim.resource_filename = _resource_filename
+        sys.modules["pkg_resources"] = shim
+        try:
+            yield
+        finally:
+            sys.modules.pop("pkg_resources", None)
+    else:
+        yield
+
+
+def _load_face_recognition():
+    """Return the face_recognition module, or None if it is unusable."""
+    # face_recognition calls quit() (SystemExit) when its models are missing,
+    # so check for both modules before importing it.
+    for name in ("face_recognition", "face_recognition_models"):
+        if importlib.util.find_spec(name) is None:
+            return None
+    try:
+        # face_recognition_models (third-party) still imports pkg_resources,
+        # which setuptools flags as deprecated. Not fixable from our sources.
         with warnings.catch_warnings():
             warnings.filterwarnings(
                 "ignore",
-                message="pkg_resources is deprecated as an API.*",
-                category=DeprecationWarning,
+                message="pkg_resources is deprecated as an API",
+                category=Warning,
             )
-            import face_recognition
-        if hasattr(face_recognition, 'face_locations'):
-            HAVE_FACE_RECOGNITION = True
-    except Exception:
-        pass
+            with _pkg_resources_shim():
+                import face_recognition as fr
+    except (Exception, SystemExit):
+        return None
+    return fr if hasattr(fr, "face_locations") else None
+
+
+face_recognition = _load_face_recognition()
+HAVE_FACE_RECOGNITION = face_recognition is not None
 
 MEDIAPIPE_FACE_MODEL_PATH = os.path.join(
     APP_DATA_DIR, "blaze_face_short_range.tflite")
