@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
-    QApplication, QGroupBox, QScrollArea, QVBoxLayout, QWidget,
+    QApplication, QGridLayout, QGroupBox, QScrollArea, QWidget,
 )
 
 from bagheeraview.core.app import MainWindow, ThumbnailSortFilterProxyModel
@@ -21,7 +21,7 @@ def test_extension_filter_list_adds_checked_boxes_for_discovered_extensions(
     group = QGroupBox(widget)
     scroll = QScrollArea(group)
     extension_filter = SimpleNamespace(
-        extension_filter_layout=QVBoxLayout(widget),
+        extension_filter_layout=QGridLayout(widget),
         extension_filter_widget=widget,
         extension_filter_group=group,
         extension_filter_scroll=scroll,
@@ -41,10 +41,18 @@ def test_extension_filter_list_adds_checked_boxes_for_discovered_extensions(
         ".jpg", ".png", ""}
     assert all(box.isChecked()
                for box in extension_filter._extension_checkboxes.values())
-    assert scroll.height() == sum(
+    assert scroll.height() == max(
         checkbox.sizeHint().height()
-        for checkbox in list(extension_filter._extension_checkboxes.values())[:2]
-    )
+        for checkbox in extension_filter._extension_checkboxes.values()
+    ) * 2
+    assert [
+        extension_filter.extension_filter_layout.itemAtPosition(row, column)
+        .widget().text()
+        for row in range(2)
+        for column in range(2)
+        if extension_filter.extension_filter_layout.itemAtPosition(
+            row, column)
+    ] == ["(no extension)", ".jpg", ".png"]
     assert not group.isHidden()
 
 
@@ -54,7 +62,7 @@ def test_extension_filter_area_fits_single_checkbox(app):
     scroll = QScrollArea(group)
     checkbox_widget = QWidget()
     extension_filter = SimpleNamespace(
-        extension_filter_layout=QVBoxLayout(checkbox_widget),
+        extension_filter_layout=QGridLayout(checkbox_widget),
         extension_filter_widget=checkbox_widget,
         extension_filter_group=group,
         extension_filter_scroll=scroll,
@@ -70,6 +78,35 @@ def test_extension_filter_area_fits_single_checkbox(app):
 
     checkbox = extension_filter._extension_checkboxes[".jpg"]
     assert scroll.height() == checkbox.sizeHint().height()
+
+
+def test_extension_filter_reset_clears_checkboxes_and_excluded_extensions(app):
+    widget = QWidget()
+    group = QGroupBox(widget)
+    scroll = QScrollArea(group)
+    checkbox_widget = QWidget()
+    extension_filter = SimpleNamespace(
+        extension_filter_layout=QGridLayout(checkbox_widget),
+        extension_filter_widget=checkbox_widget,
+        extension_filter_group=group,
+        extension_filter_scroll=scroll,
+        _extension_checkboxes={},
+        proxy_model=SimpleNamespace(excluded_extensions={".png"}),
+        apply_filters=lambda: None,
+        _resize_extension_filter_list=lambda: (
+            MainWindow._resize_extension_filter_list(extension_filter)),
+    )
+    MainWindow._update_extension_filter_list(
+        extension_filter, ["/photos/a.jpg", "/photos/b.png"])
+    extension_filter._extension_checkboxes[".jpg"].setChecked(False)
+
+    MainWindow._reset_extension_filter_list(extension_filter)
+
+    assert extension_filter._extension_checkboxes == {}
+    assert extension_filter.proxy_model.excluded_extensions == set()
+    assert extension_filter.extension_filter_layout.count() == 0
+    assert scroll.height() == 0
+    assert group.isHidden()
 
 
 def test_extension_filter_combines_with_filename_and_tag_filters(app):

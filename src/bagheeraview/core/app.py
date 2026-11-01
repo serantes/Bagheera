@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QTabWidget, QProgressDialog, QDockWidget,
     QAbstractItemView, QRadioButton, QButtonGroup, QListView,
     QStyledItemDelegate, QStyle, QDialog, QKeySequenceEdit, QDialogButtonBox,
-    QPlainTextEdit, QCheckBox, QGroupBox, QScrollArea
+    QPlainTextEdit, QCheckBox, QGroupBox, QScrollArea, QGridLayout
 )
 from PySide6.QtGui import (
     QDesktopServices, QFont, QFontMetrics, QIcon, QTransform, QImageReader,
@@ -1645,7 +1645,7 @@ class MainWindow(QMainWindow):
         self.extension_filter_scroll.setWidgetResizable(True)
         self.extension_filter_scroll.setFrameShape(QScrollArea.NoFrame)
         self.extension_filter_widget = QWidget()
-        self.extension_filter_layout = QVBoxLayout(
+        self.extension_filter_layout = QGridLayout(
             self.extension_filter_widget)
         self.extension_filter_layout.setContentsMargins(0, 0, 0, 0)
         self.extension_filter_layout.setSpacing(0)
@@ -3836,6 +3836,7 @@ class MainWindow(QMainWindow):
 
         # Clear the model if not syncing with an existing viewer
         if not sync_viewer:
+            self._reset_extension_filter_list()
             self._set_thumbnail_model()
             self.found_items_data = []
             self._path_to_model_index.clear()
@@ -4734,34 +4735,58 @@ class MainWindow(QMainWindow):
                 self.map_tab.refresh(self.get_selected_paths())
 
     def _update_extension_filter_list(self, paths=None):
-        """Add checkboxes for newly discovered file extensions."""
+        """Add and sort checkboxes for all discovered file extensions."""
         if not hasattr(self, "extension_filter_layout"):
             return
 
         if paths is None:
             paths = (item[0] for item in self.found_items_data)
 
+        extensions = set(self._extension_checkboxes)
         for path in paths:
             extension = os.path.splitext(path)[1].lower()
+            extensions.add(extension)
+
+        for extension in extensions:
             if extension in self._extension_checkboxes:
                 continue
-
             label = extension or UITexts.FILTER_NO_EXTENSION
             checkbox = QCheckBox(label, self.extension_filter_widget)
             checkbox.setChecked(True)
             checkbox.toggled.connect(lambda _checked: self.apply_filters())
-            self.extension_filter_layout.addWidget(checkbox)
             self._extension_checkboxes[extension] = checkbox
+
+        while self.extension_filter_layout.count():
+            self.extension_filter_layout.takeAt(0)
+        for index, extension in enumerate(sorted(extensions)):
+            self.extension_filter_layout.addWidget(
+                self._extension_checkboxes[extension], index // 2, index % 2)
         self._resize_extension_filter_list()
 
     def _resize_extension_filter_list(self):
-        """Size the extension list for its visible rows, capped at two."""
+        """Size the two-column extension list to at most two rows."""
         checkboxes = list(self._extension_checkboxes.values())
-        visible_checkboxes = checkboxes[:2]
-        height = sum(checkbox.sizeHint().height()
-                     for checkbox in visible_checkboxes)
+        row_count = min(2, (len(checkboxes) + 1) // 2)
+        height = max(
+            (checkbox.sizeHint().height() for checkbox in checkboxes),
+            default=0)
+        height *= row_count
         self.extension_filter_scroll.setFixedHeight(height)
         self.extension_filter_group.setVisible(bool(checkboxes))
+
+    def _reset_extension_filter_list(self):
+        """Discard extension filters when starting a new image collection."""
+        if not hasattr(self, "extension_filter_layout"):
+            return
+
+        while self.extension_filter_layout.count():
+            self.extension_filter_layout.takeAt(0)
+        for checkbox in self._extension_checkboxes.values():
+            checkbox.deleteLater()
+        self._extension_checkboxes.clear()
+        self.proxy_model.excluded_extensions.clear()
+        self.extension_filter_scroll.setFixedHeight(0)
+        self.extension_filter_group.hide()
 
     def _on_main_dock_visibility_changed(self, visible):
         if hasattr(self, 'map_tab'):
