@@ -2,10 +2,16 @@ import os
 import subprocess
 import sys
 from setuptools import setup
+from setuptools.dist import Distribution
 from setuptools.command.install import install
 from setuptools.command.develop import develop
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
+
+try:
+    from setuptools.command.bdist_wheel import bdist_wheel as _bdist_wheel
+except ImportError:  # older setuptools
+    from wheel.bdist_wheel import bdist_wheel as _bdist_wheel
 
 
 def compile_wrapper():
@@ -47,8 +53,9 @@ def compile_wrapper():
         '-I/usr/include/qt6/QtCore'
     ]
 
-    cflags = list(set(cflags + extra_includes))
-    libs = list(set(libs))
+    # Remove duplicates while preserving order (link order can matter)
+    cflags = list(dict.fromkeys(cflags + extra_includes))
+    libs = list(dict.fromkeys(libs))
 
     compile_cmd = [
         'g++', '-shared', '-o', output_lib,
@@ -88,13 +95,39 @@ class CustomBuildPy(build_py):
         super().run()
 
 
+class BinaryDistribution(Distribution):
+    """Declare that the distribution ships a compiled binary (libbaloo_wrapper.so).
+
+    This makes setuptools treat the package as platform-specific, so *all*
+    of it (modules and metadata) goes into platlib (lib64 on openSUSE)
+    instead of being split between lib and lib64.
+    """
+
+    def has_ext_modules(self):
+        return True
+
+
+class CustomBdistWheel(_bdist_wheel):
+    """Tag the wheel as py3-none-<platform>.
+
+    The .so is not a CPython extension, so it does not depend on the
+    Python version, only on the platform.
+    """
+
+    def get_tag(self):
+        _, _, plat = super().get_tag()
+        return 'py3', 'none', plat
+
+
 # Only cmdclass remains, the rest is read from pyproject.toml
 setup(
+    distclass=BinaryDistribution,
     cmdclass={
         'install': CustomInstall,
         'develop': CustomDevelop,
         'build_ext': CustomBuildExt,
         'build_py': CustomBuildPy,
+        'bdist_wheel': CustomBdistWheel,
     },
     data_files=[
         ('share/applications', [

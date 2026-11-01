@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0,<81.0", "wheel"]
+requires = ["setuptools>=61.0,<80.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,7 +7,7 @@ name = "bagheera-suite"
 version = "1.0.0"
 authors = [{ name="Ignacio Serantes" }]
 description = "Bagheera Suite: Search Tool and Image Viewer for KDE/Baloo"
-readme = "README.md"
+readme = "README.MD"
 requires-python = ">=3.8"
 license = {text = "GPL-3.0-or-later"}
 classifiers = [
@@ -18,13 +18,14 @@ classifiers = [
     "Topic :: Multimedia :: Graphics :: Viewers",
 ]
 dependencies = [
+    "geopy",
+    "imagehash",
     "lmdb",
+    "psutil",
     "pyparsing",
     "PySide6",
-    "psutil",
+    "setuptools>=61.0,<80.0",
     "watchdog",
-    "imagehash",
-    "geopy",
 ]
 
 [project.optional-dependencies]
@@ -79,22 +80,10 @@ include = ["bagheerasearch*", "bagheeraview*", "bagheeragui*"]
 "share/applications" = [
     "data/bagheeraview.desktop",
     "data/bagheeraview_x11.desktop",
-    "data/bagheerasearch.desktop"
-]
-"share/icons/hicolor/64x64/apps" = [
-    "data/icons/hicolor/64x64/apps/bagheeraview.png"
-]
-"share/icons/hicolor/128x128/apps" = [
-    "data/icons/hicolor/128x128/apps/bagheeraview.png"
-]
-"share/icons/hicolor/256x256/apps" = [
-    "data/icons/hicolor/256x256/apps/bagheeraview.png"
-]
-"share/icons/hicolor/512x512/apps" = [
-    "data/icons/hicolor/512x512/apps/bagheeraview.png"
+    "data/bagheeragui.desktop"
 ]
 "share/icons/hicolor/scalable/apps" = [
     "data/icons/hicolor/scalable/apps/bagheeraview.svg",
     "data/icons/hicolor/scalable/apps/bagheeraview_x11.svg",
-    "data/icons/hicolor/scalable/apps/bagheerasearch.svg"
+    "data/icons/hicolor/scalable/apps/bagheeragui.svg"
 ]
