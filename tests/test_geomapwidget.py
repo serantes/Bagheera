@@ -84,6 +84,13 @@ def test_webengine_map_keeps_working_with_native_application_shortcuts(
     window = QMainWindow()
     window.viewer_shortcuts = {}
     window.dialog_shortcuts = {}
+    window.tag_edit_widget = QWidget()
+    window.info_widget = QWidget()
+    window.filter_widget = QWidget()
+    window.bookmarks_tab = QWidget()
+    window.history_tab = QWidget()
+    window.maps_tab = QWidget()
+    window.open_sidebar_tab = lambda _widget: None
     for action in (
             "perform_shutdown", "toggle_visibility", "close_all_viewers",
             "load_more_images", "load_all_images", "save_layout",
@@ -285,7 +292,7 @@ def test_webengine_map_keeps_working_with_native_application_shortcuts(
         (int(Qt.Key.Key_K), Qt.KeyboardModifiers.NoModifier):
             ("test_action", False, "Test", "Test")
     }
-    controller._favorite_shortcuts.clear()
+    controller._bookmark_shortcuts.clear()
     controller._actions = {"test_action": lambda: triggered.append(True)}
     controller._refresh_native_shortcuts()
     QTest.keyClick(map_widget.web_view, Qt.Key.Key_K)

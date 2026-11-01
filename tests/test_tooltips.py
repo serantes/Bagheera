@@ -42,18 +42,18 @@ def test_history_name_cell_has_tooltip(qapp):
     assert history_widget.table.item(0, 0).toolTip() == "a/long/search/path"
 
 
-def test_favorite_comment_and_query_cells_have_tooltips(qapp, tmp_path,
-                                                         monkeypatch):
-    favorites_path = tmp_path / "favorites.json"
-    favorites_path.write_text(json.dumps([{
-        "comment": "A long favorite comment",
+def test_bookmark_comment_and_query_cells_have_tooltips(qapp, tmp_path,
+                                                        monkeypatch):
+    bookmarks_path = tmp_path / "favorites.json"
+    bookmarks_path.write_text(json.dumps([{
+        "comment": "A long bookmark comment",
         "query": "tag:landscape AND name:mountain",
         "shortcut": "",
     }]), encoding="utf-8")
-    monkeypatch.setattr(widgets, "FAVORITES_PATH", str(favorites_path))
+    monkeypatch.setattr(widgets, "BOOKMARKS_PATH", str(bookmarks_path))
 
-    favorites_widget = widgets.FavoritesWidget(SimpleNamespace())
+    bookmarks_widget = widgets.BookmarksWidget(SimpleNamespace())
 
-    assert favorites_widget.table.item(0, 0).toolTip() == "A long favorite comment"
-    assert favorites_widget.table.item(0, 1).toolTip() == (
+    assert bookmarks_widget.table.item(0, 0).toolTip() == "A long bookmark comment"
+    assert bookmarks_widget.table.item(0, 1).toolTip() == (
         "tag:landscape AND name:mountain")

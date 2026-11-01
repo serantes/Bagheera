@@ -24,12 +24,12 @@ from PySide6.QtWidgets import (
     QApplication, QWidget,  QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QMessageBox, QSizePolicy, QInputDialog, QTableWidget, QTableWidgetItem,
     QMenu, QHeaderView, QAbstractItemView, QTreeView, QLabel, QTextEdit,
-    QComboBox, QCompleter, QToolBar, QDialog, QDialogButtonBox, QListWidget,
-    QProgressBar, QRadioButton, QFormLayout
+    QComboBox, QCompleter, QToolBar, QDialog, QDialogButtonBox,
+    QProgressBar, QFormLayout
 )
 from PySide6.QtGui import (
     QIcon, QStandardItemModel, QStandardItem, QColor, QPainter, QPen,
-    QPalette, QAction, QKeySequence, QDesktopServices
+    QPalette, QAction, QKeySequence
 )
 from PySide6.QtCore import (
     Signal, QSortFilterProxyModel, Slot, QStringListModel, Qt, QTimer,
@@ -45,13 +45,13 @@ except ImportError:
     BagheeraSearcher = None
 from .constants import (
     LAYOUTS_DIR, RATING_XATTR_NAME, XATTR_COMMENT_NAME, XATTR_NAME, UITexts,
-    FACES_MENU_MAX_ITEMS_DEFAULT, APP_CONFIG, FAVORITES_PATH, PROG_FILE_NAME,
+    FACES_MENU_MAX_ITEMS_DEFAULT, APP_CONFIG, BOOKMARKS_PATH, PROG_FILE_NAME,
     DIRECTORY_TAG_INFO, TAG_INFO_TEMPLATE, APP_DATA_DIR
 )
 
-from .metadatamanager import MetadataManager, HAVE_EXIV2
 
 logger = logging.getLogger(__name__)
+
 
 class TagTreeView(QTreeView):
     """Custom TreeView supporting Ctrl+Click to force-mark changes.
@@ -1522,9 +1522,9 @@ class HistoryWidget(QWidget):
                 self.refresh_list()
 
 
-class FavoritesWidget(QWidget):
-    """A widget for managing favorite search queries."""
-    favorites_changed = Signal()
+class BookmarksWidget(QWidget):
+    """A widget for managing bookmarked search queries."""
+    bookmarks_changed = Signal()
 
     def __init__(self, main_win):
         super().__init__()
@@ -1532,14 +1532,14 @@ class FavoritesWidget(QWidget):
         layout = QVBoxLayout(self)
 
         self.search_bar = QLineEdit()
-        self.search_bar.setPlaceholderText(UITexts.FAVORITES_SEARCH_PLACEHOLDER)
+        self.search_bar.setPlaceholderText(UITexts.BOOKMARKS_SEARCH_PLACEHOLDER)
         self.search_bar.setClearButtonEnabled(True)
-        self.search_bar.textChanged.connect(self.filter_favorites)
+        self.search_bar.textChanged.connect(self.filter_bookmarks)
         layout.addWidget(self.search_bar)
 
         self.table = QTableWidget()
         self.table.setColumnCount(3)
-        self.table.setHorizontalHeaderLabels(UITexts.FAVORITES_TABLE_HEADER)
+        self.table.setHorizontalHeaderLabels(UITexts.BOOKMARKS_TABLE_HEADER)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -1552,43 +1552,48 @@ class FavoritesWidget(QWidget):
         toolbar = QToolBar()
         layout.addWidget(toolbar)
 
-        load_action = QAction(QIcon.fromTheme("system-run"), UITexts.LOAD, self)
+        load_action = QAction(QIcon.fromTheme("system-run"), UITexts.LOAD_BOOKMARK, self)
+        load_action.setToolTip(UITexts.LOAD_BOOKMARK_TOOLTIP)
         load_action.triggered.connect(self.load_selected)
         toolbar.addAction(load_action)
 
-        add_action = QAction(QIcon.fromTheme("list-add"), UITexts.CREATE, self)
-        add_action.setToolTip(UITexts.ADD_FAVORITE_TOOLTIP)
-        add_action.triggered.connect(self.add_favorite)
+        add_action = QAction(QIcon.fromTheme("list-add"), UITexts.ADD_BOOKMARK, self)
+        add_action.setToolTip(UITexts.ADD_BOOKMARK_TOOLTIP)
+        add_action.triggered.connect(self.add_bookmark)
         toolbar.addAction(add_action)
 
-        overwrite_action = QAction(QIcon.fromTheme("document-save"), UITexts.OVERWRITE, self)
-        overwrite_action.setToolTip(UITexts.OVERWRITE_FAVORITE_TOOLTIP)
-        overwrite_action.triggered.connect(self.overwrite_favorite)
+        overwrite_action = QAction(QIcon.fromTheme("document-save"), UITexts.OVERWRITE_BOOKMARK, self)
+        overwrite_action.setToolTip(UITexts.OVERWRITE_BOOKMARK_TOOLTIP)
+        overwrite_action.triggered.connect(self.overwrite_bookmark)
         toolbar.addAction(overwrite_action)
 
         edit_action = QAction(
-            QIcon.fromTheme("edit-rename"), UITexts.EDIT_FAVORITE_TITLE, self)
-        edit_action.setToolTip(UITexts.EDIT_FAVORITE_TOOLTIP)
-        edit_action.triggered.connect(self.edit_favorite)
+            QIcon.fromTheme("edit-rename"), UITexts.EDIT_BOOKMARK_TITLE, self)
+        edit_action.setToolTip(UITexts.EDIT_BOOKMARK_TOOLTIP)
+        edit_action.triggered.connect(self.edit_bookmark)
         toolbar.addAction(edit_action)
 
         shortcut_action = QAction(
             QIcon.fromTheme("preferences-desktop-keyboard-shortcuts"),
-            UITexts.SHORTCUTS_KEY, self)
+            UITexts.BOOKMARK_SHORTCUTS_KEY, self)
+        shortcut_action.setToolTip(UITexts.BOOKMARK_SHORTCUTS_KEY_TOOLTIP)
         shortcut_action.triggered.connect(self.edit_shortcut)
         toolbar.addAction(shortcut_action)
 
-        delete_action = QAction(QIcon.fromTheme("edit-delete"), UITexts.DELETE, self)
-        delete_action.triggered.connect(self.delete_favorite)
+        delete_action = QAction(QIcon.fromTheme("edit-delete"), UITexts.DELETE_BOOKMARK, self)
+        delete_action.setToolTip(UITexts.DELETE_BOOKMARK_TOOLTIP)
+        delete_action.triggered.connect(self.delete_bookmark)
         toolbar.addAction(delete_action)
 
         toolbar.addSeparator()
 
-        up_action = QAction(QIcon.fromTheme("go-up"), UITexts.MOVE_UP, self)
+        up_action = QAction(QIcon.fromTheme("go-up"), UITexts.MOVE_BOOKMARK_UP, self)
+        up_action.setToolTip(UITexts.MOVE_BOOKMARK_UP_TOOLTIP)
         up_action.triggered.connect(self.move_up)
         toolbar.addAction(up_action)
 
-        down_action = QAction(QIcon.fromTheme("go-down"), UITexts.MOVE_DOWN, self)
+        down_action = QAction(QIcon.fromTheme("go-down"), UITexts.MOVE_BOOKMARK_DOWN, self)
+        down_action.setToolTip(UITexts.MOVE_BOOKMARK_DOWN_TOOLTIP)
         down_action.triggered.connect(self.move_down)
         toolbar.addAction(down_action)
 
@@ -1602,20 +1607,20 @@ class FavoritesWidget(QWidget):
 
     def refresh_list(self):
         self.table.setRowCount(0)
-        if not os.path.exists(FAVORITES_PATH):
+        if not os.path.exists(BOOKMARKS_PATH):
             return
 
         try:
-            with open(FAVORITES_PATH, 'r', encoding='utf-8') as f:
-                favorites = json.load(f)
+            with open(BOOKMARKS_PATH, 'r', encoding='utf-8') as f:
+                bookmarks = json.load(f)
         except (json.JSONDecodeError, OSError):
-            favorites = []
+            bookmarks = []
 
-        self.table.setRowCount(len(favorites))
-        for i, fav in enumerate(favorites):
-            query = fav.get('query', '')
-            comment = fav.get('comment', '')
-            shortcut = fav.get('shortcut', '')
+        self.table.setRowCount(len(bookmarks))
+        for i, bookmark in enumerate(bookmarks):
+            query = bookmark.get('query', '')
+            comment = bookmark.get('comment', '')
+            shortcut = bookmark.get('shortcut', '')
             comment_item = QTableWidgetItem(comment)
             comment_item.setToolTip(comment)
             query_item = QTableWidgetItem(query)
@@ -1624,15 +1629,15 @@ class FavoritesWidget(QWidget):
             self.table.setItem(i, 1, query_item)
             self.table.setItem(i, 2, QTableWidgetItem(shortcut))
 
-    def filter_favorites(self, text):
+    def filter_bookmarks(self, text):
         search_text = text.lower()
         for row in range(self.table.rowCount()):
             item = self.table.item(row, 0)
             if item:
                 self.table.setRowHidden(row, search_text not in item.text().lower())
 
-    def save_favorites(self):
-        favorites = []
+    def save_bookmarks(self):
+        bookmarks = []
         for i in range(self.table.rowCount()):
             item_comment = self.table.item(i, 0)
             item_query = self.table.item(i, 1)
@@ -1640,12 +1645,13 @@ class FavoritesWidget(QWidget):
             comment = item_comment.text() if item_comment else ""
             query = item_query.text() if item_query else ""
             shortcut = item_shortcut.text() if item_shortcut else ""
-            favorites.append({'query': query, 'comment': comment, 'shortcut': shortcut})
+            bookmarks.append(
+                {'query': query, 'comment': comment, 'shortcut': shortcut})
 
         try:
-            with open(FAVORITES_PATH, 'w', encoding='utf-8') as f:
-                json.dump(favorites, f, indent=4)
-            self.favorites_changed.emit()
+            with open(BOOKMARKS_PATH, 'w', encoding='utf-8') as f:
+                json.dump(bookmarks, f, indent=4)
+            self.bookmarks_changed.emit()
         except OSError:
             pass
 
@@ -1655,12 +1661,12 @@ class FavoritesWidget(QWidget):
             query = self.table.item(row, 1).text()
             self.main_win.process_term(query)
 
-    def add_favorite(self):
+    def add_bookmark(self):
         query = self.main_win.search_input.currentText().strip()
         if not query:
             return
 
-        # Ask for a comment before adding the favorite
+        # Ask for a comment before adding the bookmark
         new_comment, ok = QInputDialog.getText(
             self, UITexts.EDIT_COMMENT_TITLE,
             UITexts.EDIT_COMMENT_TEXT.format(query),
@@ -1679,9 +1685,9 @@ class FavoritesWidget(QWidget):
         self.table.setItem(row, 1, query_item)
         self.table.setItem(row, 2, QTableWidgetItem(""))
         self.table.setCurrentCell(row, 0)
-        self.save_favorites()
+        self.save_bookmarks()
 
-    def overwrite_favorite(self):
+    def overwrite_bookmark(self):
         row = self.table.currentRow()
         if row < 0:
             return
@@ -1689,7 +1695,7 @@ class FavoritesWidget(QWidget):
         if not query:
             return
 
-        # Ask for a comment before overwriting the favorite
+        # Ask for a comment before overwriting the bookmark
         new_comment, ok = QInputDialog.getText(
             self, UITexts.EDIT_COMMENT_TITLE,
             UITexts.EDIT_COMMENT_TEXT.format(query),
@@ -1704,9 +1710,9 @@ class FavoritesWidget(QWidget):
         query_item = self.table.item(row, 1)
         query_item.setText(query)
         query_item.setToolTip(query)
-        self.save_favorites()
+        self.save_bookmarks()
 
-    def edit_favorite(self):
+    def edit_bookmark(self):
         row = self.table.currentRow()
         if row < 0:
             return
@@ -1717,13 +1723,13 @@ class FavoritesWidget(QWidget):
             return
 
         dialog = QDialog(self)
-        dialog.setWindowTitle(UITexts.EDIT_FAVORITE_TITLE)
+        dialog.setWindowTitle(UITexts.EDIT_BOOKMARK_TITLE)
         dialog.setMinimumWidth(500)
         form = QFormLayout(dialog)
         comment_edit = QLineEdit(comment_item.text(), dialog)
         query_edit = QLineEdit(query_item.text(), dialog)
-        form.addRow(UITexts.FAVORITE_COMMENT_LABEL, comment_edit)
-        form.addRow(UITexts.FAVORITE_QUERY_LABEL, query_edit)
+        form.addRow(UITexts.BOOKMARK_COMMENT_LABEL, comment_edit)
+        form.addRow(UITexts.BOOKMARK_QUERY_LABEL, query_edit)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
@@ -1742,7 +1748,7 @@ class FavoritesWidget(QWidget):
         query_item.setToolTip(new_query)
         if shortcut_item:
             shortcut_item.setToolTip(shortcut_item.text())
-        self.save_favorites()
+        self.save_bookmarks()
 
     def edit_shortcut(self):
         row = self.table.currentRow()
@@ -1789,27 +1795,27 @@ class FavoritesWidget(QWidget):
                         return
 
             self.table.item(row, 2).setText(new_sc_str)
-            self.save_favorites()
+            self.save_bookmarks()
 
-    def delete_favorite(self):
+    def delete_bookmark(self):
         row = self.table.currentRow()
         if row >= 0:
             self.table.removeRow(row)
-            self.save_favorites()
+            self.save_bookmarks()
 
     def move_up(self):
         row = self.table.currentRow()
         if row > 0:
             self._swap_rows(row, row - 1)
             self.table.setCurrentCell(row - 1, 0)
-            self.save_favorites()
+            self.save_bookmarks()
 
     def move_down(self):
         row = self.table.currentRow()
         if row >= 0 and row < self.table.rowCount() - 1:
             self._swap_rows(row, row + 1)
             self.table.setCurrentCell(row + 1, 0)
-            self.save_favorites()
+            self.save_bookmarks()
 
     def _swap_rows(self, row1, row2):
         for col in range(self.table.columnCount()):

@@ -109,7 +109,17 @@ The main window features a dockable sidebar (initially hidden) that provides
 access to various tools and information. You can toggle its visibility via the
 main menu or keyboard shortcut.
 
-### 3.1. Tags Tab
+The sidebar tabs are ordered as follows: **Metadata** (Tags, Information),
+**Browse** (Filter, Bookmarks, History), **Layouts** (X11 only), and **Maps**.
+The configurable shortcuts for these sub-tabs are Ctrl+Shift+T (Tags),
+Ctrl+Shift+I (Information), Ctrl+Shift+F (Filter), Ctrl+Shift+B (Bookmarks),
+Ctrl+Shift+H (History), Ctrl+Shift+L (Layouts), and Ctrl+Shift+M (Maps).
+
+### 3.1. Metadata Tab
+
+The Metadata tab contains Tags and Information, in that order.
+
+#### Tags
 
 This tab allows you to view and edit tags associated with the currently
 selected images.
@@ -140,7 +150,7 @@ selected images.
   * Blue Text: Indicates that the tag change is pending and has not yet been
     saved to the file's metadata.
 
-### 3.2. Information Tab
+#### Information
 
 This tab displays and allows editing of general information for the selected
 images.
@@ -151,7 +161,11 @@ images.
 * **Apply Changes Button**: Saves any changes made to the rating or comment. This
   button is hidden if there are no changes.
 
-### 3.3. Filter Tab
+### 3.2. Browse Tab
+
+The Browse tab contains Filter, Bookmarks, and History, in that order.
+
+#### Filter
 
 This tab helps you filter the images displayed in the thumbnail grid.
 
@@ -176,23 +190,35 @@ This tab helps you filter the images displayed in the thumbnail grid.
   * **NOT Column**: Check the box to exclude images with this tag. (Checking one
     will uncheck the other in the same row).
 
-### 3.4. Favorites Tab
+#### Bookmarks
 
 Save and manage your frequently used search queries.
 
-* **Search Bar**: Filters your list of favorite queries.
-* **Favorites Table**: Lists your saved queries with a comment, the query itself,
+* **Search Bar**: Filters your list of bookmarked queries.
+* **Bookmarks Table**: Lists your saved queries with a comment, the query itself,
   and an optional keyboard shortcut.
-* **Load Button**: Executes the selected favorite query.
-* **Add Button**: Adds the current search bar content as a new favorite. You'll
+* **Load Button**: Executes the selected bookmarked query.
+* **Add Button**: Adds the current search bar content as a new bookmark. You'll
   be prompted for a comment.
-* **Rename Button**: Edits the comment for the selected favorite.
+* **Rename Button**: Edits the comment for the selected bookmark.
 * **Shortcut Button**: Assigns a global keyboard shortcut to the selected
-  favorite query.
-* **Delete Button**: Removes the selected favorite.
-* **Move Up/Down Buttons**: Reorders your favorite queries in the list.
+  bookmarked query.
+* **Delete Button**: Removes the selected bookmark.
+* **Move Up/Down Buttons**: Reorders your bookmarked queries in the list.
 
-### 3.5. Layouts Tab (X11 only)
+#### History
+
+Keeps a record of your past searches and opened files/directories.
+
+* **History Table**: Lists your browsing history with the query/path and the date
+  it was accessed.
+* **Double-Click**: Re-executes the selected history entry.
+* **Clear All Button**: Clears the entire history.
+* **Delete Selected Button**: Removes the selected entry from history.
+* **Delete Older Button**: Removes the selected entry and all older entries from
+  history.
+
+### 3.3. Layouts Tab (X11 only)
 
 This tab allows you to save and restore the arrangement of your main window and
 any open image viewers. This feature is currently only available on X11 display
@@ -210,21 +236,9 @@ programmatically.
 * **Copy Button**: Creates a copy of the selected layout with a new name.
 * **Delete Button**: Deletes the selected layout file.
 
-### 3.6. History Tab
+### 3.4. Maps Tab
 
-Keeps a record of your past searches and opened files/directories.
-
-* **History Table**: Lists your browsing history with the query/path and the date
-  it was accessed.
-* **Double-Click**: Re-executes the selected history entry.
-* **Clear All Button**: Clears the entire history.
-* **Delete Selected Button**: Removes the selected entry from history.
-* **Delete Older Button**: Removes the selected entry and all older entries from
-  history.
-
-### 3.7. Map Tab
-
-The Map tab displays GPS locations for the currently selected images. It
+The Maps tab displays GPS locations for the currently selected images. It
 requires QtWebEngine and an internet connection to load the map.
 
 * **Search field**: Enter decimal coordinates (`38.199083, 128.466750`), DMS

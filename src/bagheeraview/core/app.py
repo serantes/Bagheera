@@ -55,7 +55,7 @@ from .constants import (
     DEFAULT_GLOBAL_SHORTCUTS, DEFAULT_LANGUAGE, DEFAULT_VIEWER_SHORTCUTS,
     DIALOG_ACTIONS, GLOBAL_ACTIONS,
     HISTORY_PATH, ICON_THEME, ICON_THEME_FALLBACK, SCANNER_GENERATE_SIZES,
-    IMAGE_MIME_TYPES, IMAGE_EXTENSIONS, LAYOUTS_DIR, FAVORITES_PATH,
+    IMAGE_MIME_TYPES, IMAGE_EXTENSIONS, LAYOUTS_DIR, BOOKMARKS_PATH,
     PROG_AUTHOR, PROG_ID, PROG_NAME, PROG_VERSION, PROG_ORGANIZATION_NAME,
     PROG_ORGANIZATION_DOMAIN, RATING_XATTR_NAME,
     SCANNER_SETTINGS_DEFAULTS, SUPPORTED_LANGUAGES, VIEWER_ACTIONS,
@@ -87,7 +87,7 @@ from .geomapwidget import GeoMapWidget
 from .widgets import (
     CircularProgressBar,
     TagEditWidget, LayoutsWidget, LayoutSelectionDialog, HistoryWidget,
-    RatingWidget, CommentWidget, FavoritesWidget, TagSelectorDialog
+    RatingWidget, CommentWidget, BookmarksWidget, TagSelectorDialog
 )
 from .metadatamanager import (
     MetadataManager, XattrManager, load_common_metadata
@@ -442,7 +442,7 @@ class AppShortcutController(QObject):
         self.main_win = main_win
         self._actions = self._get_actions()
         self._shortcuts = {}
-        self._favorite_shortcuts = {}
+        self._bookmark_shortcuts = {}
         self._native_shortcuts = []
         self.action_to_shortcut = {}
         self._register_shortcuts()
@@ -473,25 +473,25 @@ class AppShortcutController(QObject):
         app = QApplication.instance()
         if app is not None:
             app.focusChanged.connect(self._update_shortcut_enabled_state)
-        self.refresh_favorite_shortcuts()
+        self.refresh_bookmark_shortcuts()
 
-    def refresh_favorite_shortcuts(self):
-        """Loads dynamic shortcuts assigned to favorite queries."""
-        self._favorite_shortcuts.clear()
-        if os.path.exists(FAVORITES_PATH):
+    def refresh_bookmark_shortcuts(self):
+        """Loads dynamic shortcuts assigned to bookmarked queries."""
+        self._bookmark_shortcuts.clear()
+        if os.path.exists(BOOKMARKS_PATH):
             try:
-                with open(FAVORITES_PATH, 'r', encoding='utf-8') as f:
-                    favorites = json.load(f)
-                    for fav in favorites:
-                        sc_str = fav.get('shortcut', '')
+                with open(BOOKMARKS_PATH, 'r', encoding='utf-8') as f:
+                    bookmarks = json.load(f)
+                    for bookmark in bookmarks:
+                        sc_str = bookmark.get('shortcut', '')
                         if sc_str:
                             seq = QKeySequence(sc_str)
                             if not seq.isEmpty():
-                                self._favorite_shortcuts[
+                                self._bookmark_shortcuts[
                                     (int(seq[0].key()),
                                      Qt.KeyboardModifiers(
                                          seq[0].keyboardModifiers()))
-                                ] = fav.get('query')
+                                ] = bookmark.get('query')
             except (json.JSONDecodeError, OSError):
                 pass
         self._refresh_native_shortcuts()
@@ -509,10 +509,10 @@ class AppShortcutController(QObject):
         if key_tuple in self.main_win.viewer_shortcuts:
             return self.main_win.viewer_shortcuts[key_tuple][1]
 
-        # Favorites
-        if key_tuple in self._favorite_shortcuts:
-            return f"{UITexts.FAVORITES_TAB}: {
-                self._favorite_shortcuts[key_tuple]}"
+        # Bookmarks
+        if key_tuple in self._bookmark_shortcuts:
+            return f"{UITexts.BOOKMARKS_TAB}: {
+                self._bookmark_shortcuts[key_tuple]}"
 
         return None
 
@@ -545,6 +545,20 @@ class AppShortcutController(QObject):
             "select_all": self.main_win.select_all_thumbnails,
             "select_none": self.main_win.select_none_thumbnails,
             "invert_selection": self.main_win.invert_selection_thumbnails,
+            "show_tags_tab": lambda: self.main_win.open_sidebar_tab(
+                self.main_win.tag_edit_widget),
+            "show_info_tab": lambda: self.main_win.open_sidebar_tab(
+                self.main_win.info_widget),
+            "show_filter_tab": lambda: self.main_win.open_sidebar_tab(
+                self.main_win.filter_widget),
+            "show_bookmarks_tab": lambda: self.main_win.open_sidebar_tab(
+                self.main_win.bookmarks_tab),
+            "show_history_tab": lambda: self.main_win.open_sidebar_tab(
+                self.main_win.history_tab),
+            "show_layouts_tab": lambda: self.main_win.open_sidebar_tab(
+                getattr(self.main_win, "layouts_tab", None)),
+            "show_maps_tab": lambda: self.main_win.open_sidebar_tab(
+                self.main_win.maps_tab),
         }
 
     def _register_shortcuts(self):
@@ -558,13 +572,13 @@ class AppShortcutController(QObject):
                 self.action_to_shortcut[action] = key_combo
 
     def _refresh_native_shortcuts(self):
-        """Rebuilds native Qt shortcuts from global and favorite mappings."""
+        """Rebuilds native Qt shortcuts from global and bookmark mappings."""
         for shortcut in self._native_shortcuts:
             shortcut.setEnabled(False)
             shortcut.deleteLater()
         self._native_shortcuts.clear()
 
-        key_combinations = set(self._shortcuts) | set(self._favorite_shortcuts)
+        key_combinations = set(self._shortcuts) | set(self._bookmark_shortcuts)
         for key, modifiers in key_combinations:
             modifier_value = int(getattr(modifiers, "value", modifiers))
             sequence = QKeySequence(int(key) | modifier_value)
@@ -602,8 +616,8 @@ class AppShortcutController(QObject):
            getattr(active_window, "handles_own_shortcuts", False):
             return
 
-        if (key, mods) in self._favorite_shortcuts:
-            self.main_win.process_term(self._favorite_shortcuts[(key, mods)])
+        if (key, mods) in self._bookmark_shortcuts:
+            self.main_win.process_term(self._bookmark_shortcuts[(key, mods)])
             return
 
         shortcut = self._shortcuts.get((key, mods))
@@ -620,7 +634,7 @@ class AppShortcutController(QObject):
         """Dispatches a configured global shortcut when a viewer has focus."""
         key_combo = (int(key), Qt.KeyboardModifiers(modifiers))
         if (key_combo not in self._shortcuts and
-                key_combo not in self._favorite_shortcuts):
+                key_combo not in self._bookmark_shortcuts):
             return False
         self._activate_shortcut(*key_combo)
         return True
@@ -633,6 +647,13 @@ class AppShortcutController(QObject):
                                     self.main_win)
         dialog.exec()
         self.main_win.refresh_shortcuts()
+
+    def refresh_shortcuts(self):
+        """Rebuild the key lookup and native shortcuts after configuration."""
+        self.action_to_shortcut = {
+            value[0]: key for key, value in self._shortcuts.items()
+        }
+        self._refresh_native_shortcuts()
 
     # --- Action Handlers ---
 
@@ -1429,6 +1450,7 @@ class MainWindow(QMainWindow):
         self._suppress_updates = False
         self._is_loading_all = False
         self._force_thumbnail_refresh = False
+        self.found_items_data = []
 
         self._high_res_mode_active = False
         self._is_loading = False
@@ -1592,14 +1614,17 @@ class MainWindow(QMainWindow):
         self.main_dock.setObjectName("MainDock")
         self.main_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
-        self.tags_tabs = QTabWidget()
+        self.sidebar_tabs = QTabWidget()
+        self.metadata_tabs = QTabWidget()
+        self.browse_tabs = QTabWidget()
+        self.browse_tabs.currentChanged.connect(self.on_browse_tab_changed)
 
         # Tab 1: Tags (Edit)
         self.tag_edit_widget = TagEditWidget(self)
         self.tag_edit_widget.tags_updated.connect(self.on_tags_edited)
 
-        self.tags_tabs.addTab(self.tag_edit_widget, UITexts.TAGS_TAB)
-        self.tags_tabs.currentChanged.connect(self.on_tags_tab_changed)
+        self.metadata_tabs.addTab(self.tag_edit_widget, UITexts.TAGS_TAB)
+        self.metadata_tabs.currentChanged.connect(self.on_metadata_tab_changed)
 
         # Tab 2: Information (Rating, Comment)
         self.info_widget = QWidget()
@@ -1609,8 +1634,7 @@ class MainWindow(QMainWindow):
         info_layout.addWidget(self.rating_widget)
         self.comment_widget = CommentWidget()
         info_layout.addWidget(self.comment_widget)
-        self.tags_tabs.addTab(self.info_widget, UITexts.INFO_TAB)
-        self.tags_tabs.currentChanged.connect(self.on_tags_tab_changed)
+        self.metadata_tabs.addTab(self.info_widget, UITexts.INFO_TAB)
 
         # Timer for debouncing filter text input to prevent UI freezing
         self.filter_input_timer = QTimer(self)
@@ -1700,30 +1724,36 @@ class MainWindow(QMainWindow):
         # self.filter_stats_lbl.hide()
         filter_layout.addWidget(self.filter_stats_lbl)
 
-        self.tags_tabs.addTab(self.filter_widget, UITexts.TAG_FILTER_TAB)
+        self.browse_tabs.addTab(self.filter_widget, UITexts.TAG_FILTER_TAB)
 
-        # Tab 4: Favorites
-        self.favorites_tab = FavoritesWidget(self)
-        self.tags_tabs.addTab(self.favorites_tab, UITexts.FAVORITES_TAB)
+        # Tab 2: Bookmarks
+        self.bookmarks_tab = BookmarksWidget(self)
+        self.browse_tabs.addTab(self.bookmarks_tab, UITexts.BOOKMARKS_TAB)
 
-        # Tab 5: Layouts
+        # Tab 3: Layouts
         self.is_xcb = QApplication.platformName() == "xcb"
         if self.is_xcb:
             self.layouts_tab = LayoutsWidget(self)
-            self.tags_tabs.addTab(self.layouts_tab, UITexts.LAYOUTS_TAB)
 
-        # Tab 6: History
+        # Tab 3 of Browse
         self.history_tab = HistoryWidget(self)
-        self.tags_tabs.addTab(self.history_tab, UITexts.HISTORY_TAB)
+        self.browse_tabs.addTab(self.history_tab, UITexts.HISTORY_TAB)
 
-        # Tab 7: Map / Geolocation
-        self.map_tab = GeoMapWidget(self)
-        self.tags_tabs.addTab(self.map_tab, UITexts.MAP_TAB)
-        self.map_tab.selection_requested.connect(self.select_by_paths)
-        self.map_tab.geolocation_changed.connect(
+        # Tabs are grouped into Metadata and Browse, followed by Layouts and Maps.
+        self.sidebar_tabs.addTab(self.metadata_tabs, UITexts.METADATA_TAB)
+        self.sidebar_tabs.addTab(self.browse_tabs, UITexts.BROWSE_TAB)
+        if self.is_xcb:
+            self.sidebar_tabs.addTab(self.layouts_tab, UITexts.LAYOUTS_TAB)
+
+        # Tab 4: Map / Geolocation
+        self.maps_tab = GeoMapWidget(self)
+        self.sidebar_tabs.addTab(self.maps_tab, UITexts.MAPS_TAB)
+        self.sidebar_tabs.currentChanged.connect(self.on_sidebar_tab_changed)
+        self.maps_tab.selection_requested.connect(self.select_by_paths)
+        self.maps_tab.geolocation_changed.connect(
             self.invalidate_geolocation_status)
 
-        self.main_dock.setWidget(self.tags_tabs)
+        self.main_dock.setWidget(self.sidebar_tabs)
         self.main_dock.visibilityChanged.connect(
             self._on_main_dock_visibility_changed)
         self.addDockWidget(Qt.RightDockWidgetArea, self.main_dock)
@@ -1750,7 +1780,6 @@ class MainWindow(QMainWindow):
         self._model_update_timer.timeout.connect(self._process_model_update_queue)
 
         # Data collection and model rebuilding logic
-        self.found_items_data = []
         self._known_paths = set()
         self.cache.thumbnail_loaded.connect(self.on_thumbnail_loaded)
         self.rebuild_timer = QTimer(self)
@@ -1816,8 +1845,8 @@ class MainWindow(QMainWindow):
         # Initialize the shortcut controller (after config is loaded)
         self.shortcut_controller = AppShortcutController(self)
         self._setup_thumbnail_rating_shortcuts()
-        self.favorites_tab.favorites_changed.connect(
-            self.shortcut_controller.refresh_favorite_shortcuts)
+        self.bookmarks_tab.bookmarks_changed.connect(
+            self.shortcut_controller.refresh_bookmark_shortcuts)
 
         self._apply_global_stylesheet()
         # Set the initial thumbnail generation tier based on the loaded config size
@@ -2198,46 +2227,46 @@ class MainWindow(QMainWindow):
             self.search_input.setEditText(search_text)
 
     # --- UI and Menu Logic ---
+    def _add_sidebar_menu_action(self, menu, icon, text, action_name, widget):
+        shortcut = self.shortcut_controller.action_to_shortcut.get(action_name)
+        if shortcut:
+            key, modifiers = shortcut
+            modifier_value = int(getattr(modifiers, "value", modifiers))
+            sequence = QKeySequence(int(key) | modifier_value)
+            text = f"{text}\t{sequence.toString(QKeySequence.NativeText)}"
+        action = menu.addAction(QIcon.fromTheme(icon), text)
+        action.triggered.connect(
+            lambda _checked=False, target=widget: self.open_sidebar_tab(target))
+        return action
+
     def show_main_menu(self):
         """Displays the main application menu."""
         menu = QMenu(self)
 
-        # Actions to show different tabs in the dock
-        show_tags_action = menu.addAction(QIcon.fromTheme("document-properties"),
-                                          UITexts.MENU_SHOW_TAGS)
-        show_tags_action.triggered.connect(
-            lambda: self.open_sidebar_tab(self.tags_tabs.indexOf(self.tag_edit_widget)))
-
-        show_info_action = menu.addAction(QIcon.fromTheme("dialog-information"),
-                                          UITexts.MENU_SHOW_INFO)
-        show_info_action.triggered.connect(
-            lambda: self.open_sidebar_tab(self.tags_tabs.indexOf(self.info_widget)))
-
-        show_favorites_action = menu.addAction(QIcon.fromTheme("bookmarks"),
-                                               UITexts.MENU_SHOW_FAVORITES)
-        f_idx = self.tags_tabs.indexOf(self.favorites_tab)
-        show_favorites_action.triggered.connect(lambda: self.open_sidebar_tab(f_idx))
-
-        show_filter_action = menu.addAction(QIcon.fromTheme("view-filter"),
-                                            UITexts.MENU_SHOW_FILTER)
-        show_filter_action.triggered.connect(
-            lambda: self.open_sidebar_tab(self.tags_tabs.indexOf(self.filter_widget)))
+        self._add_sidebar_menu_action(
+            menu, "document-properties", UITexts.MENU_SHOW_TAGS,
+            "show_tags_tab", self.tag_edit_widget)
+        self._add_sidebar_menu_action(
+            menu, "dialog-information", UITexts.MENU_SHOW_INFO,
+            "show_info_tab", self.info_widget)
+        self._add_sidebar_menu_action(
+            menu, "view-filter", UITexts.MENU_SHOW_FILTER,
+            "show_filter_tab", self.filter_widget)
+        self._add_sidebar_menu_action(
+            menu, "bookmarks", UITexts.MENU_SHOW_BOOKMARKS,
+            "show_bookmarks_tab", self.bookmarks_tab)
+        self._add_sidebar_menu_action(
+            menu, "view-history", UITexts.MENU_SHOW_HISTORY,
+            "show_history_tab", self.history_tab)
 
         if self.is_xcb:
-            show_layouts_action = menu.addAction(QIcon.fromTheme("view-grid"),
-                                                 UITexts.MENU_SHOW_LAYOUTS)
-            l_idx = self.tags_tabs.indexOf(self.layouts_tab)
-            show_layouts_action.triggered.connect(lambda: self.open_sidebar_tab(l_idx))
+            self._add_sidebar_menu_action(
+                menu, "view-grid", UITexts.MENU_SHOW_LAYOUTS,
+                "show_layouts_tab", self.layouts_tab)
 
-        show_history_action = menu.addAction(QIcon.fromTheme("view-history"),
-                                             UITexts.MENU_SHOW_HISTORY)
-        h_idx = self.tags_tabs.indexOf(self.history_tab)
-        show_history_action.triggered.connect(lambda: self.open_sidebar_tab(h_idx))
-
-        show_map_action = menu.addAction(QIcon.fromTheme("map-symbolic"),
-                                         UITexts.MENU_SHOW_MAP)
-        m_idx = self.tags_tabs.indexOf(self.map_tab)
-        show_map_action.triggered.connect(lambda: self.open_sidebar_tab(m_idx))
+        self._add_sidebar_menu_action(
+            menu, "map-symbolic", UITexts.MENU_SHOW_MAPS,
+            "show_maps_tab", self.maps_tab)
 
         menu.addSeparator()
 
@@ -2558,15 +2587,26 @@ class MainWindow(QMainWindow):
             self.thumbnail_view.updateGeometries()
             self.thumbnail_view.viewport().update()
 
-    def open_sidebar_tab(self, index):
-        """Shows the dock and switches to the specified tab index."""
+    def open_sidebar_tab(self, widget):
+        """Show the dock and select a tab, including nested Metadata/Browse tabs."""
+        if widget is None:
+            return
+
         self.main_dock.show()
-        self.tags_tabs.setCurrentIndex(index)
+        if self.metadata_tabs.indexOf(widget) >= 0:
+            self.metadata_tabs.setCurrentWidget(widget)
+            self.sidebar_tabs.setCurrentWidget(self.metadata_tabs)
+        elif self.browse_tabs.indexOf(widget) >= 0:
+            self.browse_tabs.setCurrentWidget(widget)
+            self.sidebar_tabs.setCurrentWidget(self.browse_tabs)
+        elif self.sidebar_tabs.indexOf(widget) >= 0:
+            self.sidebar_tabs.setCurrentWidget(widget)
         self.main_dock.raise_()
-        self.on_tags_tab_changed(index)
 
     def refresh_shortcuts(self):
         """Saves current shortcuts configuration and updates running viewers."""
+        if hasattr(self, "shortcut_controller"):
+            self.shortcut_controller.refresh_shortcuts()
         self.save_config()
         self._setup_thumbnail_rating_shortcuts()
         for viewer in list(self.viewers):
@@ -4002,7 +4042,7 @@ class MainWindow(QMainWindow):
 
         # Retry locating a path requested by the location dialogs.
         self._maybe_locate_pending_path()
-        self.map_tab.initialize_if_ready()
+        self.maps_tab.initialize_if_ready()
 
     def more_files_available(self, i, count):
         """Slot for when a batch of images has been loaded, with more available."""
@@ -4012,7 +4052,7 @@ class MainWindow(QMainWindow):
         has_more = i < count
         self.btn_load_all.setVisible(has_more)
         if not self._is_loading_all:
-            self.map_tab.initialize_if_ready()
+            self.maps_tab.initialize_if_ready()
 
     def request_more_images(self, amount):
         """Requests the scanner to load a specific number of additional images."""
@@ -4610,7 +4650,8 @@ class MainWindow(QMainWindow):
                 self.restore_selection(selected_paths)
 
             if self.main_dock.isVisible() and \
-               self.tags_tabs.currentWidget() == self.filter_widget:
+               self.sidebar_tabs.currentWidget() == self.browse_tabs and \
+               self.browse_tabs.currentWidget() == self.filter_widget:
                 if not self.filter_refresh_timer.isActive():
                     self.filter_refresh_timer.start()
 
@@ -4714,25 +4755,40 @@ class MainWindow(QMainWindow):
                     item.setData(None, IMAGE_DATA_ROLE)
         self.thumbnail_view.viewport().update()  # Force repaint
 
-    def on_tags_tab_changed(self, index):
-        """Updates the content of the sidebar dock when the active tab changes."""
-        widget = self.tags_tabs.widget(index)
+    def on_metadata_tab_changed(self, index):
+        """Refresh the active Metadata tab."""
+        widget = self.metadata_tabs.widget(index)
         if widget == self.tag_edit_widget:
             self.tag_edit_widget.load_available_tags()
             self.update_tag_edit_widget()
-        elif widget == self.filter_widget:
-            self.update_tag_list()
-            self._update_extension_filter_list()
         elif widget == self.info_widget:
             self.update_info_widget()
-        elif widget == self.favorites_tab:
-            self.favorites_tab.refresh_list()
+
+    def on_browse_tab_changed(self, index):
+        """Refresh the active Browse tab."""
+        widget = self.browse_tabs.widget(index)
+        if widget == self.filter_widget:
+            self.update_tag_list()
+            self._update_extension_filter_list()
+        elif widget == self.bookmarks_tab:
+            self.bookmarks_tab.refresh_list()
+        elif widget == self.history_tab:
+            self.history_tab.refresh_list()
+
+    def on_sidebar_tab_changed(self, _index=None):
+        """Refresh active nested tabs and lazily activate Maps."""
+        widget = self.sidebar_tabs.currentWidget()
+        if widget == self.metadata_tabs:
+            self.on_metadata_tab_changed(self.metadata_tabs.currentIndex())
+        elif widget == self.browse_tabs:
+            self.on_browse_tab_changed(self.browse_tabs.currentIndex())
+
         # Activate / deactivate map tab (lazy refresh on activation)
-        if hasattr(self, 'map_tab'):
-            is_map = (widget == self.map_tab and self.main_dock.isVisible())
-            self.map_tab.set_active(is_map)
+        if hasattr(self, 'maps_tab'):
+            is_map = (widget == self.maps_tab and self.main_dock.isVisible())
+            self.maps_tab.set_active(is_map)
             if is_map:
-                self.map_tab.refresh(self.get_selected_paths())
+                self.maps_tab.refresh(self.get_selected_paths())
 
     def _update_extension_filter_list(self, paths=None):
         """Add and sort checkboxes for all discovered file extensions."""
@@ -4789,9 +4845,9 @@ class MainWindow(QMainWindow):
         self.extension_filter_group.hide()
 
     def _on_main_dock_visibility_changed(self, visible):
-        if hasattr(self, 'map_tab'):
-            is_map = visible and self.tags_tabs.currentWidget() == self.map_tab
-            self.map_tab.set_active(is_map)
+        if hasattr(self, 'maps_tab'):
+            is_map = visible and self.sidebar_tabs.currentWidget() == self.maps_tab
+            self.maps_tab.set_active(is_map)
 
     def update_tag_edit_widget(self):
         """Updates the tag editor widget with data from the currently selected files."""
@@ -5020,8 +5076,8 @@ class MainWindow(QMainWindow):
             self.update_info_widget()
 
         # Refresh the map tab only when it is currently active (lazy refresh).
-        if hasattr(self, 'map_tab') and self.map_tab.is_active():
-            self.map_tab.refresh(self.get_selected_paths())
+        if hasattr(self, 'maps_tab') and self.maps_tab.is_active():
+            self.maps_tab.refresh(self.get_selected_paths())
 
     def select_by_paths(self, paths: list):
         """Selects thumbnails matching the given file paths.
@@ -5421,7 +5477,7 @@ class MainWindow(QMainWindow):
                     pass
 
         if self.main_dock.isVisible():
-            self.on_tags_tab_changed(self.tags_tabs.currentIndex())
+            self.on_sidebar_tab_changed()
 
         # Re-apply filters in case the tag change affects visibility
         self.apply_filters()
@@ -5583,7 +5639,7 @@ class MainWindow(QMainWindow):
         self.add_to_history(term)
         self.update_search_input()
 
-        # Ensure loading UI is active (backup for history/favorites calls)
+        # Ensure loading UI is active (backup for history/bookmark calls)
         self.status_lbl.setText(UITexts.PREPARING_QUERY)
         self.progress_bar.setRange(0, 0)
         self.progress_bar.show()
@@ -5696,6 +5752,55 @@ class MainWindow(QMainWindow):
                 # Process the first selected file
                 self.process_term(f"file:/{selected[0]}")
 
+    def _restore_sidebar_tabs(self, config):
+        """Restore nested tabs and translate tab indexes from older configs."""
+        if "active_metadata_tab" in config or "active_browse_tab" in config:
+            metadata_index = config.get("active_metadata_tab", 0)
+            browse_index = config.get("active_browse_tab", 0)
+            self.metadata_tabs.setCurrentIndex(
+                min(max(metadata_index, 0), self.metadata_tabs.count() - 1))
+            self.browse_tabs.setCurrentIndex(
+                min(max(browse_index, 0), self.browse_tabs.count() - 1))
+            sidebar_index = config.get("active_dock_tab", 0)
+            self.sidebar_tabs.setCurrentIndex(
+                min(max(sidebar_index, 0), self.sidebar_tabs.count() - 1))
+            return
+
+        old_index = config.get("active_dock_tab")
+        if old_index is None:
+            return
+        if self.is_xcb:
+            old_index_map = {
+                0: (0, 0, None),
+                1: (0, 1, None),
+                2: (1, 0, None),
+                3: (1, None, 1),
+                4: (2, None, None),
+                5: (1, None, 2),
+                6: (3, None, None),
+            }
+        else:
+            old_index_map = {
+                0: (0, 0, None),
+                1: (0, 1, None),
+                2: (1, 0, None),
+                3: (1, None, 1),
+                4: (1, None, 2),
+                5: (2, None, None),
+            }
+        state = old_index_map.get(old_index)
+        if state is None:
+            self.sidebar_tabs.setCurrentIndex(
+                min(max(old_index, 0), self.sidebar_tabs.count() - 1))
+            return
+
+        sidebar_index, metadata_index, browse_index = state
+        if metadata_index is not None:
+            self.metadata_tabs.setCurrentIndex(metadata_index)
+        if browse_index is not None:
+            self.browse_tabs.setCurrentIndex(browse_index)
+        self.sidebar_tabs.setCurrentIndex(sidebar_index)
+
     def load_config(self):
         """Loads application settings from the JSON configuration file."""
         d = {}
@@ -5719,8 +5824,7 @@ class MainWindow(QMainWindow):
         self.filmstrip_position = d.get("filmstrip_position", "bottom")
         self.show_filmstrip = d.get("show_filmstrip", False)
         self.show_faces = d.get("show_faces", False)
-        if "active_dock_tab" in d:
-            self.tags_tabs.setCurrentIndex(d["active_dock_tab"])
+        self._restore_sidebar_tabs(d)
         self.face_names_history = d.get("face_names_history", [])
         self.pet_names_history = d.get("pet_names_history", [])
         self.body_names_history = d.get("body_names_history", [])
@@ -5829,7 +5933,9 @@ class MainWindow(QMainWindow):
         APP_CONFIG["show_filmstrip"] = self.show_filmstrip
         APP_CONFIG["show_faces"] = self.show_faces
         APP_CONFIG["window_state"] = self.saveState().toBase64().data().decode()
-        APP_CONFIG["active_dock_tab"] = self.tags_tabs.currentIndex()
+        APP_CONFIG["active_dock_tab"] = self.sidebar_tabs.currentIndex()
+        APP_CONFIG["active_metadata_tab"] = self.metadata_tabs.currentIndex()
+        APP_CONFIG["active_browse_tab"] = self.browse_tabs.currentIndex()
         APP_CONFIG["face_names_history"] = self.face_names_history
         APP_CONFIG["pet_names_history"] = self.pet_names_history
         APP_CONFIG["body_names_history"] = self.body_names_history
@@ -7098,8 +7204,8 @@ def main():
     args = [a for a in sys.argv[1:] if a != "--x11"]
     args, resolution = _extract_resolution(args)
     win = MainWindow(cache, args, thread_pool_manager, duplicate_cache, resolution=resolution)
-    if win.map_tab.is_active():
-        win.map_tab.set_active(True)
+    if win.maps_tab.is_active():
+        win.maps_tab.set_active(True)
 
     sys.exit(app.exec())
 

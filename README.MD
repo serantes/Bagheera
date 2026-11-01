@@ -326,7 +326,7 @@ abandoning classic folder-based navigation.
 - **Smart State Persistence:** The application remembers your workflow. Your **
   last used search**, **last used sort order**, and **view settings** are
   automatically saved and restored upon startup.
-- **Favorites:** Favorite searches can be saved and reused.
+- **Bookmarks:** Frequently used searches can be saved and reused.
 - **Caching:** The thumbnail cache and image hashes are stored in highly
   performant local LMDB databases.
 - **Window Manager Support:** **X11** and **Wayland** are fully supported. Note:
