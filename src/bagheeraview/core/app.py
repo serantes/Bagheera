@@ -2563,6 +2563,7 @@ class MainWindow(QMainWindow):
             # Recreate deque with updated content and configured max size
             self.mru_tags = deque(APP_CONFIG.get("mru_tags", []),
                                   maxlen=new_max_tags)
+            self.tag_edit_widget.refresh_visible_tag_filters()
 
             new_max_faces = APP_CONFIG.get("faces_menu_max_items",
                                            FACES_MENU_MAX_ITEMS_DEFAULT)

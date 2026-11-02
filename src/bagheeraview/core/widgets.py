@@ -15,6 +15,7 @@ import shutil
 import json
 import lmdb
 import logging
+import re
 import subprocess
 import time
 from datetime import datetime
@@ -381,6 +382,10 @@ class TagEditWidget(QWidget):
         self.root_favs = None
         self.root_all = None
         self._load_all = True
+        self._visible_tag_whitelist = []
+        self._visible_tag_blacklist = []
+        self._visible_tag_filter_config = None
+        self._load_visible_tag_filters()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -502,6 +507,80 @@ class TagEditWidget(QWidget):
                 self._load_all = True
             self.available_tags = tags
 
+    def _load_visible_tag_filters(self):
+        """Compiles the configured regular expressions for the ALL TAGS tree."""
+        whitelist = tuple(APP_CONFIG.get("visible_tags_whitelist", []))
+        blacklist = tuple(APP_CONFIG.get("visible_tags_blacklist", []))
+        config = (whitelist, blacklist)
+        if config == self._visible_tag_filter_config:
+            return False
+
+        self._visible_tag_whitelist = [
+            re.compile(pattern)
+            for pattern in whitelist
+            if pattern.strip()
+        ]
+        self._visible_tag_blacklist = [
+            re.compile(pattern)
+            for pattern in blacklist
+            if pattern.strip()
+        ]
+        self._visible_tag_filter_config = config
+        return True
+
+    def _is_tag_visible_in_all(self, full_path):
+        """Checks the tag and every ancestor against the configured filters."""
+        parts = full_path.split('/')
+        for end in range(1, len(parts) + 1):
+            path = "/".join(parts[:end])
+            if (self._visible_tag_whitelist
+                    and not any(pattern.search(path)
+                                for pattern in self._visible_tag_whitelist)):
+                return False
+            if any(pattern.search(path)
+                   for pattern in self._visible_tag_blacklist):
+                return False
+        return True
+
+    def refresh_visible_tag_filters(self):
+        """Rebuilds ALL TAGS with current filters without dropping pending edits."""
+        if not self._load_visible_tag_filters() or not self.root_all:
+            return
+
+        current_states = {}
+        for tag, nodes in self.item_mapping.items():
+            node = nodes[0] or nodes[1]
+            if node:
+                current_states[tag] = node.checkState() == Qt.Checked
+
+        self.tree_view.setUpdatesEnabled(False)
+        self._is_updating = True
+        try:
+            self.root_all.removeRows(0, self.root_all.rowCount())
+            for nodes in self.item_mapping.values():
+                nodes[0] = None
+
+            tag_counts = {}
+            for path in self.file_paths:
+                for tag in self.original_tags_per_file.get(path, set()):
+                    tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+            master = sorted(set(self.available_tags) | set(tag_counts))
+            total = len(self.file_paths) if self.file_paths else 1
+            for tag in master:
+                if not self._is_tag_visible_in_all(tag):
+                    continue
+                count = tag_counts.get(tag, 0)
+                is_italic = (0 < count < total and len(self.file_paths) > 1)
+                checked = current_states.get(
+                    tag, self.initial_states.get(tag, count > 0))
+                self.get_or_create_node(tag, self.root_all, checked, is_italic)
+
+            self.reset_expansion()
+        finally:
+            self._is_updating = False
+            self.tree_view.setUpdatesEnabled(True)
+
     def init_data(self):
         """Initializes or updates the tag tree model based on current files."""
         self.tree_view.setUpdatesEnabled(False)
@@ -538,8 +617,9 @@ class TagEditWidget(QWidget):
                     is_italic = (0 < count < total and len(self.file_paths) > 1)
                     self.initial_states[t_path] = is_checked
 
-                    self.get_or_create_node(t_path, self.root_all, is_checked,
-                                            is_italic)
+                    if self._is_tag_visible_in_all(t_path):
+                        self.get_or_create_node(t_path, self.root_all, is_checked,
+                                                is_italic)
                     if is_checked:
                         self.get_or_create_node(t_path, self.root_favs, True,
                                                 is_italic)
@@ -551,7 +631,10 @@ class TagEditWidget(QWidget):
             else:
                 # Recovery: if roots are missing or ALL TAGS was never populated,
                 # force a full load.
-                if not self.root_all or (self.root_all.rowCount() == 0 and self.available_tags):
+                if not self.root_all or (
+                        self.root_all.rowCount() == 0
+                        and any(self._is_tag_visible_in_all(tag)
+                                for tag in self.available_tags)):
                     self._load_all = True
                     self.init_data()
                     return
@@ -593,7 +676,9 @@ class TagEditWidget(QWidget):
                         self.initial_states[t_path] = True
 
                         self.get_or_create_node(t_path, self.root_favs, True, is_italic)
-                        self.get_or_create_node(t_path, self.root_all, True, is_italic)
+                        if self._is_tag_visible_in_all(t_path):
+                            self.get_or_create_node(
+                                t_path, self.root_all, True, is_italic)
                         if t_path not in self.available_tags:
                             self.available_tags.append(t_path)
                             new_discovery = True

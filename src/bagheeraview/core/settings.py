@@ -11,6 +11,7 @@ Classes:
                     in a tabbed interface.
 """
 import os
+import re
 import shutil
 import urllib.request
 
@@ -21,7 +22,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox,
     QProgressDialog, QPushButton, QSpinBox, QTabWidget, QVBoxLayout,
     QWidget, QSlider, QFileDialog, QListWidget, QListView, QAbstractItemView,
-    QListWidgetItem, QProgressBar
+    QListWidgetItem, QProgressBar, QPlainTextEdit
 )
 from .constants import (
     APP_CONFIG, AVAILABLE_FACE_ENGINES, DEFAULT_FACE_BOX_COLOR,
@@ -186,6 +187,11 @@ class SettingsDialog(QDialog):
 
         quick_tags_tab = QWidget()
         quick_tags_layout = QVBoxLayout(quick_tags_tab)
+
+        tags_tab = QWidget()
+        tags_layout = QVBoxLayout(tags_tab)
+        self.tags_sub_tabs = QTabWidget()
+        tags_layout.addWidget(self.tags_sub_tabs)
 
         scanner_tab = QWidget()
         scanner_layout = QVBoxLayout(scanner_tab)
@@ -686,6 +692,40 @@ class SettingsDialog(QDialog):
         qt_btns_layout.addStretch()
         quick_tags_layout.addLayout(qt_btns_layout)
 
+        visible_tags_tab = QWidget()
+        visible_tags_layout = QVBoxLayout(visible_tags_tab)
+        visible_tags_description = QLabel(
+            UITexts.SETTINGS_VISIBLE_TAGS_DESCRIPTION)
+        visible_tags_description.setWordWrap(True)
+        visible_tags_layout.addWidget(visible_tags_description)
+
+        visible_tags_controls = QHBoxLayout()
+        whitelist_layout = QVBoxLayout()
+        whitelist_label = QLabel(
+            UITexts.SETTINGS_VISIBLE_TAGS_WHITELIST_LABEL)
+        self.visible_tags_whitelist_edit = QPlainTextEdit()
+        self.visible_tags_whitelist_edit.setToolTip(
+            UITexts.SETTINGS_VISIBLE_TAGS_WHITELIST_TOOLTIP)
+        whitelist_layout.addWidget(whitelist_label)
+        whitelist_layout.addWidget(self.visible_tags_whitelist_edit)
+        visible_tags_controls.addLayout(whitelist_layout)
+
+        blacklist_layout = QVBoxLayout()
+        blacklist_label = QLabel(
+            UITexts.SETTINGS_VISIBLE_TAGS_BLACKLIST_LABEL)
+        self.visible_tags_blacklist_edit = QPlainTextEdit()
+        self.visible_tags_blacklist_edit.setToolTip(
+            UITexts.SETTINGS_VISIBLE_TAGS_BLACKLIST_TOOLTIP)
+        blacklist_layout.addWidget(blacklist_label)
+        blacklist_layout.addWidget(self.visible_tags_blacklist_edit)
+        visible_tags_controls.addLayout(blacklist_layout)
+        visible_tags_layout.addLayout(visible_tags_controls)
+        visible_tags_layout.addStretch()
+
+        self.tags_sub_tabs.addTab(quick_tags_tab, UITexts.VIEWER_MENU_TAGS)
+        self.tags_sub_tabs.addTab(
+            visible_tags_tab, UITexts.SETTINGS_VISIBLE_TAGS_TAB)
+
         regions_tab = QWidget()
         regions_layout = QVBoxLayout(regions_tab)
         regions_layout.setContentsMargins(0, 0, 0, 0)
@@ -1048,7 +1088,7 @@ class SettingsDialog(QDialog):
         # Add tabs in the new order
         tabs.addTab(thumbs_tab, UITexts.SETTINGS_GROUP_THUMBNAILS)
         tabs.addTab(viewer_tab, UITexts.SETTINGS_GROUP_VIEWER)
-        tabs.addTab(quick_tags_tab, UITexts.VIEWER_MENU_TAGS)
+        tabs.addTab(tags_tab, UITexts.SETTINGS_GROUP_TAGS)
         tabs.addTab(regions_tab, UITexts.SETTINGS_GROUP_AREAS)
         tabs.addTab(scanner_tab, UITexts.SETTINGS_GROUP_SCANNER)
         tabs.addTab(duplicates_tab, UITexts.SETTINGS_GROUP_DUPLICATES)
@@ -1323,6 +1363,10 @@ class SettingsDialog(QDialog):
         self.quick_tags_list.clear()
         for tag in mru_tags:
             self.quick_tags_list.addItem(tag)
+        self.visible_tags_whitelist_edit.setPlainText(
+            "\n".join(APP_CONFIG.get("visible_tags_whitelist", [])))
+        self.visible_tags_blacklist_edit.setPlainText(
+            "\n".join(APP_CONFIG.get("visible_tags_blacklist", [])))
         self.update_duplicate_scan_count()
 
     def set_button_color(self, color_str):
@@ -1529,6 +1573,26 @@ class SettingsDialog(QDialog):
 
     def accept(self):
         """Saves settings and closes the dialog."""
+        visible_tag_patterns = {
+            "visible_tags_whitelist": self.visible_tags_whitelist_edit,
+            "visible_tags_blacklist": self.visible_tags_blacklist_edit,
+        }
+        for edit in visible_tag_patterns.values():
+            for pattern in edit.toPlainText().splitlines():
+                pattern = pattern.strip()
+                if not pattern:
+                    continue
+                try:
+                    re.compile(pattern)
+                except re.error as error:
+                    QMessageBox.warning(
+                        self,
+                        UITexts.SETTINGS_VISIBLE_TAGS_INVALID_TITLE,
+                        UITexts.SETTINGS_VISIBLE_TAGS_INVALID_TEXT.format(
+                            pattern, error))
+                    edit.setFocus()
+                    return
+
         APP_CONFIG["scan_max_level"] = self.scan_max_level_spin.value()
         APP_CONFIG["scan_hidden_dirs"] = self.scan_hidden_dirs_checkbox.isChecked()
         APP_CONFIG["scan_hidden_files"] = self.scan_hidden_files_checkbox.isChecked()
@@ -1610,6 +1674,16 @@ class SettingsDialog(QDialog):
             for i in range(self.quick_tags_list.count())
         ]
         APP_CONFIG["mru_tags"] = qt_tags
+        APP_CONFIG["visible_tags_whitelist"] = [
+            pattern.strip()
+            for pattern in self.visible_tags_whitelist_edit.toPlainText().splitlines()
+            if pattern.strip()
+        ]
+        APP_CONFIG["visible_tags_blacklist"] = [
+            pattern.strip()
+            for pattern in self.visible_tags_blacklist_edit.toPlainText().splitlines()
+            if pattern.strip()
+        ]
 
         APP_CONFIG["viewer_auto_resize_window"] = \
             self.viewer_auto_resize_check.isChecked()

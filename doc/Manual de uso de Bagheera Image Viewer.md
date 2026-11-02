@@ -86,7 +86,10 @@ Permite consultar y modificar las etiquetas asignadas a las imágenes selecciona
 
 * **Árbol de etiquetas**: Estructura jerárquica con el catálogo de etiquetas.
   * **⭐ ETIQUETAS USADAS**: Muestra las etiquetas asociadas a las imágenes seleccionadas.
-  * **📂 TODAS LAS ETIQUETAS**: Muestra el catálogo completo de etiquetas indexadas por Baloo.
+  * **📂 TODAS LAS ETIQUETAS**: Muestra las etiquetas indexadas por Baloo,
+    filtrables mediante las expresiones regulares de Ajustes > Etiquetas >
+    Etiquetas visibles. Si se oculta una etiqueta padre, también se ocultan sus
+    descendientes.
 * **Buscador de etiquetas**: Filtra las etiquetas disponibles en el árbol.
 * **Añadir etiqueta (`+`)**: Abre un cuadro de diálogo para crear una nueva etiqueta. Puedes crear estructuras jerárquicas usando la barra diagonal (por ejemplo, `Naturaleza/Animales`).
 * **Actualizar etiquetas**: Recarga la lista de etiquetas desde la base de datos de Baloo.
@@ -351,7 +354,22 @@ El cuadro de diálogo de Ajustes permite personalizar el funcionamiento de la ap
 * **Hilos de generación**: Número máximo de núcleos de procesador dedicados simultáneamente a crear miniaturas.
 * **Motor de búsqueda de archivos**: Permite elegir entre el motor interno de Bagheera (`BagheeraSearch`) o el motor del sistema (`baloosearch`).
 
-### 7.2. Regiones
+### 7.2. Etiquetas
+
+La subpestaña **Etiquetas rápidas** configura las etiquetas usadas recientemente.
+En **Etiquetas visibles**, introduce expresiones regulares (una por línea) para
+filtrar el árbol de **TODAS LAS ETIQUETAS**:
+
+* Una lista blanca vacía incluye todas las etiquetas; si contiene expresiones,
+  cada etiqueta debe coincidir con al menos una.
+* Las coincidencias de la lista negra se excluyen. Una lista negra vacía no
+  excluye ninguna etiqueta.
+* Las expresiones se comparan con la ruta jerárquica completa. Si se oculta una
+  etiqueta padre, también se ocultan sus descendientes.
+* **ETIQUETAS USADAS** siempre muestra todas las etiquetas asignadas a las
+  imágenes seleccionadas, sin aplicar estos filtros.
+
+### 7.3. Regiones
 
 Configuración para la detección de rostros, mascotas, cuerpos u objetos:
 
@@ -363,7 +381,7 @@ Configuración para la detección de rostros, mascotas, cuerpos u objetos:
 * **Restablecer a 'Rostro' tras asignar**: Vuelve al modo predeterminado de selección de rostros tras haber añadido manualmente otro tipo de región (mascota, objeto, etc.).
 * **Descargar modelo**: Botón para descargar los modelos de IA necesarios para MediaPipe.
 
-### 7.3. Miniaturas
+### 7.4. Miniaturas
 
 * **Tiempo de refresco (ms)**: Pausa de espera antes de redibujar las miniaturas al cambiar la escala.
 * **Color de fondo de la cuadrícula**: Color del tapiz sobre el que se muestran las miniaturas.
@@ -373,13 +391,13 @@ Configuración para la detección de rostros, mascotas, cuerpos u objetos:
 * **Estilo de globos informativos**: Personalización del fondo y color de texto de los mensajes flotantes (*tooltips*).
 * **Elementos visibles**: Casillas para activar u ocultar la valoración, el nombre o las etiquetas bajo cada miniatura.
 
-### 7.4. Visor de imágenes
+### 7.5. Visor de imágenes
 
 * **Velocidad del zoom con la rueda**: Sensibilidad del desplazamiento con el ratón al hacer zoom.
 * **Ajustar ventana al hacer zoom**: Redimensiona la ventana de la aplicación de forma automática para amoldarse a la escala de la imagen.
 * **Posición de la tira de miniaturas**: Define la ubicación por defecto del panel flotante de miniaturas (Inferior, Izquierda, Superior o Derecha).
 
-### 7.5. Duplicados
+### 7.6. Duplicados
 
 * **Algoritmo de análisis**: Permite elegir entre **Histograma + Hashes** o **ResNet (Basado en IA)**. *(ResNet requiere librerías adicionales de IA)*.
 * **Umbral de similitud por Hash**: Ajusta la tolerancia del análisis de duplicados (del 50% al 100%). Cuanto más alto sea el porcentaje, más idénticas deberán ser las imágenes.

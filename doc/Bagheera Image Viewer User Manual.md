@@ -131,7 +131,9 @@ selected images.
 
 * **Tag Tree View**: Displays a hierarchical list of tags.
   * **⭐ USED TAGS**: Shows tags currently applied to the selected images.
-  * **📂 ALL TAGS**: Shows all available tags from your Baloo index.
+  * **📂 ALL TAGS**: Shows available tags from your Baloo index, optionally
+    filtered by the whitelist and blacklist regular expressions in Settings >
+    Tags > Visible tags. A hidden parent also hides its descendants.
 * **Search Bar**: Filters the tags displayed in the tree view.
 * **Add Tag Button (`+`)**: Opens a dialog to create a new tag. You can use `/`
   to create hierarchical tags (e.g., `Nature/Animals`).
@@ -492,7 +494,21 @@ various aspects of Bagheera's behavior.
 * **File search engine**: Engine to use for finding files. 'Bagheera' uses the
   BagheeraSearch library. 'Baloo' uses the 'baloosearch' command.
 
-### 7.2. Regions
+### 7.2. Tags
+
+The **Quick tags** sub-tab configures the recently used tags. In **Visible tags**,
+enter regular expressions (one per line) to filter the **ALL TAGS** tree:
+
+* An empty whitelist includes every tag; otherwise, a tag must match at least
+  one whitelist expression.
+* A matching blacklist expression excludes a tag. An empty blacklist excludes
+  nothing.
+* Expressions are matched against the full hierarchical tag path. If a parent
+  tag is hidden, its descendants are hidden too.
+* **USED TAGS** always shows tags applied to the selected images, regardless of
+  these filters.
+
+### 7.3. Regions
 
 Configure settings related to face, pet, body, object, and landmark detection.
 
@@ -510,7 +526,7 @@ Configure settings related to face, pet, body, object, and landmark detection.
   after adding a different region type (Pet, Body, etc.).
 * **Download Model**: Button to download required models for MediaPipe detection.
 
-### 7.3. Thumbnails
+### 7.4. Thumbnails
 
 * **Thumbs refresh interval (ms)**: Delay before refreshing thumbnails after
   resizing.
@@ -527,7 +543,7 @@ Configure settings related to face, pet, body, object, and landmark detection.
 * **Show filename/rating/tags**: Toggle visibility of these elements under
   thumbnails.
 
-### 7.4. Image Viewer
+### 7.5. Image Viewer
 
 * **Viewer mouse wheel speed**: Adjusts how fast scrolling the mouse wheel
   changes images in the viewer.
@@ -536,7 +552,7 @@ Configure settings related to face, pet, body, object, and landmark detection.
 * **Filmstrip Position**: Sets the default position of the filmstrip in new
   viewer windows (Bottom, Left, Top, Right).
 
-### 7.5. Duplicates
+### 7.6. Duplicates
 
 * **Method**: Choose **Histogram + Hashing** or **ResNet (AI Based)**. ResNet is
   disabled unless its required libraries are installed.

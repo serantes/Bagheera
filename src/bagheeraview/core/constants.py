@@ -915,6 +915,20 @@ _UI_TEXTS = {
         "SETTINGS_GROUP_AREAS": "Regions",
         "SETTINGS_GROUP_THUMBNAILS": "Thumbnails",
         "SETTINGS_GROUP_VIEWER": "Image Viewer",
+        "SETTINGS_GROUP_TAGS": "Tags",
+        "SETTINGS_VISIBLE_TAGS_TAB": "Visible tags",
+        "SETTINGS_VISIBLE_TAGS_DESCRIPTION": "Use one regular expression per line. "
+        "Whitelist matches are required when configured; blacklist matches always "
+        "exclude. Matching is done against the full hierarchical tag path. Hiding a "
+        "parent also hides its descendants. Used Tags are never filtered.",
+        "SETTINGS_VISIBLE_TAGS_WHITELIST_LABEL": "Whitelist (include matches):",
+        "SETTINGS_VISIBLE_TAGS_BLACKLIST_LABEL": "Blacklist (exclude matches):",
+        "SETTINGS_VISIBLE_TAGS_WHITELIST_TOOLTIP": "Leave empty to include all tags. "
+        "Enter one regular expression per line.",
+        "SETTINGS_VISIBLE_TAGS_BLACKLIST_TOOLTIP": "Leave empty to exclude no tags. "
+        "Enter one regular expression per line.",
+        "SETTINGS_VISIBLE_TAGS_INVALID_TITLE": "Invalid regular expression",
+        "SETTINGS_VISIBLE_TAGS_INVALID_TEXT": "Invalid regular expression '{}':\n{}",
         "SETTINGS_PERSON_TAGS_LABEL": "Person tags:",
         "SETTINGS_FACE_ENGINE_LABEL": "Face Detection Engine:",
         "SETTINGS_FACE_COLOR_LABEL": "Face box color:",
@@ -1664,6 +1678,21 @@ _UI_TEXTS = {
         "SETTINGS_GROUP_REGIONS": "Regiones",
         "SETTINGS_GROUP_THUMBNAILS": "Miniaturas",
         "SETTINGS_GROUP_VIEWER": "Visor de Imágenes",
+        "SETTINGS_GROUP_TAGS": "Etiquetas",
+        "SETTINGS_VISIBLE_TAGS_TAB": "Etiquetas visibles",
+        "SETTINGS_VISIBLE_TAGS_DESCRIPTION": "Usa una expresión regular por línea. "
+        "Si hay lista blanca, solo se incluyen sus coincidencias; las coincidencias "
+        "de la lista negra siempre se excluyen. Se compara la ruta jerárquica completa. "
+        "Si se oculta una etiqueta padre, también se ocultan sus descendientes. "
+        "Las etiquetas usadas nunca se filtran.",
+        "SETTINGS_VISIBLE_TAGS_WHITELIST_LABEL": "Lista blanca (incluir coincidencias):",
+        "SETTINGS_VISIBLE_TAGS_BLACKLIST_LABEL": "Lista negra (excluir coincidencias):",
+        "SETTINGS_VISIBLE_TAGS_WHITELIST_TOOLTIP": "Déjala vacía para incluir todas "
+        "las etiquetas. Introduce una expresión regular por línea.",
+        "SETTINGS_VISIBLE_TAGS_BLACKLIST_TOOLTIP": "Déjala vacía para no excluir "
+        "ninguna etiqueta. Introduce una expresión regular por línea.",
+        "SETTINGS_VISIBLE_TAGS_INVALID_TITLE": "Expresión regular no válida",
+        "SETTINGS_VISIBLE_TAGS_INVALID_TEXT": "Expresión regular no válida '{}':\n{}",
         "SETTINGS_PERSON_TAGS_LABEL": "Etiquetas de persona:",
         "SETTINGS_FACE_ENGINE_LABEL": "Motor de detección de caras:",
         "SETTINGS_FACE_COLOR_LABEL": "Color del recuadro de cara:",
@@ -2415,6 +2444,21 @@ _UI_TEXTS = {
         "SETTINGS_GROUP_AREAS": "Rexións",
         "SETTINGS_GROUP_THUMBNAILS": "Miniaturas",
         "SETTINGS_GROUP_VIEWER": "Visor de Imaxes",
+        "SETTINGS_GROUP_TAGS": "Etiquetas",
+        "SETTINGS_VISIBLE_TAGS_TAB": "Etiquetas visibles",
+        "SETTINGS_VISIBLE_TAGS_DESCRIPTION": "Usa unha expresión regular por liña. "
+        "Se hai lista branca, só se inclúen as coincidencias; as coincidencias da "
+        "lista negra sempre se exclúen. Compárase a ruta xerárquica completa. Se se "
+        "agocha unha etiqueta pai, tamén se agochan as súas descendentes. Etiquetas "
+        "usadas nunca se filtran.",
+        "SETTINGS_VISIBLE_TAGS_WHITELIST_LABEL": "Lista branca (incluír coincidencias):",
+        "SETTINGS_VISIBLE_TAGS_BLACKLIST_LABEL": "Lista negra (excluír coincidencias):",
+        "SETTINGS_VISIBLE_TAGS_WHITELIST_TOOLTIP": "Déixaa baleira para incluír todas "
+        "as etiquetas. Introduce unha expresión regular por liña.",
+        "SETTINGS_VISIBLE_TAGS_BLACKLIST_TOOLTIP": "Déixaa baleira para non excluír "
+        "ningunha etiqueta. Introduce unha expresión regular por liña.",
+        "SETTINGS_VISIBLE_TAGS_INVALID_TITLE": "Expresión regular non válida",
+        "SETTINGS_VISIBLE_TAGS_INVALID_TEXT": "Expresión regular non válida '{}':\n{}",
         "SETTINGS_PERSON_TAGS_LABEL": "Etiquetas de persoa:",
         "SETTINGS_FACE_ENGINE_LABEL": "Motor de detección de caras:",
         "SETTINGS_FACE_COLOR_LABEL": "Cor do cadro de cara:",
