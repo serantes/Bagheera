@@ -109,7 +109,7 @@ Tags are stored with a path-like structure (e.g., `Person/Julia`).
 
 ### Known Behaviors & Tips
 
-- **Space Handling**: To search for tags containing spaces (e.g., "María Callas"), you must search for the individual parts: `tags:Maria AND tags:Callas`. This is because the **Baloo engine** does not support quoted strings within the tag search.
+- **Space Handling**: To search for tags containing spaces (e.g., "María Callas"), you must use `tags=María_Callas` or search for the individual parts: `tags:Maria AND tags:Callas`. This is because the **Baloo engine** does not support spaces within the tag search.
 - **Normalization**:  Both **Baloo** and **Bagheera** automatically handle accents and diacritics. Searching for `tags:vacacion` will match "Vacación".
 
 ---
