@@ -52,14 +52,15 @@ meaning it can handle thousands of images without performance degradation.
   multiple selections, and `Shift+Click` for range selection.
 * **Double-Click**: Double-clicking a thumbnail opens it in the dedicated Image
   Viewer, optimizing the display for full-size viewing.
-* **Directory Navigation**: When `scan_max_level` is set to `0`, a directory
-  search in Flat mode shows its immediate subdirectories alongside the images
-  in the current directory; images inside those subdirectories are not scanned.
+* **Directory Navigation**: When `Scan Max Level` in configuration is set to `0`, 
+  a directory search in Flat mode shows its immediate subdirectories alongside 
+  the images in the current directory; images inside those subdirectories are 
+  not scanned.
   The parent-directory item navigates upward; directory items are unaffected by
-  image filters and are hidden in grouped view modes. Double-click or Enter opens
-  the selected directory in the same search flow. Grouped views retain their
-  normal image-scanning behavior; switching between Flat and grouped views
-  refreshes the current directory accordingly.
+  image filters and are hidden in grouped view modes. Double-click or Enter
+  opens the selected directory in the same search flow. Grouped views retain
+  their normal image-scanning behavior; switching between Flat and grouped
+  views refreshes the current directory accordingly.
 * **RAW Thumbnails**: For supported RAW formats with an embedded JPEG preview,
   Bagheera uses that preview to generate thumbnails before falling back to
   decoding the full RAW image.
@@ -110,10 +111,10 @@ access to various tools and information. You can toggle its visibility via the
 main menu or keyboard shortcut.
 
 The sidebar tabs are ordered as follows: **Metadata** (Tags, Information),
-**Browse** (Filter, Bookmarks, History), **Layouts** (X11 only), and **Maps**.
-The configurable shortcuts for these sub-tabs are Ctrl+Shift+T (Tags),
-Ctrl+Shift+I (Information), Ctrl+Shift+F (Filter), Ctrl+Shift+B (Bookmarks),
-Ctrl+Shift+H (History), Ctrl+Shift+L (Layouts), and Ctrl+Shift+M (Maps).
+**Browse** (Filter, Bookmarks, History), **Layouts** (X11 only), and **Maps**. The
+configurable shortcuts for these sub-tabs are Ctrl+Shift+T (Tags), Ctrl+Shift+I
+(Information), Ctrl+Shift+F (Filter), Ctrl+Shift+B (Bookmarks), Ctrl+Shift+H
+(History), Ctrl+Shift+L (Layouts), and Ctrl+Shift+M (Maps).
 
 ### 3.1. Metadata Tab
 
@@ -123,6 +124,10 @@ The Metadata tab contains Tags and Information, in that order.
 
 This tab allows you to view and edit tags associated with the currently
 selected images.
+
+![Bagheera Image Viewer - Tags Tab Overview](BagheeraView - tags.png)
+
+* **Visual Overview**: The screenshot above shows the **Tags** tab in action under the **Metadata** dock panel. In the central grid, multiple images are selected across a search (`tags=Travel AND tags=Xapón`). On the right, the hierarchical tag tree displays parent tags (e.g., `Travel > Xapón > Kyoto`) with checked boxes indicating applied tags. Partially applied tags across multiple selected files are shown in *italic text* (e.g., *Fushimi Inari* and *Kynkakuji*). Clicking "Apply Changes" at the bottom commits any tag modifications.
 
 * **Tag Tree View**: Displays a hierarchical list of tags.
   * **⭐ USED TAGS**: Shows tags currently applied to the selected images.
@@ -168,6 +173,10 @@ The Browse tab contains Filter, Bookmarks, and History, in that order.
 #### Filter
 
 This tab helps you filter the images displayed in the thumbnail grid.
+
+![Bagheera Image Viewer - Filter Tab Overview](BagheeraView - filter.png)
+
+* **Visual Overview**: The screenshot above shows the **Filter** tab inside the **Browse** dock panel. In the file extension filter panel, `.jpg`, `.nef`, and `.nrw` formats are toggleable. In the tag list below, specific tags (`Travel/Xapón/Kyoto/Fushimi Inari` and `Travel/Xapón/Kyoto/Kynkakuji`) are selected, dynamically updating the thumbnail view to display 324 matching items out of 5,767 total images, as shown in the bottom status summary ("5474 items hidden, 324 items shown").
 
 * **Filter by Filename Input**: Type text to filter images by their filename
   (case-insensitive).
@@ -241,6 +250,17 @@ programmatically.
 The Maps tab displays GPS locations for the currently selected images. It
 requires QtWebEngine and an internet connection to load the map.
 
+![Bagheera Image Viewer - Maps tab and main interface overview](BagheeraView - maps.png)
+
+* **Visual Overview**: The screenshot above demonstrates Bagheera Image Viewer in
+  action. At the top, the search bar displays an active filter (`tags=Travel
+  tags=Xapón`). The central grid shows images grouped by date (e.g., `2018-08-30`),
+  displaying thumbnails complete with star ratings and tag names. On the
+  right sidebar, the **Maps** tab is active with "Kinkakuji" entered in the
+  search field, highlighting its matching blue location marker on the
+  interactive map below. Red markers highlight the selected picture locations.
+  The status bar at the bottom reflects the total processed image count and
+  filtered items.
 * **Search field**: Enter decimal coordinates (`38.199083, 128.466750`), DMS
   coordinates (`38°11'56.7"N 128°28'00.3"E`), a complete Google Plus Code, or a
   place name. Press Enter or click the map-marker button to search. Place names
