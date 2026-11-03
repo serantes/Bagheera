@@ -62,3 +62,20 @@ def test_folder_groups_keep_their_existing_ascending_order():
     )
 
     assert MainWindow._is_reverse_group_order(window) is False
+
+
+def test_date_group_sort_key_uses_full_timestamp_then_name():
+    earlier = ("/photos/z-earlier.jpg", None, 1_700_000_000.0, [], 0, 1, 1)
+    later = ("/photos/a-later.jpg", None, 1_700_000_360.0, [], 0, 2, 1)
+    tied_by_time = ("/photos/a-earlier.jpg", None, 1_700_000_000.0, [], 0, 3, 1)
+
+    sorted_items = sorted(
+        [earlier, later, tied_by_time],
+        key=MainWindow._date_group_sort_key,
+    )
+
+    assert [item[0] for item in sorted_items] == [
+        "/photos/a-earlier.jpg",
+        "/photos/z-earlier.jpg",
+        "/photos/a-later.jpg",
+    ]

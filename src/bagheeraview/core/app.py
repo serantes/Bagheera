@@ -4292,6 +4292,13 @@ class MainWindow(QMainWindow):
                     hi = mid
         return lo
 
+    @staticmethod
+    def _date_group_sort_key(item):
+        """Sort date-grouped items by modification timestamp, then by name."""
+        path, _, mtime, _, _, _, _ = item
+        return (mtime if mtime is not None else 0,
+                os.path.basename(path).lower())
+
     def _is_reverse_group_order(self):
         """Return whether grouped items should be ordered in reverse."""
         if self.proxy_model.group_by_folder:
@@ -4355,6 +4362,11 @@ class MainWindow(QMainWindow):
                 if sort_by_name:
                     return os.path.basename(path).lower()
                 # Handle None mtime safely for sort
+                if (self.proxy_model.group_by_day or
+                        self.proxy_model.group_by_week or
+                        self.proxy_model.group_by_month or
+                        self.proxy_model.group_by_year):
+                    return self._date_group_sort_key(data_tuple)
                 return mtime if mtime is not None else 0
 
             self.found_items_data.sort(key=user_sort_key, reverse=rev)
