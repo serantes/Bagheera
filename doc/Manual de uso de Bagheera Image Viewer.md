@@ -261,9 +261,10 @@ Muestra una ventana detallada con la información del archivo, metadatos y etiqu
   * **Invertir selección**: Invierte los elementos seleccionados.
 * **Submenú Abrir**:
   * **Abrir a pantalla completa**: Abre la imagen en el visor a pantalla completa.
-  * **Abrir y buscar ubicación**: Escanea la carpeta contenedora y la establece como la búsqueda activa.
-  * **Abrir ubicación en el gestor de archivos**: Abre la carpeta de la imagen en el explorador de archivos predeterminado del sistema.
   * **Abrir con otra aplicación...**: Muestra las aplicaciones compatibles con el tipo de archivo.
+* **Abrir y buscar ubicación**: Escanea la carpeta contenedora y la establece como la búsqueda activa.
+* **Abrir ubicación con Dolphin**: Abre la carpeta de la imagen en el gestor de archivos.
+* **Búsqueda inversa de imágenes**: Sube la imagen a un alojamiento temporal y abre búsquedas en todos los motores disponibles o en Bing, Google, TinEye o Yandex. Está disponible en los menús contextuales de miniaturas y del visor.
 * **Renombrar...**: Permite cambiar el nombre del archivo.
 * **Mover a...**: Traslada la imagen a otra carpeta.
 * **Copiar a...**: Duplica la imagen en otra ubicación.

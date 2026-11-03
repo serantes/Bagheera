@@ -21,9 +21,11 @@ dependencies = [
     "geopy",
     "imagehash",
     "lmdb",
+    "Pillow",
     "psutil",
     "pyparsing",
     "PySide6",
+    "requests",
     "watchdog",
 ]
 

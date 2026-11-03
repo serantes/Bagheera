@@ -6171,6 +6171,11 @@ class MainWindow(QMainWindow):
             )
         )
 
+        reverse_search_menu = menu.addMenu(
+            QIcon.fromTheme("edit-find"), UITexts.REVERSE_IMAGE_SEARCH)
+        self.populate_reverse_image_search_submenu(
+            reverse_search_menu, path)
+
         quick_tag_paths = []
         for index in selected_indexes:
             image_path = self.proxy_model.data(index, PATH_ROLE)
@@ -6377,6 +6382,35 @@ class MainWindow(QMainWindow):
             return
         target = path if os.path.isdir(path) else os.path.dirname(path)
         self.process_term(f"file:/{target}")
+
+    def open_reverse_image_search(self, image_path, engines=None):
+        """Upload an image and open its reverse-search results in a browser."""
+        if not image_path or not os.path.isfile(image_path):
+            QMessageBox.critical(self, UITexts.ERROR, UITexts.FILE_NOT_FOUND)
+            return
+
+        try:
+            from .reverse_image_search import reverse_image_search
+
+            reverse_image_search(image_path, engines=engines)
+        except (OSError, RuntimeError, ValueError) as error:
+            QMessageBox.critical(self, UITexts.ERROR, str(error))
+
+    def populate_reverse_image_search_submenu(self, menu, image_path):
+        """Adds the all-engines and per-engine reverse-search actions."""
+        menu.addAction(UITexts.REVERSE_IMAGE_SEARCH_ALL).triggered.connect(
+            lambda checked=False:
+            self.open_reverse_image_search(image_path))
+        menu.addSeparator()
+        for label, engine in (
+                (UITexts.REVERSE_IMAGE_SEARCH_BING, "bing"),
+                (UITexts.REVERSE_IMAGE_SEARCH_GOOGLE, "google"),
+                (UITexts.REVERSE_IMAGE_SEARCH_TINEYE, "tineye"),
+                (UITexts.REVERSE_IMAGE_SEARCH_YANDEX, "yandex")):
+            menu.addAction(label).triggered.connect(
+                lambda checked=False, selected_engine=engine:
+                self.open_reverse_image_search(
+                    image_path, engines=[selected_engine]))
 
     def toggle_group_collapse(self, group_name):
         """Toggles the collapsed state of a group."""

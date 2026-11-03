@@ -2713,6 +2713,13 @@ class ImageViewer(QWidget):
             if path:
                 self.main_win.populate_open_with_submenu(menu, path)
 
+    def _populate_reverse_image_search_menu(self, menu):
+        """Populates the reverse image search submenu for the current image."""
+        if self.main_win:
+            path = self.controller.get_current_path()
+            if path:
+                self.main_win.populate_reverse_image_search_submenu(menu, path)
+
     def _build_menu_from_data(self, target_menu, items):
         """Builds a menu or submenu from a list of dictionary items."""
         for item in items:
@@ -3102,6 +3109,8 @@ class ImageViewer(QWidget):
                  "dynamic_submenu": self._populate_open_with_menu},
                 {"text": UITexts.CONTEXT_MENU_OPEN_SEARCH_LOCATION,
                  "action": "open_folder", "icon": "folder-search"},
+                {"text": UITexts.REVERSE_IMAGE_SEARCH, "icon": "edit-find",
+                 "dynamic_submenu": self._populate_reverse_image_search_menu},
                 "separator",
                 {"text": UITexts.VIEWER_MENU_TAGS,
                  "action": "fast_tag", "icon": "document-properties"},

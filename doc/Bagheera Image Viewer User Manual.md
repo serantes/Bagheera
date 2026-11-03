@@ -373,12 +373,16 @@ extended attributes here.
   * **Invert Selection**: Inverts the current selection.
 * **Open Submenu**:
   * **Open in Fullscreen Viewer**: Opens the image in the viewer in fullscreen.
-  * **Open and search location**: Scans the directory containing the image and
-    applies it as the current search.
-  * **Open location with default application**: Opens the image's directory in
-    your system's default file manager.
   * **Open with other application...**: Provides a list of applications
     associated with the image's MIME type.
+* **Open and search location**: Scans the directory containing the image and
+  applies it as the current search.
+* **Open location with Dolphin**: Opens the image's directory in the file
+  manager.
+* **Reverse Image Search**: Uploads the selected image to temporary image
+  hosting and opens searches in all available engines or in Bing, Google,
+  TinEye, or Yandex. This option is available in both the thumbnail and image
+  viewer context menus.
 * **Rename...**: Renames the selected image.
 * **Move to...**: Moves the selected image to a new location.
 * **Copy to...**: Copies the selected image to a new location.
