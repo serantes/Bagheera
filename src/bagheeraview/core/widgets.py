@@ -1095,8 +1095,23 @@ class TagEditWidget(QWidget):
 
     def create_new_tag(self):
         """Opens a dialog to create a new tag and adds it to the trees."""
-        new_tag, ok = QInputDialog.getText(self, UITexts.TAG_NEW_TAG_TITLE,
-                                           UITexts.TAG_NEW_TAG_TEXT)
+        current_index = self.tree_view.currentIndex()
+        selected_tag = None
+        if current_index.isValid():
+            source_index = self.proxy_model.mapToSource(current_index)
+            item = self.source_model.itemFromIndex(source_index)
+            if item:
+                selected_tag = self.reconstruct_path(item)
+
+        prefix = f"{selected_tag}/" if selected_tag else ""
+        dialog = QInputDialog(self)
+        dialog.setWindowTitle(UITexts.TAG_NEW_TAG_TITLE)
+        dialog.setLabelText(UITexts.TAG_NEW_TAG_TEXT)
+        dialog.setInputMode(QInputDialog.TextInput)
+        dialog.setTextValue(prefix)
+        dialog.findChild(QLineEdit).setCursorPosition(len(prefix))
+        ok = dialog.exec() == QDialog.DialogCode.Accepted
+        new_tag = dialog.textValue()
         if ok and new_tag.strip():
             tag_path = new_tag.strip()
             # Mark it as a forced, manual change to ensure it gets saved

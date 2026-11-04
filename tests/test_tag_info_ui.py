@@ -70,3 +70,56 @@ def test_double_click_without_tag_information_does_nothing(qapp, tmp_path,
     tag_widget.on_tag_info_double_clicked(proxy_index)
 
     assert opened == []
+
+
+def test_add_tag_uses_selected_tag_as_prefix_and_places_cursor_at_end(
+        qapp, monkeypatch):
+    tag_widget = create_tag_widget()
+    tag_widget.get_or_create_node(
+        "Travel/Camboxa", tag_widget.root_all, True, False)
+    tag_widget.get_or_create_node(
+        "Travel/Camboxa", tag_widget.root_favs, True, False)
+    selected_index = tag_widget.item_mapping["Travel/Camboxa"][0].index()
+    tag_widget.tree_view.setCurrentIndex(
+        tag_widget.proxy_model.mapFromSource(selected_index))
+    dialog_state = {}
+
+    class FakeInputDialog:
+        def __init__(self, parent):
+            pass
+
+        def setWindowTitle(self, title):
+            pass
+
+        def setLabelText(self, label):
+            pass
+
+        def setInputMode(self, input_mode):
+            pass
+
+        def setTextValue(self, value):
+            dialog_state["value"] = value
+
+        def findChild(self, child_type):
+            assert child_type is widgets.QLineEdit
+            return self
+
+        def setCursorPosition(self, position):
+            dialog_state["cursor_position"] = position
+
+        def exec(self):
+            return widgets.QDialog.DialogCode.Accepted
+
+        def textValue(self):
+            return "Travel/Camboxa/NewTrip"
+
+    FakeInputDialog.TextInput = 0
+    monkeypatch.setattr(widgets, "QInputDialog", FakeInputDialog)
+
+    tag_widget.create_new_tag()
+
+    assert dialog_state == {
+        "value": "Travel/Camboxa/",
+        "cursor_position": len("Travel/Camboxa/"),
+    }
+    assert "Travel/Camboxa/NewTrip" in tag_widget.manually_changed
