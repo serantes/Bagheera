@@ -408,6 +408,10 @@ try:
         QTextBrowser,
         QVBoxLayout,
     )
+    if __package__:
+        from .constants import UITexts
+    else:
+        from constants import UITexts
     HAS_PYSIDE6 = True
 except ImportError:
     HAS_PYSIDE6 = False
@@ -435,7 +439,7 @@ class WikipediaSelectorDialog(QDialog):
 
     def __init__(self, parent=None, initial_query: str = "", languages: str = "en,es,gl,ja,ko,zh"):
         super().__init__(parent)
-        self.setWindowTitle("Wikipedia Article Selector")
+        self.setWindowTitle(UITexts.WIKIPEDIA_TITLE)
         self.resize(950, 600)
 
         self._selected_markdown: Optional[str] = None
@@ -453,16 +457,20 @@ class WikipediaSelectorDialog(QDialog):
 
         self.query_input = SearchLineEdit(parent=self, dialog=self)
         self.query_input.setText(initial_query)
-        self.query_input.setPlaceholderText("Enter search query...")
+        self.query_input.setPlaceholderText(
+            UITexts.WIKIPEDIA_SEARCH_PLACEHOLDER
+        )
         toolbar_layout.addWidget(self.query_input, stretch=2)
 
         # Languages text input (comma-separated, default: en,es,gl,ja,ko,zh)
         self.lang_input = QLineEdit(languages)
-        self.lang_input.setPlaceholderText("Languages (e.g., en,es,gl,ja,ko,zh)")
+        self.lang_input.setPlaceholderText(
+            UITexts.WIKIPEDIA_LANGUAGES_PLACEHOLDER
+        )
         self.lang_input.setMaximumWidth(180)
         toolbar_layout.addWidget(self.lang_input)
 
-        self.search_button = QPushButton("Buscar")
+        self.search_button = QPushButton(UITexts.WIKIPEDIA_SEARCH)
         self.search_button.clicked.connect(self._on_search)
         toolbar_layout.addWidget(self.search_button)
 
@@ -471,10 +479,13 @@ class WikipediaSelectorDialog(QDialog):
         # 2. Splitter section (Results grid left, Markdown viewer right)
         splitter = QSplitter(Qt.Horizontal)
 
-        # Results table (Columns: Idioma, Nombre)
+        # Results table
         self.table = QTableWidget()
         self.table.setColumnCount(2)
-        self.table.setHorizontalHeaderLabels(["Idioma", "Nombre"])
+        self.table.setHorizontalHeaderLabels([
+            UITexts.WIKIPEDIA_LANGUAGE_COLUMN,
+            UITexts.WIKIPEDIA_ARTICLE_COLUMN,
+        ])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -494,12 +505,12 @@ class WikipediaSelectorDialog(QDialog):
         bottom_layout = QHBoxLayout()
         bottom_layout.addStretch()
 
-        self.accept_button = QPushButton("Aceptar")
+        self.accept_button = QPushButton(UITexts.WIKIPEDIA_ACCEPT)
         self.accept_button.clicked.connect(self._on_accept)
         self.accept_button.setDefault(False)
         bottom_layout.addWidget(self.accept_button)
 
-        self.cancel_button = QPushButton("Cancelar")
+        self.cancel_button = QPushButton(UITexts.CANCEL)
         self.cancel_button.clicked.connect(self.reject)
         bottom_layout.addWidget(self.cancel_button)
 
@@ -592,7 +603,9 @@ class WikipediaSelectorDialog(QDialog):
             md_text = summary.to_markdown(image_src=local_image_src)
             self.viewer.setMarkdown(md_text)
         except Exception as exc:
-            self.viewer.setPlainText(f"Error loading article summary: {exc}")
+            self.viewer.setPlainText(
+                UITexts.WIKIPEDIA_ERROR_LOADING.format(exc)
+            )
 
     def _on_accept(self) -> None:
         """Store the selected markdown text and accept the dialog."""

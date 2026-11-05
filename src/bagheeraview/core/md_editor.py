@@ -51,12 +51,14 @@ from PySide6.QtWidgets import (
 )
 
 if __package__:
+    from .constants import UITexts
     from .wikipedia_summary import (
         WikipediaError,
         fetch_image,
         select_wikipedia_summary,
     )
 else:
+    from constants import UITexts
     from wikipedia_summary import (
         WikipediaError,
         fetch_image,
@@ -795,12 +797,43 @@ class MarkdownEditorWidget(QWidget):
         return is_editing
 
     def _search_wikipedia(self):
-        """Replace the document with the selected Wikipedia article."""
+        """Insert the selected Wikipedia article into the document."""
         markdown = select_wikipedia_summary(
             self.wikipedia_query, parent=self
         )
-        if markdown and markdown.strip():
+        if not markdown or not markdown.strip():
+            return
+
+        current_text = self.get_markdown_text()
+        if not current_text.strip():
             self.set_markdown_text(markdown)
+            return
+
+        message_box = QMessageBox(self)
+        message_box.setIcon(QMessageBox.Icon.Question)
+        message_box.setWindowTitle("Wikipedia")
+        message_box.setText(UITexts.WIKIPEDIA_EXISTING_TEXT)
+        overwrite_button = message_box.addButton(
+            UITexts.OVERWRITE, QMessageBox.ButtonRole.AcceptRole
+        )
+        append_button = message_box.addButton(
+            UITexts.WIKIPEDIA_APPEND, QMessageBox.ButtonRole.ActionRole
+        )
+        message_box.addButton(
+            UITexts.CANCEL, QMessageBox.ButtonRole.RejectRole
+        )
+        message_box.setDefaultButton(overwrite_button)
+        message_box.exec()
+
+        selected_button = message_box.clickedButton()
+        if selected_button is overwrite_button:
+            self.set_markdown_text(markdown)
+        elif selected_button is append_button:
+            separator = (
+                "" if current_text.endswith("\n")
+                else "\n\n"
+            )
+            self.set_markdown_text(current_text + separator + markdown)
 
     def get_template(self) -> str:
         """Return the template used when there is no document to load.
