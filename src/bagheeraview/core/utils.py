@@ -6,79 +6,82 @@ used throughout the application, such as file system helpers.
 """
 import os
 from contextlib import contextmanager
-from PySide6.QtDBus import QDBusConnection, QDBusInterface
+from PySide6.QtCore import QMetaType
+from PySide6.QtDBus import (
+    QDBusArgument, QDBusConnection, QDBusInterface, QDBusMessage
+)
+from PySide6.QtCore import QProcess
 from .constants import UITexts
 
 
+SS_SERVICE = "org.freedesktop.ScreenSaver"
+SS_PATH = "/org/freedesktop/ScreenSaver"
+SS_IFACE = "org.freedesktop.ScreenSaver"
+
+
 class PowerManager:
-    """Manages system power inhibition (screensaver, sleep) via DBus."""
     _inhibit_counter = 0
     _inhibit_cookie = None
 
     @classmethod
     def inhibit(cls, application_name="Bagheera", reason="Running background tasks"):
-        """
-        Requests an inhibit lock from the screensaver via DBus
-        and stores the returned uint32 cookie.
-        """
-        if cls._inhibit_counter == 0:
-            try:
-                iface = QDBusInterface(
-                    "org.freedesktop.ScreenSaver",
-                    "/org/freedesktop/ScreenSaver",
-                    "org.freedesktop.ScreenSaver",
-                    QDBusConnection.sessionBus()
-                )
-
-                if iface.isValid():
-                    reply = iface.call("Inhibit", application_name, reason)
-
-                    if reply.type() == reply.MessageType.ReplyMessage:
-                        arguments = reply.arguments()
-                        if arguments:
-                            # Capturamos la cookie devuelta y aseguramos el rango uint32
-                            cls._inhibit_cookie = int(arguments[0]) & 0xFFFFFFFF
-                            cls._inhibit_counter += 1
-                    else:
-                        print(f"{UITexts.ERROR} inhibiting: {reply.errorMessage()}")
-                else:
-                    print(f"{UITexts.ERROR} inhibiting: Invalid DBus interface")
-            except Exception as e:
-                print(f"{UITexts.ERROR} inhibiting: {e}")
-        else:
+        if cls._inhibit_counter > 0:
             cls._inhibit_counter += 1
+            return
+
+        try:
+            iface = QDBusInterface(SS_SERVICE, SS_PATH, SS_IFACE,
+                                   QDBusConnection.sessionBus())
+            if not iface.isValid():
+                print(f"{UITexts.ERROR} inhibiting: Invalid DBus interface")
+                return
+
+            reply = iface.call("Inhibit", application_name, reason)
+            if reply.type() == QDBusMessage.MessageType.ReplyMessage:
+                args = reply.arguments()
+                if args:
+                    cls._inhibit_cookie = int(args[0]) & 0xFFFFFFFF
+                    cls._inhibit_counter = 1
+            else:
+                print(f"{UITexts.ERROR} inhibiting: {reply.errorMessage()}")
+        except Exception as e:
+            print(f"{UITexts.ERROR} inhibiting: {e}")
 
     @classmethod
     def uninhibit(cls):
-        """
-        Decrements the counter and releases the screensaver inhibit lock
-        via DBus when the counter reaches zero.
-        """
         if cls._inhibit_counter > 0:
             cls._inhibit_counter -= 1
 
-        if cls._inhibit_counter == 0 and cls._inhibit_cookie is not None:
-            try:
-                iface = QDBusInterface(
-                    "org.freedesktop.ScreenSaver",
-                    "/org/freedesktop/ScreenSaver",
-                    "org.freedesktop.ScreenSaver",
-                    QDBusConnection.sessionBus()
-                )
+        if cls._inhibit_counter != 0 or cls._inhibit_cookie is None:
+            return
 
-                if iface.isValid():
-                    # Aseguramos el rango de 32 bits sin signo con la máscara
-                    cookie_val = int(cls._inhibit_cookie) & 0xFFFFFFFF
-                    reply = iface.call("UnInhibit", cookie_val)
+        cookie = int(cls._inhibit_cookie) & 0xFFFFFFFF
 
-                    if reply.type() == reply.MessageType.ErrorMessage:
-                        print(f"{UITexts.ERROR} uninhibiting: {reply.errorMessage()}")
-                    else:
-                        cls._inhibit_cookie = None
-                else:
-                    print(f"{UITexts.ERROR} uninhibiting: Invalid DBus interface")
-            except Exception as e:
-                print(f"{UITexts.ERROR} uninhibiting: {e}")
+        # Does not work at all, so we use dbus-send instead. Leaving this here for reference.
+        # try:
+        #     msg = QDBusMessage.createMethodCall(
+        #         SS_SERVICE, SS_PATH, SS_IFACE, "UnInhibit"
+        #     )
+        #     msg.setArguments([QDBusArgument(cookie, QMetaType.Type.UInt)])
+        #     reply = QDBusConnection.sessionBus().call(msg)
+
+        #     if reply.type() != QDBusMessage.MessageType.ErrorMessage:
+        #         cls._inhibit_cookie = None
+        #         return
+        #     print(f"{UITexts.ERROR} uninhibiting: {reply.errorName()} - {reply.errorMessage()}")
+        # except Exception as e:
+        #     print(f"{UITexts.ERROR} uninhibiting (QDBusArgument): {e}")
+
+        code = QProcess.execute("dbus-send", [
+            "--session", "--type=method_call",
+            f"--dest={SS_SERVICE}", SS_PATH,
+            f"{SS_IFACE}.UnInhibit",
+            f"uint32:{cookie}",
+        ])
+        if code == 0:
+            cls._inhibit_cookie = None
+        else:
+            print(f"{UITexts.ERROR} uninhibiting: dbus-send exit code {code}")
 
 
 @contextmanager
