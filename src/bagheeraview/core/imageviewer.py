@@ -2310,16 +2310,13 @@ class ImageViewer(QWidget):
                 filmstrip_position = self.main_win.filmstrip_position \
                     if self.main_win else 'bottom'
 
-                if self.filmstrip.isVisible():
+                if not self.filmstrip.isHidden():
                     if filmstrip_position in ('left', 'right'):
                         available_w -= self.filmstrip.width()
                     else:  # top, bottom
                         available_h -= self.filmstrip.height()
 
-                # BUG: on first load this call fails because status_bar_container is not
-                # visible yet, causing incorrect zoom calculation.
-                # All calls to self.status_bar_container.isVisible() must be fixed.
-                if self.status_bar_container.isVisible():
+                if not self.status_bar_container.isHidden():
                     available_h -= self.status_bar_container.sizeHint().height()
                 should_resize = True
 
@@ -2455,10 +2452,10 @@ class ImageViewer(QWidget):
                 if self.main_win else 'bottom'
             is_vertical_filmstrip = filmstrip_position in ('left', 'right')
 
-            if self.status_bar_container.isVisible():
+            if not self.status_bar_container.isHidden():
                 content_h += self.status_bar_container.sizeHint().height()
 
-            if self.filmstrip.isVisible():
+            if not self.filmstrip.isHidden():
                 if is_vertical_filmstrip:
                     content_w += self.filmstrip.width()
                 else:  # top, bottom
