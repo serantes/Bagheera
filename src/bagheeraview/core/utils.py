@@ -6,8 +6,8 @@ used throughout the application, such as file system helpers.
 """
 import os
 from contextlib import contextmanager
-from PySide6.QtDBus import QDBusConnection, QDBusMessage
-from .constants import PROG_ID, UITexts
+from PySide6.QtDBus import QDBusConnection, QDBusInterface
+from .constants import UITexts
 
 
 class PowerManager:
@@ -16,31 +16,37 @@ class PowerManager:
     _inhibit_cookie = None
 
     @classmethod
-    def inhibit(cls):
+    def inhibit(cls, application_name="Bagheera", reason="Running background tasks"):
         """
-        Increments the inhibition counter and sends a DBus request to inhibit
-        the screensaver if it's the first request.
+        Requests an inhibit lock from the screensaver via DBus
+        and stores the returned uint32 cookie.
         """
-        cls._inhibit_counter += 1
-        if cls._inhibit_counter > 1:
-            return
+        if cls._inhibit_counter == 0:
+            try:
+                iface = QDBusInterface(
+                    "org.freedesktop.ScreenSaver",
+                    "/org/freedesktop/ScreenSaver",
+                    "org.freedesktop.ScreenSaver",
+                    QDBusConnection.sessionBus()
+                )
 
-        try:
-            msg = QDBusMessage.createMethodCall(
-                "org.freedesktop.ScreenSaver",
-                "/org/freedesktop/ScreenSaver",
-                "org.freedesktop.ScreenSaver",
-                "Inhibit"
-            )
-            msg.setArguments([PROG_ID, "Viewing images"])
-            reply = QDBusConnection.sessionBus().call(msg)
-            if reply.type() == QDBusMessage.ReplyMessage:
-                cls._inhibit_cookie = reply.arguments()[0]
-            else:
-                cls._inhibit_cookie = None
-        except Exception as e:
-            print(f"{UITexts.ERROR} inhibiting power management: {e}")
-            cls._inhibit_cookie = None
+                if iface.isValid():
+                    reply = iface.call("Inhibit", application_name, reason)
+
+                    if reply.type() == reply.MessageType.ReplyMessage:
+                        arguments = reply.arguments()
+                        if arguments:
+                            # Capturamos la cookie devuelta y aseguramos el rango uint32
+                            cls._inhibit_cookie = int(arguments[0]) & 0xFFFFFFFF
+                            cls._inhibit_counter += 1
+                    else:
+                        print(f"{UITexts.ERROR} inhibiting: {reply.errorMessage()}")
+                else:
+                    print(f"{UITexts.ERROR} inhibiting: Invalid DBus interface")
+            except Exception as e:
+                print(f"{UITexts.ERROR} inhibiting: {e}")
+        else:
+            cls._inhibit_counter += 1
 
     @classmethod
     def uninhibit(cls):
@@ -53,15 +59,24 @@ class PowerManager:
 
         if cls._inhibit_counter == 0 and cls._inhibit_cookie is not None:
             try:
-                msg = QDBusMessage.createMethodCall(
+                iface = QDBusInterface(
                     "org.freedesktop.ScreenSaver",
                     "/org/freedesktop/ScreenSaver",
                     "org.freedesktop.ScreenSaver",
-                    "UnInhibit"
+                    QDBusConnection.sessionBus()
                 )
-                msg.setArguments([int(cls._inhibit_cookie)])
-                QDBusConnection.sessionBus().call(msg)
-                cls._inhibit_cookie = None
+
+                if iface.isValid():
+                    # Aseguramos el rango de 32 bits sin signo con la máscara
+                    cookie_val = int(cls._inhibit_cookie) & 0xFFFFFFFF
+                    reply = iface.call("UnInhibit", cookie_val)
+
+                    if reply.type() == reply.MessageType.ErrorMessage:
+                        print(f"{UITexts.ERROR} uninhibiting: {reply.errorMessage()}")
+                    else:
+                        cls._inhibit_cookie = None
+                else:
+                    print(f"{UITexts.ERROR} uninhibiting: Invalid DBus interface")
             except Exception as e:
                 print(f"{UITexts.ERROR} uninhibiting: {e}")
 

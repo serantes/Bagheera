@@ -982,6 +982,7 @@ class TagEditWidget(QWidget):
             parent=dialog,
             auto_load=True,
             capture_keys=True,
+            tag=tag,
         )
         self.markdown_editor.file_saved.connect(
             lambda _path: self._refresh_tag_info_style(tag))

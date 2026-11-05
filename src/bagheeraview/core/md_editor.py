@@ -20,10 +20,12 @@ Importing the module has no side effects: no ``QApplication`` is created
 and nothing is shown until ``main()`` is called.
 """
 
+import base64
 import os
 import re
 import sys
 from typing import Callable, List, Optional
+from urllib.parse import urlsplit
 
 from PySide6.QtCore import QEvent, QObject, Qt, QUrl, Signal
 from PySide6.QtGui import (
@@ -41,13 +43,25 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
-    QPushButton,
     QStackedWidget,
     QTextBrowser,
     QToolBar,
     QVBoxLayout,
     QWidget,
 )
+
+if __package__:
+    from .wikipedia_summary import (
+        WikipediaError,
+        fetch_image,
+        select_wikipedia_summary,
+    )
+else:
+    from wikipedia_summary import (
+        WikipediaError,
+        fetch_image,
+        select_wikipedia_summary,
+    )
 
 __all__ = [
     "DualModeMarkdownWidget",
@@ -321,6 +335,8 @@ class DualModeMarkdownWidget(QStackedWidget):
         editor: The ``PlainTextEdit`` used in edit mode.
     """
 
+    image_load_failed = Signal(str)
+
     def __init__(self, parent: Optional[QWidget] = None):
         """Initialize the widget in view mode.
 
@@ -387,8 +403,38 @@ class DualModeMarkdownWidget(QStackedWidget):
         self._release_selection_and_focus()
 
         self.edit_mode = False
-        self.viewer.setMarkdown(self.raw_markdown)
+        self.viewer.setMarkdown(self._markdown_for_view(self.raw_markdown))
         self.setCurrentWidget(self.viewer)
+
+    def _markdown_for_view(self, markdown: str) -> str:
+        """Embed Wikimedia images in rendered Markdown without editing source."""
+        image_pattern = re.compile(r"!\[([^\]]*)\]\((https://[^)\s]+)\)")
+
+        def embed_image(match: re.Match) -> str:
+            url = match.group(2)
+            host = (urlsplit(url).hostname or "").lower()
+            if not (host == "wikimedia.org" or host.endswith(".wikimedia.org")):
+                return match.group(0)
+
+            try:
+                image_data = fetch_image(url)
+            except WikipediaError as exception:
+                self.image_load_failed.emit(str(exception))
+                return match.group(0)
+
+            extension = urlsplit(url).path.lower().rsplit(".", 1)[-1]
+            mime_type = {
+                "jpg": "image/jpeg",
+                "jpeg": "image/jpeg",
+                "webp": "image/webp",
+            }.get(extension, "image/png")
+            image_src = (
+                f"data:{mime_type};base64,"
+                f"{base64.b64encode(image_data).decode('ascii')}"
+            )
+            return f"![{match.group(1)}]({image_src})"
+
+        return image_pattern.sub(embed_image, markdown)
 
     def set_edit_mode(self):
         """Switch to plain text editing with a fixed monospace font.
@@ -489,6 +535,7 @@ class MarkdownEditorWidget(QWidget):
         show_toolbar: bool = True,
         auto_load: bool = True,
         capture_keys: bool = True,
+        tag: Optional[str] = None,
     ):
         """Create the editor.
 
@@ -509,9 +556,14 @@ class MarkdownEditorWidget(QWidget):
             capture_keys: Whether the editor takes every key press while
                 it is shown, so the host application cannot react to
                 them. Ctrl+Q is always left to the host.
+            tag: Optional tag path used to search Wikipedia by its last
+                path component.
         """
         super().__init__(parent)
         self.capture_keys = capture_keys
+        self.wikipedia_query = (
+            tag.rsplit("/", 1)[-1].strip() if tag else ""
+        )
         self.filepath = filepath
         self.template_text = template_text
         self.template_file = template_file
@@ -522,6 +574,11 @@ class MarkdownEditorWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         self.text_area = DualModeMarkdownWidget()
+        self.text_area.image_load_failed.connect(
+            lambda error: self.status_message.emit(
+                f"Could not load Wikipedia image: {error}", 5000
+            )
+        )
         self.toolbar = self._create_toolbar()
         self.toolbar.setVisible(show_toolbar)
 
@@ -552,11 +609,27 @@ class MarkdownEditorWidget(QWidget):
 
         toolbar.addSeparator()
 
-        self.mode_btn = QPushButton("👁️")
+        self.mode_btn = QAction("👁️", self)
         self.mode_btn.setToolTip("Switch to Edit Mode (plain text)")
         self.mode_btn.setCheckable(True)
-        self.mode_btn.clicked.connect(self.toggle_mode)
-        toolbar.addWidget(self.mode_btn)
+        self.mode_btn.triggered.connect(
+            lambda _checked=False: self.toggle_mode()
+        )
+        toolbar.addAction(self.mode_btn)
+        mode_button = toolbar.widgetForAction(self.mode_btn)
+        save_button = toolbar.widgetForAction(self.save_action)
+        if mode_button is not None and save_button is not None:
+            mode_button.setFixedSize(save_button.sizeHint())
+
+        self.wikipedia_action = QAction("Wikipedia", self)
+        self.wikipedia_action.setToolTip(
+            "Search Wikipedia for the current tag"
+        )
+        self.wikipedia_action.setEnabled(bool(self.wikipedia_query))
+        self.wikipedia_action.triggered.connect(
+            lambda _checked=False: self._search_wikipedia()
+        )
+        toolbar.addAction(self.wikipedia_action)
 
         self._format_actions: List[QAction] = []
         self._add_format_actions(toolbar)
@@ -720,6 +793,14 @@ class MarkdownEditorWidget(QWidget):
             )
         self.mode_changed.emit(is_editing)
         return is_editing
+
+    def _search_wikipedia(self):
+        """Replace the document with the selected Wikipedia article."""
+        markdown = select_wikipedia_summary(
+            self.wikipedia_query, parent=self
+        )
+        if markdown and markdown.strip():
+            self.set_markdown_text(markdown)
 
     def get_template(self) -> str:
         """Return the template used when there is no document to load.
