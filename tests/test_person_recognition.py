@@ -59,6 +59,31 @@ def test_person_recognition_db_persistence_and_matching(temp_db_dir):
     assert matched_unknown is None
 
 
+def test_rename_tag_updates_matching_person_records(temp_db_dir):
+    db = PersonRecognitionDB(db_path=temp_db_dir)
+    try:
+        encoding = [0.1 * i for i in range(128)]
+        assert db.add_face("id_alice", encoding, "People/Alice") is True
+        assert db.add_face("id_child", encoding, "People/Alice/Child") is True
+        assert db.add_face("id_alice2", encoding, "People/Alicia") is True
+
+        assert db.rename_tag("People/Alice", "People/Anne") == 2
+        assert {
+            record["tag"] for record in db.get_all_faces()
+        } == {"People/Anne", "People/Anne/Child", "People/Alicia"}
+
+        db.close()
+        reopened = PersonRecognitionDB(db_path=temp_db_dir)
+        try:
+            assert {
+                record["tag"] for record in reopened.get_all_faces()
+            } == {"People/Anne", "People/Anne/Child", "People/Alicia"}
+        finally:
+            reopened.close()
+    finally:
+        db.close()
+
+
 def test_extract_face_encoding(temp_db_dir):
     # Create synthetic image file
     img_path = os.path.join(temp_db_dir, "test_face.png")

@@ -457,6 +457,49 @@ class PersonRecognitionDB:
             self._ensure_cache_locked()
             return [dict(record) for record in self._records.values()]
 
+    def rename_tag(self, old_tag, new_tag):
+        """Rename a tag and its descendants in every stored face record.
+
+        Returns:
+            int: Number of records updated.
+        """
+        if not old_tag or not new_tag or old_tag == new_tag:
+            return 0
+
+        with self._lock:
+            if not self._lmdb_env or not self._db:
+                self._open_db_locked()
+            if not self._lmdb_env or not self._db:
+                raise RuntimeError("Person recognition database is unavailable.")
+            self._ensure_cache_locked()
+
+            updates = {}
+            for face_id, record in self._records.items():
+                tag = record.get("tag") or ""
+                if tag == old_tag or tag.startswith(old_tag + "/"):
+                    updates[face_id] = {
+                        **record,
+                        "tag": new_tag + tag[len(old_tag):],
+                    }
+            if not updates:
+                return 0
+
+            try:
+                with self._lmdb_env.begin(db=self._db, write=True) as txn:
+                    for face_id, record in updates.items():
+                        txn.put(
+                            face_id.encode("utf-8"),
+                            json.dumps(record).encode("utf-8"))
+            except lmdb.Error as exc:
+                logger.error("Error renaming person recognition tags: %s", exc)
+                raise RuntimeError(
+                    "Could not update person recognition records.") from exc
+
+            self._records.update(updates)
+            logger.info("Renamed tag in %d person recognition record(s)",
+                        len(updates))
+            return len(updates)
+
     def find_matches(self, encoding, tolerance=0.6):
         """Return every stored record within ``tolerance`` of ``encoding``.
 

@@ -627,6 +627,10 @@ _UI_TEXTS = {
         "RENAME_TAG_TITLE": "Rename Tag",
         "RENAME_TAG_LABEL": "Tag path:",
         "RENAME_TAG_ITEMS_COUNT": "Number of elements with this tag: {}",
+        "RENAME_TAG_PERSON_CONFIRM_TEXT": "This partial rename will update {} "
+        "person recognition record(s) for '{}' to '{}'. Records outside the "
+        "selected files are also affected, which may affect person recognition. "
+        "Continue?",
         "EDIT_TAG_INFO": "Edit tag information",
         "COPY": "Copy",
         "DELETE": "Delete",
@@ -1390,6 +1394,10 @@ _UI_TEXTS = {
         "RENAME_TAG_TITLE": "Renombrar Etiqueta",
         "RENAME_TAG_LABEL": "Ruta del tag:",
         "RENAME_TAG_ITEMS_COUNT": "Nº de elementos con este tag: {}",
+        "RENAME_TAG_PERSON_CONFIRM_TEXT": "Este renombrado parcial actualizará "
+        "{} registro(s) de reconocimiento de personas de '{}' a '{}'. También "
+        "afectará a registros fuera de los archivos seleccionados y puede "
+        "afectar al reconocimiento de personas. ¿Continuar?",
         "EDIT_TAG_INFO": "Editar la información de la etiqueta",
         "COPY": "Copiar",
         "DELETE": "Eliminar",
@@ -2163,6 +2171,10 @@ _UI_TEXTS = {
         "RENAME_TAG_TITLE": "Renomear Etiqueta",
         "RENAME_TAG_LABEL": "Ruta do tag:",
         "RENAME_TAG_ITEMS_COUNT": "Nº de elementos con este tag: {}",
+        "RENAME_TAG_PERSON_CONFIRM_TEXT": "Este cambio parcial actualizará "
+        "{} rexistro(s) de recoñecemento de persoas de '{}' a '{}'. Tamén "
+        "afectará a rexistros fóra dos arquivos seleccionados e pode afectar "
+        "ao recoñecemento de persoas. Continuar?",
         "EDIT_TAG_INFO": "Editar a información da etiqueta",
         "COPY": "Copiar",
         "DELETE": "Eliminar",

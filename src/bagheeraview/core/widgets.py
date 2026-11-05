@@ -17,6 +17,7 @@ import lmdb
 import logging
 import re
 import subprocess
+import tempfile
 import time
 from datetime import datetime
 from collections import deque
@@ -47,11 +48,160 @@ except ImportError:
 from .constants import (
     LAYOUTS_DIR, RATING_XATTR_NAME, XATTR_COMMENT_NAME, XATTR_NAME, UITexts,
     FACES_MENU_MAX_ITEMS_DEFAULT, APP_CONFIG, BOOKMARKS_PATH, PROG_FILE_NAME,
-    DIRECTORY_TAG_INFO, TAG_INFO_TEMPLATE, APP_DATA_DIR
+    DIRECTORY_TAG_INFO, TAG_INFO_TEMPLATE, APP_DATA_DIR,
+    PERSON_RECOGNITION_PATH, save_app_config
 )
 
 
 logger = logging.getLogger(__name__)
+
+
+def _renamed_tag_value(tag, old_tag, new_tag):
+    if tag == old_tag or tag.startswith(old_tag + "/"):
+        return new_tag + tag[len(old_tag):]
+    return tag
+
+
+def _renamed_tag_list(tags, old_tag, new_tag):
+    renamed = []
+    for tag in tags:
+        updated = _renamed_tag_value(tag, old_tag, new_tag)
+        if updated not in renamed:
+            renamed.append(updated)
+    return renamed
+
+
+def _rename_tag_info_files(old_tag, new_tag, directory):
+    """Rename a tag's information files and retarget links to those files."""
+    if not os.path.isdir(directory):
+        return 0
+
+    old_stem = old_tag.replace("/", "_")
+    new_stem = new_tag.replace("/", "_")
+    moves = {}
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            name = entry.name
+            if name == old_stem + ".md":
+                suffix = ".md"
+            elif name.startswith(old_stem + "_") and name.endswith(".md"):
+                suffix = name[len(old_stem):]
+            else:
+                continue
+            source = os.path.abspath(entry.path)
+            destination = os.path.abspath(
+                os.path.join(directory, new_stem + suffix))
+            if source != destination:
+                moves[source] = destination
+
+    source_paths = set(moves)
+    for destination in moves.values():
+        if os.path.lexists(destination) and destination not in source_paths:
+            raise FileExistsError(
+                f"Tag information file already exists: {destination}")
+
+    if not moves:
+        return 0
+
+    symlinks = []
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            if not entry.is_symlink():
+                continue
+            link_path = os.path.abspath(entry.path)
+            raw_target = os.readlink(link_path)
+            target_path = os.path.normpath(
+                raw_target if os.path.isabs(raw_target) else
+                os.path.join(directory, raw_target))
+            symlinks.append((link_path, raw_target, target_path))
+
+    staged = {}
+    completed = {}
+    try:
+        for source in moves:
+            fd, temporary = tempfile.mkstemp(
+                prefix=".tag-info-rename-", dir=directory)
+            os.close(fd)
+            os.unlink(temporary)
+            os.rename(source, temporary)
+            staged[source] = temporary
+        for source, destination in moves.items():
+            os.rename(staged[source], destination)
+            completed[source] = destination
+    except OSError:
+        for source, destination in reversed(list(completed.items())):
+            if os.path.lexists(destination) and not os.path.lexists(source):
+                os.rename(destination, source)
+        for source, temporary in staged.items():
+            if os.path.lexists(temporary) and not os.path.lexists(source):
+                os.rename(temporary, source)
+        raise
+
+    for link_path, raw_target, target_path in symlinks:
+        new_link_path = moves.get(link_path, link_path)
+        new_target_path = moves.get(target_path, target_path)
+        if new_link_path == link_path and new_target_path == target_path:
+            continue
+        new_target = (new_target_path if os.path.isabs(raw_target) else
+                      os.path.relpath(new_target_path,
+                                      os.path.dirname(new_link_path)))
+        fd, temporary = tempfile.mkstemp(
+            prefix=".tag-info-link-", dir=directory)
+        os.close(fd)
+        os.unlink(temporary)
+        try:
+            os.symlink(new_target, temporary)
+            os.replace(temporary, new_link_path)
+        except OSError:
+            if os.path.lexists(temporary):
+                os.unlink(temporary)
+            raise
+
+    return len(moves)
+
+
+def _update_config_for_tag_rename(old_tag, new_tag, main_win):
+    """Keep tag-valued configuration and in-memory quick tags in sync."""
+    prefix_keys = (
+        "person_tags", "pet_tags", "body_tags", "object_tags",
+        "landmark_tags",
+    )
+    for key in prefix_keys:
+        value = APP_CONFIG.get(key)
+        if isinstance(value, str) and value:
+            APP_CONFIG[key] = ", ".join(
+                _renamed_tag_value(tag.strip(), old_tag, new_tag)
+                for tag in value.split(","))
+
+    history_attrs = (
+        ("face_names_history", "face_names_history"),
+        ("pet_names_history", "pet_names_history"),
+        ("body_names_history", "body_names_history"),
+        ("object_names_history", "object_names_history"),
+        ("landmark_names_history", "landmark_names_history"),
+    )
+    for config_key, attribute in history_attrs:
+        values = getattr(main_win, attribute, APP_CONFIG.get(config_key, []))
+        if isinstance(values, list):
+            renamed = _renamed_tag_list(values, old_tag, new_tag)
+            if hasattr(main_win, attribute):
+                setattr(main_win, attribute, renamed)
+            else:
+                APP_CONFIG[config_key] = renamed
+
+    last_region_name = APP_CONFIG.get("last_region_name")
+    if isinstance(last_region_name, str):
+        APP_CONFIG["last_region_name"] = _renamed_tag_value(
+            last_region_name, old_tag, new_tag)
+
+    quick_tags = getattr(main_win, "mru_tags", APP_CONFIG.get("mru_tags", []))
+    renamed_quick_tags = _renamed_tag_list(
+        list(quick_tags), old_tag, new_tag)
+    if hasattr(main_win, "mru_tags"):
+        main_win.mru_tags = deque(
+            renamed_quick_tags, maxlen=main_win.mru_tags.maxlen)
+    else:
+        APP_CONFIG["mru_tags"] = renamed_quick_tags
 
 
 class TagTreeView(QTreeView):
@@ -299,19 +449,65 @@ class TagRenameDialog(QDialog):
             self.accept()
             return
 
+        person_db = None
+        matching_person_records = []
+        try:
+            from .personrecognition import PersonRecognitionDB
+            person_db = PersonRecognitionDB._instance
+            if person_db is None and os.path.isdir(PERSON_RECOGNITION_PATH):
+                person_db = PersonRecognitionDB.get_instance()
+            if person_db is not None:
+                for record in person_db.get_all_faces():
+                    tag = record.get("tag") or ""
+                    if tag == old_tag or tag.startswith(old_tag + "/"):
+                        matching_person_records.append(record)
+        except Exception as e:
+            logger.exception("Could not inspect person recognition records")
+            QMessageBox.critical(self, UITexts.ERROR, str(e))
+            return
+
+        if matching_person_records and not self.all_files:
+            answer = QMessageBox.question(
+                self, UITexts.RENAME_TAG_TITLE,
+                UITexts.RENAME_TAG_PERSON_CONFIRM_TEXT.format(
+                    len(matching_person_records), old_tag, new_tag),
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if answer != QMessageBox.Yes:
+                self.reject()
+                return
+
+        matched_region_types = self.get_matched_region_types(old_tag)
         self.btn_accept.setEnabled(False)
         self.btn_cancel.setEnabled(False)
         self.edit_path.setEnabled(False)
 
         old_last_term = old_tag.split('/')[-1]
         new_last_term = new_tag.split('/')[-1]
-        matched_region_types = self.get_matched_region_types(old_tag)
 
         total_files = len(self.found_files)
         self.progress_bar.setRange(0, max(total_files, 1))
 
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
+            try:
+                _rename_tag_info_files(
+                    old_tag, new_tag, DIRECTORY_TAG_INFO)
+                if person_db is not None and matching_person_records:
+                    person_db.rename_tag(old_tag, new_tag)
+                _update_config_for_tag_rename(
+                    old_tag, new_tag, self.main_win)
+                if self.main_win and hasattr(self.main_win, "save_config"):
+                    self.main_win.save_config()
+                else:
+                    save_app_config()
+            except Exception as e:
+                logger.exception("Error updating data during tag rename")
+                QMessageBox.critical(self, UITexts.ERROR, str(e))
+                self.btn_accept.setEnabled(True)
+                self.btn_cancel.setEnabled(True)
+                self.edit_path.setEnabled(True)
+                return
+
             for idx, file_path in enumerate(self.found_files):
                 self.progress_bar.setValue(idx)
                 QApplication.processEvents()
@@ -2348,18 +2544,40 @@ class FaceNameInputWidget(QWidget):
     def load_data(self, mru_history: list):
         """Loads person names from global tags and combines them with MRU history."""
         self.history.clear()
-        if mru_history:
-            # Prevent MRU eviction if history is larger than maxlen
-            # We take the first N items (most recent) to ensure they fit.
-            items_to_load = mru_history[:self.history.maxlen] \
-                if self.history.maxlen is not None else mru_history
-            for full_tag in items_to_load:
-                if full_tag and isinstance(full_tag, str):
-                    self.history.append(full_tag)
-
         all_tags = []
         if self.main_win and hasattr(self.main_win, 'tag_edit_widget'):
             all_tags = self.main_win.tag_edit_widget.available_tags
+
+        if mru_history:
+            known_tags = set(all_tags)
+            items_to_load = [
+                tag for tag in mru_history
+                if isinstance(tag, str) and tag in known_tags
+            ]
+            # Prevent MRU eviction if history is larger than maxlen.
+            if self.history.maxlen is not None:
+                items_to_load = items_to_load[:self.history.maxlen]
+            for full_tag in items_to_load:
+                if full_tag:
+                    self.history.append(full_tag)
+
+        if self.main_win:
+            history_attributes = {
+                "Face": ("face_names_history", "face_names_history"),
+                "Pet": ("pet_names_history", "pet_names_history"),
+                "Body": ("body_names_history", "body_names_history"),
+                "Object": ("object_names_history", "object_names_history"),
+                "Landmark": ("landmark_names_history", "landmark_names_history"),
+            }
+            attribute, config_key = history_attributes.get(
+                self.region_type, history_attributes["Face"])
+            cleaned_history = list(self.history)
+            if list(mru_history or []) != cleaned_history:
+                setattr(self.main_win, attribute, cleaned_history)
+                APP_CONFIG[config_key] = cleaned_history
+                save_config = getattr(self.main_win, "save_config", None)
+                if callable(save_config):
+                    save_config()
 
         if self.region_type == "Pet":
             parent_tags_str = APP_CONFIG.get("pet_tags", "Pet")
