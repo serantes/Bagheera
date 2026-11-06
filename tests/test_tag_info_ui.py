@@ -21,11 +21,11 @@ def create_tag_widget():
     return tag_widget
 
 
-def test_tag_with_information_file_is_underlined_in_tree(qapp, tmp_path,
-                                                          monkeypatch):
-    monkeypatch.setattr(widgets, "DIRECTORY_TAG_INFO", str(tmp_path))
-    (tmp_path / "animals_cat.md").write_text("Notes", encoding="utf-8")
+def test_tag_with_information_is_underlined_in_tree(
+        qapp, tmp_path, monkeypatch):
+    monkeypatch.setattr(widgets, "TAG_INFO_DB_PATH", str(tmp_path / "db"))
     tag_widget = create_tag_widget()
+    tag_widget.tag_info_store.save_info("animals/cat", "Notes")
 
     tag_widget.get_or_create_node("animals/cat", tag_widget.root_all, True, False)
     tag_widget.get_or_create_node("animals/cat", tag_widget.root_favs, True, False)
@@ -36,11 +36,10 @@ def test_tag_with_information_file_is_underlined_in_tree(qapp, tmp_path,
 
 
 def test_double_click_opens_existing_tag_information(qapp, tmp_path,
-                                                       monkeypatch):
-    monkeypatch.setattr(widgets, "DIRECTORY_TAG_INFO", str(tmp_path))
-    info_path = tmp_path / "animals_cat.md"
-    info_path.write_text("Notes", encoding="utf-8")
+                                                      monkeypatch):
+    monkeypatch.setattr(widgets, "TAG_INFO_DB_PATH", str(tmp_path / "db"))
     tag_widget = create_tag_widget()
+    tag_widget.tag_info_store.save_info("animals/cat", "Notes")
     tag_widget.main_win = object()
     tag_widget.get_or_create_node("animals/cat", tag_widget.root_all, True, False)
     source_index = tag_widget.item_mapping["animals/cat"][0].index()
@@ -57,7 +56,7 @@ def test_double_click_opens_existing_tag_information(qapp, tmp_path,
 
 def test_double_click_without_tag_information_does_nothing(qapp, tmp_path,
                                                              monkeypatch):
-    monkeypatch.setattr(widgets, "DIRECTORY_TAG_INFO", str(tmp_path))
+    monkeypatch.setattr(widgets, "TAG_INFO_DB_PATH", str(tmp_path / "db"))
     tag_widget = create_tag_widget()
     tag_widget.get_or_create_node("animals/cat", tag_widget.root_all, True, False)
     source_index = tag_widget.item_mapping["animals/cat"][0].index()
@@ -73,7 +72,9 @@ def test_double_click_without_tag_information_does_nothing(qapp, tmp_path,
 
 
 def test_add_tag_uses_selected_tag_as_prefix_and_places_cursor_at_end(
-        qapp, monkeypatch):
+        qapp, monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        widgets, "TAG_INFO_DB_PATH", str(tmp_path / "db"))
     tag_widget = create_tag_widget()
     tag_widget.get_or_create_node(
         "Travel/Camboxa", tag_widget.root_all, True, False)

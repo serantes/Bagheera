@@ -538,6 +538,8 @@ class MarkdownEditorWidget(QWidget):
         auto_load: bool = True,
         capture_keys: bool = True,
         tag: Optional[str] = None,
+        split_toolbars: bool = False,
+        confirm_close: bool = True,
     ):
         """Create the editor.
 
@@ -560,15 +562,21 @@ class MarkdownEditorWidget(QWidget):
                 them. Ctrl+Q is always left to the host.
             tag: Optional tag path used to search Wikipedia by its last
                 path component.
+            split_toolbars: Place Markdown formatting controls on a
+                separate toolbar below the editor.
+            confirm_close: Whether to ask the editor's file-save question
+                when the containing window closes.
         """
         super().__init__(parent)
         self.capture_keys = capture_keys
+        self.confirm_close = confirm_close
         self.wikipedia_query = (
             tag.rsplit("/", 1)[-1].strip() if tag else ""
         )
         self.filepath = filepath
         self.template_text = template_text
         self.template_file = template_file
+        self.split_toolbars = split_toolbars
         # Text as last loaded or saved, to detect unsaved changes.
         self._saved_text = ""
 
@@ -585,6 +593,13 @@ class MarkdownEditorWidget(QWidget):
         self.toolbar.setVisible(show_toolbar)
 
         layout.addWidget(self.toolbar)
+        if self.split_toolbars:
+            self.format_toolbar = QToolBar("Markdown Formatting", self)
+            self._add_format_actions(self.format_toolbar)
+            self.format_toolbar.setVisible(show_toolbar)
+            layout.addWidget(self.format_toolbar)
+        else:
+            self.format_toolbar = self.toolbar
         layout.addWidget(self.text_area)
 
         self._install_event_filter()
@@ -624,9 +639,7 @@ class MarkdownEditorWidget(QWidget):
             mode_button.setFixedSize(save_button.sizeHint())
 
         self.wikipedia_action = QAction("Wikipedia", self)
-        self.wikipedia_action.setToolTip(
-            "Search Wikipedia for the current tag"
-        )
+        self.wikipedia_action.setToolTip(UITexts.WIKIPEDIA_TAG_TOOLTIP)
         self.wikipedia_action.setEnabled(bool(self.wikipedia_query))
         self.wikipedia_action.triggered.connect(
             lambda _checked=False: self._search_wikipedia()
@@ -634,7 +647,8 @@ class MarkdownEditorWidget(QWidget):
         toolbar.addAction(self.wikipedia_action)
 
         self._format_actions: List[QAction] = []
-        self._add_format_actions(toolbar)
+        if not self.split_toolbars:
+            self._add_format_actions(toolbar)
         self._set_format_enabled(False)
         return toolbar
 
@@ -989,6 +1003,8 @@ class MarkdownEditorWidget(QWidget):
             True if the event was claimed, False to let it continue.
         """
         if (
+            self.confirm_close
+            and
             event.type() == QEvent.Type.Close
             and isinstance(watched, QWidget)
             and watched is self.window()

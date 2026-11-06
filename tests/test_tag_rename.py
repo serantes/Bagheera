@@ -5,6 +5,7 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from bagheeraview.core import widgets
+from bagheeraview.core.tag_information import get_tag_information_store
 
 
 @pytest.fixture
@@ -12,39 +13,31 @@ def qapp():
     return QApplication.instance() or QApplication([])
 
 
-def test_rename_tag_info_files_retargets_softlinks(tmp_path):
-    source = tmp_path / "animals_cat.md"
-    child = tmp_path / "animals_cat_dog.md"
-    link = tmp_path / "favorite-animal.md"
-    source.write_text("Cat", encoding="utf-8")
-    child.write_text("Dog", encoding="utf-8")
-    link.symlink_to(source.name)
+def test_rename_tag_information_preserves_shared_data(tmp_path):
+    store = get_tag_information_store(str(tmp_path / "db"))
+    store.save_info("animals/cat", "Cat")
+    store.associate("favorite-animal", "animals/cat")
 
-    renamed = widgets._rename_tag_info_files(
-        "animals/cat", "animals/feline", str(tmp_path))
+    renamed = widgets._rename_tag_info_entries(
+        "animals/cat", "animals/feline", store
+    )
 
-    assert renamed == 2
-    assert not source.exists()
-    assert not child.exists()
-    assert (tmp_path / "animals_feline.md").read_text(
-        encoding="utf-8") == "Cat"
-    assert (tmp_path / "animals_feline_dog.md").read_text(
-        encoding="utf-8") == "Dog"
-    assert link.read_text(encoding="utf-8") == "Cat"
-    assert link.resolve() == (tmp_path / "animals_feline.md").resolve()
+    assert renamed == 1
+    assert store.get_info("animals/cat") is None
+    assert store.get_info("animals/feline") == "Cat"
+    assert store.get_info("favorite-animal") == "Cat"
 
 
-def test_rename_tag_info_files_does_not_overwrite_existing_file(tmp_path):
-    source = tmp_path / "old.md"
-    destination = tmp_path / "new.md"
-    source.write_text("Old", encoding="utf-8")
-    destination.write_text("New", encoding="utf-8")
+def test_rename_tag_information_does_not_overwrite_existing_tag(tmp_path):
+    store = get_tag_information_store(str(tmp_path / "db"))
+    store.save_info("old", "Old")
+    store.save_info("new", "New")
 
-    with pytest.raises(FileExistsError):
-        widgets._rename_tag_info_files("old", "new", str(tmp_path))
+    with pytest.raises(ValueError):
+        widgets._rename_tag_info_entries("old", "new", store)
 
-    assert source.read_text(encoding="utf-8") == "Old"
-    assert destination.read_text(encoding="utf-8") == "New"
+    assert store.get_info("old") == "Old"
+    assert store.get_info("new") == "New"
 
 
 def test_update_config_for_tag_rename_updates_quick_tags_and_regions(
@@ -77,6 +70,10 @@ def test_partial_tag_rename_confirms_and_updates_associated_data(
     source.touch()
     (tmp_path / "People_Alice.md").write_text(
         "Information", encoding="utf-8")
+    db_path = tmp_path / "tag-info-db"
+    monkeypatch.setattr(widgets, "TAG_INFO_DB_PATH", str(db_path))
+    store = get_tag_information_store(str(db_path))
+    store.save_info("People/Alice", "Information")
     config = {"person_tags": "People", "mru_tags": []}
     monkeypatch.setattr(widgets, "APP_CONFIG", config)
     monkeypatch.setattr(widgets, "DIRECTORY_TAG_INFO", str(tmp_path))
@@ -138,7 +135,9 @@ def test_partial_tag_rename_confirms_and_updates_associated_data(
                                "People/Anne")]
     assert saved_regions == [(str(source), [
         {"type": "Face", "name": "Anne"}])]
-    assert (tmp_path / "People_Anne.md").exists()
+    assert store.get_info("People/Anne") == "Information"
+    assert store.get_info("People/Alice") is None
+    assert (tmp_path / "People_Alice.md").exists()
     assert list(main_win.mru_tags) == ["People/Anne"]
     assert main_win.face_names_history == ["People/Anne"]
     assert saved == [True]

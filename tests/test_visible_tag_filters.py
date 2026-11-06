@@ -26,9 +26,11 @@ def _tag_paths(root):
     return paths
 
 
-def _tag_widget(monkeypatch, whitelist, blacklist, files):
+def _tag_widget(monkeypatch, whitelist, blacklist, files, tmp_path):
     monkeypatch.setattr(
         widgets.TagEditWidget, "load_available_tags", lambda self: None)
+    monkeypatch.setattr(
+        widgets, "TAG_INFO_DB_PATH", str(tmp_path / "tag-info-db"))
     monkeypatch.setitem(widgets.APP_CONFIG, "visible_tags_whitelist", whitelist)
     monkeypatch.setitem(widgets.APP_CONFIG, "visible_tags_blacklist", blacklist)
     tag_widget = widgets.TagEditWidget()
@@ -40,12 +42,13 @@ def _tag_widget(monkeypatch, whitelist, blacklist, files):
     return tag_widget
 
 
-def test_filters_all_tags_but_keeps_all_used_tags(qapp, monkeypatch):
+def test_filters_all_tags_but_keeps_all_used_tags(qapp, monkeypatch, tmp_path):
     tag_widget = _tag_widget(
         monkeypatch,
         [r"^animals(?:/.*)?$"],
         [r"^animals/private(?:/.*)?$"],
         {"image.jpg": {"animals/private/cat", "plants/tree"}},
+        tmp_path,
     )
 
     assert _tag_paths(tag_widget.root_all) == ["animals", "animals/cat"]
@@ -59,19 +62,21 @@ def test_filters_all_tags_but_keeps_all_used_tags(qapp, monkeypatch):
     ]
 
 
-def test_excluded_parent_hides_descendants(qapp, monkeypatch):
+def test_excluded_parent_hides_descendants(qapp, monkeypatch, tmp_path):
     tag_widget = _tag_widget(
         monkeypatch, [r"^animals/cat$"], [],
         {"image.jpg": {"animals/cat"}},
+        tmp_path,
     )
 
     assert _tag_paths(tag_widget.root_all) == []
     assert _tag_paths(tag_widget.root_favs) == ["animals", "animals/cat"]
 
 
-def test_empty_whitelist_includes_all_unless_blacklisted(qapp, monkeypatch):
+def test_empty_whitelist_includes_all_unless_blacklisted(
+        qapp, monkeypatch, tmp_path):
     tag_widget = _tag_widget(
-        monkeypatch, [], [r"^plants(/.*)?$"], {})
+        monkeypatch, [], [r"^plants(/.*)?$"], {}, tmp_path)
 
     assert _tag_paths(tag_widget.root_all) == [
         "animals", "animals/cat", "animals/private",
@@ -79,9 +84,9 @@ def test_empty_whitelist_includes_all_unless_blacklisted(qapp, monkeypatch):
     ]
 
 
-def test_refresh_preserves_pending_tag_changes(qapp, monkeypatch):
+def test_refresh_preserves_pending_tag_changes(qapp, monkeypatch, tmp_path):
     tag_widget = _tag_widget(
-        monkeypatch, [], [], {"image.jpg": set()})
+        monkeypatch, [], [], {"image.jpg": set()}, tmp_path)
     cat = tag_widget.item_mapping["animals/cat"][0]
     cat.setCheckState(Qt.Checked)
 

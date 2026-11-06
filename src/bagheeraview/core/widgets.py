@@ -17,7 +17,6 @@ import lmdb
 import logging
 import re
 import subprocess
-import tempfile
 import time
 from datetime import datetime
 from collections import deque
@@ -38,7 +37,6 @@ from PySide6.QtCore import (
     QModelIndex
 )
 
-from .md_editor import MarkdownEditorWidget
 from .metadatamanager import XattrManager
 from .xmpmanager import XmpManager
 try:
@@ -48,9 +46,11 @@ except ImportError:
 from .constants import (
     LAYOUTS_DIR, RATING_XATTR_NAME, XATTR_COMMENT_NAME, XATTR_NAME, UITexts,
     FACES_MENU_MAX_ITEMS_DEFAULT, APP_CONFIG, BOOKMARKS_PATH, PROG_FILE_NAME,
-    DIRECTORY_TAG_INFO, TAG_INFO_TEMPLATE, APP_DATA_DIR,
+    DIRECTORY_TAG_INFO, TAG_INFO_TEMPLATE, TAG_INFO_DB_PATH, APP_DATA_DIR,
     PERSON_RECOGNITION_PATH, save_app_config
 )
+from .tag_information import get_tag_information_store
+from .tag_information_editor import TagInformationEditor
 
 
 logger = logging.getLogger(__name__)
@@ -71,93 +71,10 @@ def _renamed_tag_list(tags, old_tag, new_tag):
     return renamed
 
 
-def _rename_tag_info_files(old_tag, new_tag, directory):
-    """Rename a tag's information files and retarget links to those files."""
-    if not os.path.isdir(directory):
-        return 0
-
-    old_stem = old_tag.replace("/", "_")
-    new_stem = new_tag.replace("/", "_")
-    moves = {}
-    with os.scandir(directory) as entries:
-        for entry in entries:
-            name = entry.name
-            if name == old_stem + ".md":
-                suffix = ".md"
-            elif name.startswith(old_stem + "_") and name.endswith(".md"):
-                suffix = name[len(old_stem):]
-            else:
-                continue
-            source = os.path.abspath(entry.path)
-            destination = os.path.abspath(
-                os.path.join(directory, new_stem + suffix))
-            if source != destination:
-                moves[source] = destination
-
-    source_paths = set(moves)
-    for destination in moves.values():
-        if os.path.lexists(destination) and destination not in source_paths:
-            raise FileExistsError(
-                f"Tag information file already exists: {destination}")
-
-    if not moves:
-        return 0
-
-    symlinks = []
-    with os.scandir(directory) as entries:
-        for entry in entries:
-            if not entry.is_symlink():
-                continue
-            link_path = os.path.abspath(entry.path)
-            raw_target = os.readlink(link_path)
-            target_path = os.path.normpath(
-                raw_target if os.path.isabs(raw_target) else
-                os.path.join(directory, raw_target))
-            symlinks.append((link_path, raw_target, target_path))
-
-    staged = {}
-    completed = {}
-    try:
-        for source in moves:
-            fd, temporary = tempfile.mkstemp(
-                prefix=".tag-info-rename-", dir=directory)
-            os.close(fd)
-            os.unlink(temporary)
-            os.rename(source, temporary)
-            staged[source] = temporary
-        for source, destination in moves.items():
-            os.rename(staged[source], destination)
-            completed[source] = destination
-    except OSError:
-        for source, destination in reversed(list(completed.items())):
-            if os.path.lexists(destination) and not os.path.lexists(source):
-                os.rename(destination, source)
-        for source, temporary in staged.items():
-            if os.path.lexists(temporary) and not os.path.lexists(source):
-                os.rename(temporary, source)
-        raise
-
-    for link_path, raw_target, target_path in symlinks:
-        new_link_path = moves.get(link_path, link_path)
-        new_target_path = moves.get(target_path, target_path)
-        if new_link_path == link_path and new_target_path == target_path:
-            continue
-        new_target = (new_target_path if os.path.isabs(raw_target) else
-                      os.path.relpath(new_target_path,
-                                      os.path.dirname(new_link_path)))
-        fd, temporary = tempfile.mkstemp(
-            prefix=".tag-info-link-", dir=directory)
-        os.close(fd)
-        os.unlink(temporary)
-        try:
-            os.symlink(new_target, temporary)
-            os.replace(temporary, new_link_path)
-        except OSError:
-            if os.path.lexists(temporary):
-                os.unlink(temporary)
-            raise
-
-    return len(moves)
+def _rename_tag_info_entries(old_tag, new_tag, store=None):
+    """Rename tag-information associations without changing shared records."""
+    store = store or get_tag_information_store(TAG_INFO_DB_PATH)
+    return store.rename_tag_prefix(old_tag, new_tag)
 
 
 def _update_config_for_tag_rename(old_tag, new_tag, main_win):
@@ -490,8 +407,9 @@ class TagRenameDialog(QDialog):
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             try:
-                _rename_tag_info_files(
-                    old_tag, new_tag, DIRECTORY_TAG_INFO)
+                _rename_tag_info_entries(
+                    old_tag, new_tag,
+                    get_tag_information_store(TAG_INFO_DB_PATH))
                 if person_db is not None and matching_person_records:
                     person_db.rename_tag(old_tag, new_tag)
                 _update_config_for_tag_rename(
@@ -581,6 +499,7 @@ class TagEditWidget(QWidget):
         self._visible_tag_whitelist = []
         self._visible_tag_blacklist = []
         self._visible_tag_filter_config = None
+        self.tag_info_store = get_tag_information_store(TAG_INFO_DB_PATH)
         self._load_visible_tag_filters()
 
         layout = QVBoxLayout(self)
@@ -625,6 +544,7 @@ class TagEditWidget(QWidget):
         layout.addWidget(self.btn_apply)
 
         self.load_available_tags()
+        self._migrate_legacy_tag_information()
         self._load_all = True
 
         # Connect signals to slots
@@ -665,6 +585,7 @@ class TagEditWidget(QWidget):
         self.manually_changed = set()
         self.forced_sync_tags = set()
         self.load_available_tags()
+        self._migrate_legacy_tag_information()
         self._load_all = True
         self.init_data()
 
@@ -702,6 +623,19 @@ class TagEditWidget(QWidget):
             if set(tags) != set(self.available_tags):
                 self._load_all = True
             self.available_tags = tags
+
+    def _migrate_legacy_tag_information(self):
+        template_path = os.path.join(APP_DATA_DIR, TAG_INFO_TEMPLATE)
+        imported, unresolved = self.tag_info_store.migrate_legacy(
+            DIRECTORY_TAG_INFO, template_path, self.available_tags
+        )
+        if imported:
+            logger.info("Imported tag information for %d tags", len(imported))
+        if unresolved:
+            logger.warning(
+                "Could not safely associate %d legacy tag-information files",
+                len(unresolved),
+            )
 
     def _load_visible_tag_filters(self):
         """Compiles the configured regular expressions for the ALL TAGS tree."""
@@ -932,20 +866,14 @@ class TagEditWidget(QWidget):
         font = node.font()
         # Use italic for partially applied tags, unless forced
         font.setItalic(italic if path not in self.forced_sync_tags else False)
-        font.setUnderline(os.path.isfile(self._tag_info_filepath(path)))
+        font.setUnderline(self.tag_info_store.has_info(path))
         node.setFont(font)
         # Highlight manually changed tags
         color = "#569cd6" if path in self.manually_changed else "#ffffff"
         node.setForeground(QColor(color))
 
-    @staticmethod
-    def _tag_info_filepath(tag):
-        """Returns the Markdown information file path for a tag."""
-        return os.path.join(
-            DIRECTORY_TAG_INFO, tag.replace('/', '_') + ".md")
-
     def _refresh_tag_info_style(self, tag):
-        """Updates the font of displayed copies of a tag after its info is saved."""
+        """Refresh the underlining on displayed copies of a tag."""
         for node in self.item_mapping.get(tag, []):
             if node is not None:
                 self._style_node(node, tag, node.checkState() == Qt.Checked,
@@ -1159,37 +1087,22 @@ class TagEditWidget(QWidget):
         if not tag or not self.main_win:
             return
 
-        os.makedirs(DIRECTORY_TAG_INFO, exist_ok=True)
-        filepath = self._tag_info_filepath(tag)
-        template_text = ""
-        template_file = os.path.join(APP_DATA_DIR, TAG_INFO_TEMPLATE)
-
-        dialog = QDialog(self)
-        dialog.setWindowTitle(f"Tag Information - {tag}")
-        dialog.resize(800, 600)
-        dialog.setAttribute(Qt.WA_DeleteOnClose)
-
-        layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(0, 0, 0, 0)
-        self.markdown_editor = MarkdownEditorWidget(
-            filepath=filepath,
-            template_text=template_text,
-            template_file=template_file,
-            parent=dialog,
-            auto_load=True,
-            capture_keys=True,
-            tag=tag,
+        dialog = TagInformationEditor(
+            tag, self.tag_info_store, parent=self
         )
-        self.markdown_editor.file_saved.connect(
-            lambda _path: self._refresh_tag_info_style(tag))
-        layout.addWidget(self.markdown_editor)
+        dialog.setAttribute(Qt.WA_DeleteOnClose)
+        dialog.information_changed.connect(
+            lambda changed_tag, _has_info:
+                self._refresh_tag_info_style(changed_tag)
+        )
+        self.markdown_editor = dialog.editor
         dialog.show()
 
     @Slot(object)
     def on_tag_info_double_clicked(self, proxy_index):
         """Opens the tag information editor when an existing file is available."""
         tag = self._get_tag_path_from_proxy_index(proxy_index)
-        if tag and os.path.isfile(self._tag_info_filepath(tag)):
+        if tag and self.tag_info_store.has_info(tag):
             self.on_tag_info_requested(proxy_index)
 
     def _get_tag_path_from_proxy_index(self, proxy_index):
