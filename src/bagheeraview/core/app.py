@@ -5201,9 +5201,11 @@ class MainWindow(QMainWindow):
         self.proxy_model.invalidate()
         self._visible_paths_cache = None
 
-        # Update UI with filter statistics
-        visible_count = self.proxy_model.rowCount()
-        total_count = self.thumbnail_model.rowCount()
+        # Count image paths rather than model rows, which may include group
+        # headers or directory navigation items.
+        visible_paths = self.get_visible_image_paths()
+        visible_count = len(visible_paths)
+        total_count = len(self.get_all_image_paths())
         hidden_count = total_count - visible_count
 
         if hidden_count > 0:
@@ -5229,7 +5231,6 @@ class MainWindow(QMainWindow):
             self.restore_selection(selected_paths)
 
         # Sync open viewers with the new list of visible paths
-        visible_paths = self.get_visible_image_paths()
         self.update_viewers_filter(visible_paths)
 
     def update_viewers_filter(self, visible_paths):
