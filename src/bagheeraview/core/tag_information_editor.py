@@ -3,7 +3,7 @@
 from urllib.parse import quote_plus
 
 from PySide6.QtCore import Qt, Signal, QUrl
-from PySide6.QtGui import QAction, QDesktopServices, QIcon
+from PySide6.QtGui import QAction, QDesktopServices, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -153,6 +153,13 @@ class TagInformationEditor(QDialog):
         self.editor.save_action.triggered.connect(
             lambda _checked=False: self._save_tag_info()
         )
+        self.escape_action = QAction(self.editor)
+        self.escape_action.setShortcut(QKeySequence(Qt.Key.Key_Escape))
+        self.escape_action.setShortcutContext(
+            Qt.ShortcutContext.WidgetWithChildrenShortcut
+        )
+        self.escape_action.triggered.connect(self.close)
+        self.editor.addAction(self.escape_action)
 
         self._create_actions()
         self._refresh_menus()

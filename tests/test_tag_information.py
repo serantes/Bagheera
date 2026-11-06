@@ -1,6 +1,8 @@
 import pytest
+from PySide6.QtCore import QUrl, Qt
+from PySide6.QtGui import QKeySequence
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
-from PySide6.QtCore import QUrl
 
 from bagheeraview.core import constants
 from bagheeraview.core.tag_information import get_tag_information_store
@@ -124,6 +126,37 @@ def test_editor_new_and_template_load_only_change_document(qapp, store):
 
     editor._new_document()
     assert editor.editor.get_markdown_text() == ""
+
+
+def test_escape_closes_after_unsaved_changes_confirmation(
+        qapp, store, monkeypatch):
+    editor = TagInformationEditor("Travel/Tokyo", store)
+    editor.show()
+    editor.editor.set_markdown_text("Unsaved text")
+    response = [constants.UITexts.CANCEL]
+
+    def answer_confirmation(box):
+        next(button for button in box.buttons()
+             if button.text() == response[0]).click()
+        return 0
+
+    monkeypatch.setattr(
+        QMessageBox, "exec", answer_confirmation
+    )
+
+    QTest.keyClick(editor.editor.text_area.editor, Qt.Key.Key_Escape)
+    qapp.processEvents()
+    assert editor.isVisible()
+
+    assert editor.escape_action.shortcut() == QKeySequence(
+        Qt.Key.Key_Escape
+    )
+
+    response[0] = constants.UITexts.TAG_INFO_DISCARD
+    QTest.keyClick(editor.editor.text_area.editor, Qt.Key.Key_Escape)
+    qapp.processEvents()
+
+    assert not editor.isVisible()
 
 
 def test_web_search_defaults_to_duckduckgo_and_uses_tag_leaf(
