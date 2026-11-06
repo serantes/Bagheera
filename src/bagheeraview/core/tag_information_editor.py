@@ -211,9 +211,13 @@ class TagInformationEditor(QDialog):
         self.toolbar.addAction(self.edit_action)
         self.toolbar.addSeparator()
 
-        self.google_action = QAction(UITexts.TAG_INFO_GOOGLE, self)
-        self.google_action.triggered.connect(self._search_google)
-        self.toolbar.addAction(self.google_action)
+        self.web_search_action = QAction(UITexts.TAG_INFO_WEB_SEARCH, self)
+        self.web_search_action.triggered.connect(
+            lambda _checked=False: self._search_web("DuckDuckGo")
+        )
+        self.web_search_button = self._button(self.web_search_action)
+        self.web_search_button.setMenu(self._web_search_menu())
+        self.toolbar.addWidget(self.web_search_button)
         self.toolbar.addAction(self.editor.wikipedia_action)
 
     @staticmethod
@@ -264,7 +268,16 @@ class TagInformationEditor(QDialog):
         self.save_button.setToolTip(UITexts.TAG_INFO_SAVE)
         self.delete_button.setToolTip(UITexts.TAG_INFO_DELETE)
         self.search_action.setToolTip(UITexts.TAG_INFO_FIND)
-        self.google_action.setToolTip(UITexts.TAG_INFO_GOOGLE)
+        self.web_search_action.setToolTip(UITexts.TAG_INFO_WEB_SEARCH)
+
+    def _web_search_menu(self):
+        menu = QMenu(self.web_search_button)
+        for engine in ("DuckDuckGo", "Google", "Bing", "Yahoo", "Brave", "Ecosia"):
+            action = menu.addAction(engine)
+            action.triggered.connect(
+                lambda _checked=False, name=engine: self._search_web(name)
+            )
+        return menu
 
     def _new_document(self):
         self.editor.set_markdown_text("")
@@ -385,11 +398,21 @@ class TagInformationEditor(QDialog):
             return self.editor.get_markdown_text() == self._saved_text
         return clicked is discard_button
 
-    def _search_google(self):
+    def _search_web(self, engine="DuckDuckGo"):
         query = self.tag.rsplit("/", 1)[-1]
-        url = QUrl(
-            "https://www.google.com/search?q=" + quote_plus(query)
-        )
+        encoded_query = quote_plus(query)
+        search_urls = {
+            "DuckDuckGo": f"https://duckduckgo.com/?q={encoded_query}",
+            "Google": f"https://www.google.com/search?q={encoded_query}",
+            "Bing": f"https://www.bing.com/search?q={encoded_query}",
+            "Yahoo": f"https://search.yahoo.com/search?p={encoded_query}",
+            "Brave": f"https://search.brave.com/search?q={encoded_query}",
+            "Ecosia": f"https://www.ecosia.org/search?q={encoded_query}",
+        }
+        try:
+            url = QUrl(search_urls[engine])
+        except KeyError:
+            raise ValueError(f"Unsupported web search engine: {engine}") from None
         if not QDesktopServices.openUrl(url):
             QMessageBox.warning(
                 self, UITexts.ERROR, UITexts.TAG_INFO_BROWSER_ERROR

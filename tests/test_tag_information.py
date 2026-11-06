@@ -126,7 +126,7 @@ def test_editor_new_and_template_load_only_change_document(qapp, store):
     assert editor.editor.get_markdown_text() == ""
 
 
-def test_edit_button_has_localized_label_and_google_search_uses_leaf(
+def test_web_search_defaults_to_duckduckgo_and_uses_tag_leaf(
         qapp, store, monkeypatch):
     editor = TagInformationEditor("a/b/c", store)
     opened_urls = []
@@ -135,9 +135,30 @@ def test_edit_button_has_localized_label_and_google_search_uses_leaf(
         lambda url: opened_urls.append(url) or True,
     )
 
-    editor._search_google()
+    editor.web_search_action.trigger()
 
     assert editor.edit_action.text() == constants.UITexts.TAG_INFO_EDIT
+    assert editor.web_search_button.text() == constants.UITexts.TAG_INFO_WEB_SEARCH
+    assert opened_urls == [QUrl("https://duckduckgo.com/?q=c")]
+
+
+def test_web_search_menu_can_choose_other_search_engines(
+        qapp, store, monkeypatch):
+    editor = TagInformationEditor("a/b/c", store)
+    opened_urls = []
+    monkeypatch.setattr(
+        "bagheeraview.core.tag_information_editor.QDesktopServices.openUrl",
+        lambda url: opened_urls.append(url) or True,
+    )
+
+    engines = [action.text() for action in editor.web_search_button.menu().actions()]
+    google_action = next(
+        action for action in editor.web_search_button.menu().actions()
+        if action.text() == "Google"
+    )
+    google_action.trigger()
+
+    assert engines == ["DuckDuckGo", "Google", "Bing", "Yahoo", "Brave", "Ecosia"]
     assert opened_urls == [QUrl("https://www.google.com/search?q=c")]
 
 
@@ -230,5 +251,5 @@ def test_tag_information_texts_are_translated(language):
     assert strings["TAG_INFO_SAVE_AS_TEMPLATE"]
     assert strings["TAG_INFO_DELETE"]
     assert strings["TAG_INFO_FIND"]
-    assert strings["TAG_INFO_GOOGLE"]
+    assert strings["TAG_INFO_WEB_SEARCH"]
     assert strings["WIKIPEDIA_TAG_TOOLTIP"]
