@@ -6,9 +6,8 @@ used throughout the application, such as file system helpers.
 """
 import os
 from contextlib import contextmanager
-from PySide6.QtCore import QMetaType
 from PySide6.QtDBus import (
-    QDBusArgument, QDBusConnection, QDBusInterface, QDBusMessage
+    QDBusConnection, QDBusInterface, QDBusMessage
 )
 from PySide6.QtCore import QProcess
 from .constants import UITexts

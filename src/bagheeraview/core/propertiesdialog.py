@@ -9,19 +9,27 @@ Classes:
     PropertiesDialog: A QDialog that presents file properties in a tabbed
                       interface.
 """
+import os
+from datetime import datetime
+
 from PySide6.QtWidgets import (
-    QWidget, QLabel,  QVBoxLayout, QMessageBox, QMenu, QInputDialog,
+    QWidget, QLabel, QVBoxLayout, QHBoxLayout, QMessageBox, QMenu, QInputDialog,
     QDialog, QTableWidget, QTableWidgetItem, QHeaderView, QTabWidget,
-    QFormLayout, QDialogButtonBox, QApplication, QToolBar, QAbstractItemView
+    QFormLayout, QDialogButtonBox, QApplication, QToolBar, QAbstractItemView,
+    QDateTimeEdit, QPushButton
 )
 from PySide6.QtGui import (
     QImageReader, QIcon, QColor
 )
-from PySide6.QtCore import (QThread, Signal, Qt, QFileInfo, QLocale)
+from PySide6.QtCore import (
+    QThread, Signal, Qt, QFileInfo, QLocale, QDateTime
+)
 from .constants import (
     RATING_XATTR_NAME, XATTR_NAME, UITexts
 )
-from .metadatamanager import MetadataManager, HAVE_EXIV2, XattrManager
+from .metadatamanager import (
+    MetadataManager, HAVE_EXIV2, XattrManager, mark_app_modified, notify_baloo
+)
 
 
 class PropertiesLoader(QThread):
@@ -79,7 +87,7 @@ class PropertiesDialog(QDialog):
         self.original_xattrs = {}
         self.original_exif = {}
         self.loader = None
-        self.resize(400, 500)
+        self.resize(520, 500)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
 
         layout = QVBoxLayout(self)
@@ -108,9 +116,24 @@ class PropertiesDialog(QDialog):
         form_layout.addRow(UITexts.PROPERTIES_CREATED,
                            QLabel(QLocale.system().toString(info.birthTime(),
                                                             QLocale.ShortFormat)))
-        form_layout.addRow(UITexts.PROPERTIES_MODIFIED,
-                           QLabel(QLocale.system().toString(info.lastModified(),
-                                                            QLocale.ShortFormat)))
+        self.modified_date_row = QWidget()
+        modified_date_layout = QHBoxLayout(self.modified_date_row)
+        modified_date_layout.setContentsMargins(0, 0, 0, 0)
+        self.modified_date_label = QLabel(
+            QLocale.system().toString(info.lastModified(), QLocale.ShortFormat))
+        self.exiv_datetime_edit = QDateTimeEdit()
+        self.exiv_datetime_edit.setCalendarPopup(True)
+        self.exiv_datetime_edit.setDisplayFormat(
+            QLocale.system().dateTimeFormat(QLocale.LongFormat))
+        self.assign_exiv_date_button = QPushButton(
+            UITexts.PROPERTIES_ASSIGN_EXIV_DATE)
+        self.assign_exiv_date_button.clicked.connect(self.assign_exiv_date)
+        self.exiv_datetime_edit.hide()
+        self.assign_exiv_date_button.hide()
+        modified_date_layout.addWidget(self.modified_date_label)
+        modified_date_layout.addWidget(self.exiv_datetime_edit)
+        modified_date_layout.addWidget(self.assign_exiv_date_button)
+        form_layout.addRow(UITexts.PROPERTIES_MODIFIED, self.modified_date_row)
 
         # Image info
         size = reader.size()
@@ -366,6 +389,52 @@ class PropertiesDialog(QDialog):
         """Slot called when metadata is loaded from the thread."""
         self.update_metadata_table(xattrs, initial_only=False)
         self.update_exif_table(exif_data)
+        self.update_exiv_date_controls(exif_data)
+
+    def update_exiv_date_controls(self, exif_data):
+        """Shows a date editor when the EXIF and filesystem times differ."""
+        exiv_datetime_text = MetadataManager.parse_datetime(exif_data)
+        if not exiv_datetime_text:
+            self.exiv_datetime_edit.hide()
+            self.assign_exiv_date_button.hide()
+            return
+
+        exiv_datetime = datetime.strptime(
+            exiv_datetime_text, "%Y-%m-%d %H:%M:%S")
+        exiv_timestamp = int(exiv_datetime.timestamp())
+        self.exiv_datetime_edit.setDateTime(
+            QDateTime.fromSecsSinceEpoch(exiv_timestamp))
+
+        modified_datetime = QFileInfo(self.path).lastModified()
+        has_different_time = (
+            not modified_datetime.isValid()
+            or abs(
+                modified_datetime.toMSecsSinceEpoch()
+                - exiv_timestamp * 1_000) > 60_000)
+        self.exiv_datetime_edit.setVisible(has_different_time)
+        self.assign_exiv_date_button.setVisible(has_different_time)
+
+    def assign_exiv_date(self):
+        """Assigns the selected date and time as the file's modification time."""
+        try:
+            stat_result = os.stat(self.path)
+            modified_time_ns = (
+                self.exiv_datetime_edit.dateTime().toSecsSinceEpoch()
+                * 1_000_000_000)
+            os.utime(
+                self.path,
+                ns=(stat_result.st_atime_ns, modified_time_ns))
+        except OSError as error:
+            QMessageBox.critical(self, UITexts.ERROR, str(error))
+            return
+
+        mark_app_modified(self.path)
+        notify_baloo(self.path)
+        modified_datetime = QFileInfo(self.path).lastModified()
+        self.modified_date_label.setText(
+            QLocale.system().toString(modified_datetime, QLocale.ShortFormat))
+        self.exiv_datetime_edit.hide()
+        self.assign_exiv_date_button.hide()
 
     def update_exif_table(self, exif_data):
         """Updates the EXIF table with loaded data."""

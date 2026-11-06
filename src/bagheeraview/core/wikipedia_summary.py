@@ -313,17 +313,17 @@ def search_with_lang(query: str, lang: Optional[str | Iterable[str]] = None, lim
         return []
     langs = _check_langs(lang)
     all_results = []
-    for l in langs:
-        url = (f"https://{l}.wikipedia.org/w/api.php?action=opensearch"
+    for lang in langs:
+        url = (f"https://{lang}.wikipedia.org/w/api.php?action=opensearch"
                f"&format=json&namespace=0&redirects=resolve&limit={int(limit)}"
                f"&search={urllib.parse.quote(query)}")
         try:
             data = _get_json(url)
             if isinstance(data, list) and len(data) > 1 and isinstance(data[1], list) and data[1]:
                 for title in data[1]:
-                    all_results.append((l, str(title)))
+                    all_results.append((lang, str(title)))
         except WikipediaError as exc:
-            print(f"Search warning for lang {l}: {exc}", file=sys.stderr)
+            print(f"Search warning for lang {lang}: {exc}", file=sys.stderr)
             continue
     return all_results
 
@@ -336,16 +336,16 @@ def get_summary(title: str, lang: Optional[str | Iterable[str]] = None,
         raise ValueError("title is empty")
     langs = _check_langs(lang)
     last_exc = None
-    for l in langs:
+    for lang in langs:
         try:
-            return _fetch_summary(title, l)
+            return _fetch_summary(title, lang)
         except WikipediaNotFound as exc:
             last_exc = exc
             if fallback_search:
                 try:
-                    candidates = search(title, l, limit=1)
+                    candidates = search(title, lang, limit=1)
                     if candidates:
-                        return _fetch_summary(candidates[0], l)
+                        return _fetch_summary(candidates[0], lang)
                 except Exception:
                     pass
         except (WikipediaError, ValueError) as exc:
@@ -408,10 +408,7 @@ try:
         QTextBrowser,
         QVBoxLayout,
     )
-    if __package__:
-        from .constants import UITexts
-    else:
-        from constants import UITexts
+    from .constants import UITexts
     HAS_PYSIDE6 = True
 except ImportError:
     HAS_PYSIDE6 = False

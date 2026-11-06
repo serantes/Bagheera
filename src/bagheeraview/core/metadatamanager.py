@@ -366,21 +366,27 @@ class MetadataManager:
                         "Exif.Image.DateTime"):
                     values[key] = datum.toString().strip()
 
-            for key in (
-                    "Exif.Photo.DateTimeOriginal",
-                    "Exif.Photo.DateTimeDigitized",
-                    "Exif.Image.DateTime"):
-                value = values.get(key)
-                if not value:
-                    continue
-                try:
-                    return datetime.strptime(
-                        value[:19], "%Y:%m:%d %H:%M:%S").strftime(
-                            "%Y-%m-%d %H:%M:%S")
-                except ValueError:
-                    continue
+            return MetadataManager.parse_datetime(values)
         except Exception as e:
             logger.debug(f"read_datetime error for {path}: {e}")
+        return None
+
+    @staticmethod
+    def parse_datetime(metadata):
+        """Parses a capture timestamp from an EXIF metadata dictionary."""
+        for key in (
+                "Exif.Photo.DateTimeOriginal",
+                "Exif.Photo.DateTimeDigitized",
+                "Exif.Image.DateTime"):
+            value = metadata.get(key)
+            if not value:
+                continue
+            try:
+                return datetime.strptime(
+                    value[:19], "%Y:%m:%d %H:%M:%S").strftime(
+                        "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                continue
         return None
 
     @staticmethod

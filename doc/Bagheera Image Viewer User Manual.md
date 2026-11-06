@@ -362,6 +362,10 @@ Opens a dialog displaying detailed information about the image, including
 general file properties, metadata, and EXIF data. You can also add/edit
 extended attributes here.
 
+On the **General** tab, if the file modification time differs from the EXIF
+capture time, you can adjust the date and time and select **Assign exiv date**
+to apply it to the file.
+
 ## 5. Context Menus
 
 ### 5.1. Thumbnail Grid Context Menu (Right-click on a thumbnail)

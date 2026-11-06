@@ -250,6 +250,10 @@ Permite identificar y marcar áreas de interés dentro de la fotografía.
 
 Muestra una ventana detallada con la información del archivo, metadatos y etiquetas EXIF, permitiendo además editar atributos extendidos (*xattr*).
 
+En la pestaña **General**, si la fecha de modificación del archivo no coincide
+con la fecha de captura EXIF, puedes ajustar la fecha y hora y pulsar **Assign
+exiv date** para aplicarla al archivo.
+
 ## 5. Menús contextuales
 
 ### 5.1. Menú contextual de miniaturas (Clic derecho sobre una miniatura)

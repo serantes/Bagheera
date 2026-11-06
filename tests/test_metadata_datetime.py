@@ -32,3 +32,14 @@ def test_read_datetime_prefers_original_capture_time(monkeypatch):
 
     assert metadatamanager.MetadataManager.read_datetime("photo.jpg") == (
         "2024-05-06 07:08:09")
+
+
+def test_parse_datetime_uses_first_valid_capture_timestamp():
+    metadata = {
+        "Exif.Photo.DateTimeOriginal": "invalid",
+        "Exif.Photo.DateTimeDigitized": "2023:04:05 06:07:08",
+        "Exif.Image.DateTime": "2020:01:02 03:04:05",
+    }
+
+    assert metadatamanager.MetadataManager.parse_datetime(metadata) == (
+        "2023-04-05 06:07:08")
