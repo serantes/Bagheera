@@ -61,6 +61,7 @@ class SimilarImagesDialog(QDialog):
         self.results = []
 
         self.active_pane = None
+        self.show_tags = True
 
         title = UITexts.SIMILAR_SEARCH_TITLE.format(
             os.path.basename(target_path))
@@ -158,6 +159,11 @@ class SimilarImagesDialog(QDialog):
         widget.dir_lbl.setAlignment(Qt.AlignCenter)
         widget.dir_lbl.setStyleSheet("font-size: 9px; color: #888;")
         v_layout.addWidget(widget.dir_lbl)
+        widget.tags_lbl = QLabel()
+        widget.tags_lbl.setAlignment(Qt.AlignCenter)
+        widget.tags_lbl.setWordWrap(True)
+        widget.tags_lbl.setStyleSheet("font-size: 9px; color: #888;")
+        v_layout.addWidget(widget.tags_lbl)
         return widget
 
     def start_search(self):
@@ -285,6 +291,7 @@ class SimilarImagesDialog(QDialog):
                 self.right_pane_widget.info_lbl.setText(UITexts.FILE_NOT_FOUND)
                 self.right_pane_widget.filename_lbl.setText("N/A")
                 self.right_pane_widget.dir_lbl.setText("N/A")
+                self._update_tags_label()
                 return
 
             self.preview_pane.controller.update_list([path], 0)
@@ -300,6 +307,7 @@ class SimilarImagesDialog(QDialog):
 
             self.right_pane_widget.filename_lbl.setText(os.path.basename(path))
             self.right_pane_widget.dir_lbl.setText(os.path.dirname(path))
+            self._update_tags_label()
 
             # Adjust zoom to fill the preview area
             viewport = self.preview_pane.scroll_area.viewport()
@@ -439,6 +447,12 @@ class SimilarImagesDialog(QDialog):
         action_show_faces.setChecked(self.preview_pane.controller.show_regions)
         action_show_faces.triggered.connect(self.toggle_faces)
 
+        action_show_tags = menu.addAction(
+            QIcon.fromTheme("document-properties"), UITexts.MENU_SHOW_TAGS)
+        action_show_tags.setCheckable(True)
+        action_show_tags.setChecked(self.show_tags)
+        action_show_tags.triggered.connect(self.toggle_tags)
+
         menu.addSeparator()
 
         # 6. Trash & Delete
@@ -562,6 +576,7 @@ class SimilarImagesDialog(QDialog):
             self.right_pane_widget.info_lbl.setText("")
             self.right_pane_widget.filename_lbl.setText("")
             self.right_pane_widget.dir_lbl.setText("")
+            self._update_tags_label()
 
     def _show_properties(self, path):
         """
@@ -591,6 +606,18 @@ class SimilarImagesDialog(QDialog):
         """Toggles the display of face regions on the preview image."""
         self.preview_pane.controller.show_regions = not self.preview_pane.controller.show_regions
         self.preview_pane.canvas.update()
+
+    def toggle_tags(self, visible):
+        """Shows or hides the tags displayed below the preview image."""
+        self.show_tags = visible
+        self.right_pane_widget.tags_lbl.setVisible(visible)
+
+    def _update_tags_label(self):
+        """Updates the preview tags using the same abbreviated names as the viewer."""
+        tags = self.preview_pane.controller._current_tags
+        display_tags = [tag.strip().split('/')[-1]
+                        for tag in tags if tag.strip()]
+        self.right_pane_widget.tags_lbl.setText(", ".join(display_tags))
 
     def _show_fast_tags(self):
         """Shows the fast tagging menu for the current preview image."""
@@ -839,6 +866,8 @@ class SimilarImagesDialog(QDialog):
 
     def on_metadata_changed(self, path, metadata=None):
         """Refresh the main thumbnail metadata after preview edits."""
+        if self.preview_pane.controller.get_current_path() == path:
+            self._update_tags_label()
         if self.main_win:
             self.main_win.update_metadata_for_path(path, metadata)
 
