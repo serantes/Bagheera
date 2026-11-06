@@ -321,7 +321,7 @@ def test_copy_location_targets_only_ungeolocated_photos(monkeypatch):
         other_location: (30.0, 40.0),
         ungeolocated: None,
     }
-    monkeypatch.setattr(widgets, "HAVE_EXIV2", True)
+    monkeypatch.setattr(geomapwidget, "HAVE_EXIV2", True)
     monkeypatch.setattr(
         map_widget, "_choose_copy_location",
         lambda locations, count: ((30.0, 40.0), False))
@@ -349,7 +349,7 @@ def test_searched_coordinate_is_first_copy_source_without_photo(monkeypatch):
         "/photos/target.jpg": None,
     }
     map_widget._search_result_coordinates = (30.0, 40.0)
-    monkeypatch.setattr(widgets, "HAVE_EXIV2", True)
+    monkeypatch.setattr(geomapwidget, "HAVE_EXIV2", True)
     copy_options = []
 
     def choose_searched_location(locations, _count):
@@ -455,7 +455,7 @@ def test_cancel_copy_location_does_not_write(monkeypatch):
         "/photos/source.jpg": (10.0, 20.0),
         "/photos/target.jpg": None,
     }
-    monkeypatch.setattr(widgets, "HAVE_EXIV2", True)
+    monkeypatch.setattr(geomapwidget, "HAVE_EXIV2", True)
     monkeypatch.setattr(
         map_widget, "_choose_copy_location", lambda *_args: None)
     writes = []

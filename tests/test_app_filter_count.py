@@ -26,7 +26,7 @@ def test_filter_counts_only_visible_and_total_images():
         _extension_checkboxes={},
         _visible_paths_cache=None,
         get_visible_image_paths=lambda: ["/photos/sun1.jpg", "/photos/sun2.jpg",
-                                        "/photos/sun3.jpg"],
+                                         "/photos/sun3.jpg"],
         get_all_image_paths=lambda: ["/photos/sun1.jpg", "/photos/sun2.jpg",
                                      "/photos/sun3.jpg", "/photos/other.jpg"],
         filter_stats_lbl=SimpleNamespace(setText=lambda text: setattr(

@@ -1687,8 +1687,12 @@ class SettingsDialog(QDialog):
 
         APP_CONFIG["viewer_auto_resize_window"] = \
             self.viewer_auto_resize_check.isChecked()
-        APP_CONFIG["face_detection_engine"] = self.face_engine_combo.currentText()
-        APP_CONFIG["pet_detection_engine"] = self.pet_engine_combo.currentText()
+        if self.face_engine_combo is not None:
+            APP_CONFIG["face_detection_engine"] = \
+                self.face_engine_combo.currentText()
+        if self.pet_engine_combo.count() > 0:
+            APP_CONFIG["pet_detection_engine"] = \
+                self.pet_engine_combo.currentText()
         if hasattr(self, "object_engine_combo"):
             APP_CONFIG["body_detection_engine"] = self.body_engine_combo.currentText()
         if hasattr(self, "object_engine_combo"):

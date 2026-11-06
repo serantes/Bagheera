@@ -1,6 +1,8 @@
 import os
 from unittest.mock import MagicMock, patch
 from PySide6.QtWidgets import QApplication, QMessageBox, QWidget
+from bagheeraview.core import settings
+from bagheeraview.core.constants import APP_CONFIG
 from bagheeraview.core.duplicatecache import DuplicateCache, DuplicateDetector
 from bagheeraview.core.settings import SettingsDialog
 
@@ -87,6 +89,25 @@ def test_settings_dialog_threshold_confirm_and_save(qtbot):
             dlg.accept()
 
         parent_widget.duplicate_cache.clear_pending.assert_called_once()
+    finally:
+        dlg.close()
+
+
+def test_settings_dialog_preserves_face_engine_when_unavailable(
+        qtbot, monkeypatch):
+    get_qapp()
+    parent_widget = QWidget()
+    parent_widget.duplicate_cache = MagicMock()
+    monkeypatch.setattr(settings, "AVAILABLE_FACE_ENGINES", [])
+    monkeypatch.setitem(APP_CONFIG, "face_detection_engine", "configured-engine")
+
+    dlg = SettingsDialog(parent_widget)
+    try:
+        dlg.load_settings()
+        with patch("bagheeraview.core.settings.save_app_config"):
+            dlg.accept()
+
+        assert APP_CONFIG["face_detection_engine"] == "configured-engine"
     finally:
         dlg.close()
 

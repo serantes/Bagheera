@@ -147,6 +147,7 @@ def test_detector_ai_phase_merges_pairs(tmp_path):
         detector = DuplicateDetector(
             [file1, file2, file3], cache, MagicMock(),
             threshold=90, ai_enabled=True, ai_threshold=90)
+        detector.ai_available = True
         detector.exceptions_set = cache.get_all_exceptions_set()
         detector.scan_paths_set = set(detector.paths_to_scan)
         detector.path_to_hash = {}

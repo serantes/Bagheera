@@ -636,7 +636,9 @@ class MarkdownEditorWidget(QWidget):
         mode_button = toolbar.widgetForAction(self.mode_btn)
         save_button = toolbar.widgetForAction(self.save_action)
         if mode_button is not None and save_button is not None:
-            mode_button.setFixedSize(save_button.sizeHint())
+            button_size = save_button.sizeHint()
+            save_button.setFixedSize(button_size)
+            mode_button.setFixedSize(button_size)
 
         self.wikipedia_action = QAction("Wikipedia", self)
         self.wikipedia_action.setToolTip(UITexts.WIKIPEDIA_TAG_TOOLTIP)
