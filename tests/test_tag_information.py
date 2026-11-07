@@ -1,7 +1,6 @@
 import pytest
 from PySide6.QtCore import QUrl, Qt
 from PySide6.QtGui import QKeySequence
-from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from bagheeraview.core import constants

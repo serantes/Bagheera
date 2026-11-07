@@ -53,6 +53,7 @@ def test_edit_bookmark_updates_comment_and_query(
         "shortcut": "Ctrl+1",
     }]
 
+
 def test_edit_bookmark_cancel_keeps_values(bookmarks_fixture, monkeypatch):
     bookmarks_widget, _bookmarks_path = bookmarks_fixture
     monkeypatch.setattr(QDialog, "exec", lambda _dialog: QDialog.Rejected)

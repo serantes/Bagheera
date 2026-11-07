@@ -156,7 +156,7 @@ def test_duplicate_detector_remembers_zero_duplicates_for_same_threshold(tmp_pat
         )
         results2 = []
         detector2.duplicates_found.connect(lambda res: results2.extend(res))
-        
+
         with patch.object(cache, "persistent_bktree_query") as mock_query:
             detector2.run()
             # persistent_bktree_query should NOT be called because early exit triggered

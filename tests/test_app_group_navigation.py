@@ -5,7 +5,7 @@ from PySide6.QtGui import QStandardItem, QStandardItemModel
 
 from bagheeraview.core.app import MainWindow, ThumbnailDelegate
 from bagheeraview.core.constants import (
-    DIR_ROLE, GROUP_NAME_ROLE, ITEM_TYPE_ROLE, MTIME_ROLE, PATH_ROLE, RATING_ROLE
+    GROUP_NAME_ROLE, ITEM_TYPE_ROLE, MTIME_ROLE, PATH_ROLE, RATING_ROLE
 )
 
 

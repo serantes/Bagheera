@@ -4,7 +4,7 @@ import pytest
 from PySide6.QtWidgets import QApplication, QInputDialog
 
 from bagheeraview.core import app as app_module
-from bagheeraview.core.constants import ITEM_TYPE_ROLE, PATH_ROLE
+from bagheeraview.core.constants import PATH_ROLE
 
 
 @pytest.fixture

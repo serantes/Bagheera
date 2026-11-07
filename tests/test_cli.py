@@ -12,7 +12,7 @@ def test_version_output(capsys, monkeypatch):
     assert "Bagheera Search Tool v" in captured.out
 
 
-def test_missing_year_with_month(monkeypatch):
+def test_missing_year_with_month(capsys, monkeypatch):
     # Should raise a SystemExit if month is provided but not year
     monkeypatch.setattr(sys, "argv", ["bagheerasearch", "--month", "5"])
     # with pytest.raises(ValueError, match="Missing --year"):
@@ -20,6 +20,7 @@ def test_missing_year_with_month(monkeypatch):
         main()
         captured = capsys.readouterr()
         assert "bagheerasearch: error: Missing --year (required when --month is used)" in captured.err
+
 
 def test_help_query(capsys, monkeypatch):
     # Simulate running 'bagheerasearch --help-query' and check for expected output

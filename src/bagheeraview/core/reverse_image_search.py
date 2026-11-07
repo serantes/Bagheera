@@ -42,8 +42,6 @@ import tempfile
 import time
 import urllib.parse
 import webbrowser
-from pathlib import Path
-
 import requests
 from PIL import Image
 
