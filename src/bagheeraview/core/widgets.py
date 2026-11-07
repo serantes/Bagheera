@@ -940,7 +940,7 @@ class TagEditWidget(QWidget):
         full_path = self.reconstruct_path(item)
         if not full_path:
             return ""
-        words = full_path.replace('/', ' ').split()
+        words = full_path.replace(' ', '_').split('/')
         search_terms = [f"tags='{word}'" for word in words if word not in ('-')]
         return " ".join(search_terms)
 
