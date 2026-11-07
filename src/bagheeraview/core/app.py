@@ -23,6 +23,8 @@ import json
 import glob
 import shutil
 import time
+import shiboken6
+import uuid
 from datetime import datetime
 from collections import deque, defaultdict
 from itertools import groupby
@@ -72,6 +74,7 @@ from .constants import (
     ITEM_TYPE_ROLE, DIR_ROLE, INODE_ROLE, DEVICE_ROLE, IMAGE_DATA_ROLE,
     GROUP_NAME_ROLE, GPS_STATUS_ROLE
 )
+from .kwin_layout_backend import KWinLayoutBackend
 from .settings import SettingsDialog
 if HAVE_IMAGEHASH:
     from .duplicatecache import DuplicateCache, DuplicateDetector
@@ -140,6 +143,21 @@ def _extract_resolution(args):
             remaining.append(args[i])
             i += 1
     return remaining, resolution
+
+
+def _layout_path_from_term(term):
+    """Return the layout file path represented by a ``layout:/`` term."""
+    filename = os.path.join(LAYOUTS_DIR, term[8:])
+    if os.path.splitext(filename)[1] != ".layout":
+        filename += ".layout"
+    return filename
+
+
+def _is_visible_viewer(viewer):
+    """Checks visibility only after confirming the Qt object is still alive."""
+    return (isinstance(viewer, ImageViewer)
+            and shiboken6.isValid(viewer)
+            and viewer.isVisible())
 
 
 class ShortcutHelpDialog(QDialog):
@@ -1817,8 +1835,15 @@ class MainWindow(QMainWindow):
         self.browse_tabs.addTab(self.bookmarks_tab, UITexts.BOOKMARKS_TAB)
 
         # Tab 3: Layouts
-        self.is_xcb = QApplication.platformName() == "xcb"
-        if self.is_xcb:
+        platform_name = QApplication.platformName()
+        self.is_xcb = platform_name == "xcb"
+        self.is_wayland = platform_name.startswith("wayland")
+        self._layout_window_role = "bagheera-main"
+        if self.is_wayland:
+            self.setWindowRole(self._layout_window_role)
+        self.kwin_layout_backend = (
+            KWinLayoutBackend() if self.is_wayland else None)
+        if self.is_xcb or self.is_wayland:
             self.layouts_tab = LayoutsWidget(self)
 
         # Tab 3 of Browse
@@ -1828,7 +1853,7 @@ class MainWindow(QMainWindow):
         # Tabs are grouped into Metadata and Browse, followed by Layouts and Maps.
         self.sidebar_tabs.addTab(self.metadata_tabs, UITexts.METADATA_TAB)
         self.sidebar_tabs.addTab(self.browse_tabs, UITexts.BROWSE_TAB)
-        if self.is_xcb:
+        if hasattr(self, "layouts_tab"):
             self.sidebar_tabs.addTab(self.layouts_tab, UITexts.LAYOUTS_TAB)
 
         # Tab 4: Map / Geolocation
@@ -1947,6 +1972,19 @@ class MainWindow(QMainWindow):
         if args:
             path = " ".join(args).strip()
             # Fix `file:/` URLs from file managers
+            if path.startswith("file:/"):
+                path = path[6:]
+
+            if (path.startswith("layout:/")
+                    and not os.path.isfile(_layout_path_from_term(path))):
+                QMessageBox.critical(
+                    self,
+                    UITexts.ERROR_LOADING_LAYOUT_TITLE.format(PROG_NAME),
+                    UITexts.ERROR_LOADING_LAYOUT_TEXT.format(path[8:]))
+                args = []
+
+        if args:
+            path = " ".join(args).strip()
             if path.startswith("file:/"):
                 path = path[6:]
             full_path = os.path.abspath(os.path.expanduser(path))
@@ -2076,7 +2114,7 @@ class MainWindow(QMainWindow):
     # --- Layout Management ---
     def save_layout(self, target_path=None):
         """Saves the current window and viewer layout to a JSON file."""
-        if not self.is_xcb:
+        if not (self.is_xcb or self.is_wayland):
             return
 
         # Ensure the layouts directory exists
@@ -2159,6 +2197,9 @@ class MainWindow(QMainWindow):
             },
             "viewers": []
         }
+        if self.is_wayland:
+            layout_data["main_window"]["layout_role"] = (
+                self._layout_window_role)
         if os.path.exists(filename):
             try:
                 with open(filename, "r", encoding="utf-8") as file_obj:
@@ -2173,11 +2214,54 @@ class MainWindow(QMainWindow):
 
         # Data from open viewers
         # We filter to ensure the widget is still alive and visible
-        active_viewers = [v for v in self.viewers
-                          if isinstance(v, ImageViewer) and v.isVisible()]
+        active_viewers = [v for v in self.viewers if _is_visible_viewer(v)]
 
         for v in active_viewers:
-            layout_data["viewers"].append(v.get_state())
+            viewer_state = v.get_state()
+            if self.is_wayland:
+                role = getattr(v, "_layout_window_role", None)
+                if not role:
+                    role = f"bagheera-viewer-{uuid.uuid4().hex}"
+                    v._layout_window_role = role
+                    v.setWindowRole(role)
+                viewer_state["layout_role"] = role
+            layout_data["viewers"].append(viewer_state)
+
+        if self.is_wayland:
+            capture_targets = [
+                {
+                    "role": layout_data["main_window"]["layout_role"],
+                    "title": self.windowTitle(),
+                }
+            ] if layout_data["main_window"]["visible"] else []
+            capture_targets.extend(
+                {
+                    "role": viewer_data["layout_role"],
+                    "title": viewer.windowTitle(),
+                }
+                for viewer, viewer_data in zip(
+                    active_viewers, layout_data["viewers"]))
+            try:
+                geometries = self.kwin_layout_backend.capture_geometries(
+                    capture_targets, os.getpid())
+                missing_roles = [
+                    target["role"] for target in capture_targets
+                    if target["role"] not in geometries]
+                if missing_roles:
+                    raise RuntimeError(
+                        "KWin did not report all Bagheera windows: "
+                        + ", ".join(missing_roles))
+            except RuntimeError as error:
+                QMessageBox.warning(
+                    self, UITexts.ERROR,
+                    f"Could not read window positions through KWin: {error}")
+                return
+
+            if layout_data["main_window"]["visible"]:
+                main_role = layout_data["main_window"]["layout_role"]
+                layout_data["main_window"]["geometry"] = geometries[main_role]
+            for viewer in layout_data["viewers"]:
+                viewer["geometry"] = geometries[viewer["layout_role"]]
 
         try:
             with open(filename, 'w') as f:
@@ -2191,7 +2275,7 @@ class MainWindow(QMainWindow):
 
     def load_layout_dialog(self):
         """Shows a dialog to select and load a layout."""
-        if not self.is_xcb:
+        if not (self.is_xcb or self.is_wayland):
             return
 
         if not os.path.exists(LAYOUTS_DIR):
@@ -2243,6 +2327,10 @@ class MainWindow(QMainWindow):
                 self, UITexts.ERROR,
                 UITexts.ERROR_RECORDING_LAYOUT_USAGE.format(e))
 
+        mw_data = data.get("main_window", {})
+        if self.is_wayland:
+            mw_data["layout_role"] = self._layout_window_role
+
         # Ensure main window is visible before restoring
         if not self.isVisible():
             self.show()
@@ -2251,8 +2339,6 @@ class MainWindow(QMainWindow):
         self.close_all_viewers()
 
         # Restore main window state
-        mw_data = data.get("main_window", {})
-
         # Restore main window geometry and state (including docks)
         # if "geometry" in mw_data:
         #     g = mw_data["geometry"]
@@ -2267,6 +2353,19 @@ class MainWindow(QMainWindow):
 
         # Restore viewers
         viewers_data = data.get("viewers", [])
+        wayland_windows = []
+
+        if self.is_wayland and mw_data.get("visible", True):
+            geometry = mw_data.get("geometry")
+            if geometry:
+                wayland_windows.append({
+                    "title": self.windowTitle(),
+                    "role": self._layout_window_role,
+                    "x": geometry["x"],
+                    "y": geometry["y"],
+                    "w": geometry["w"],
+                    "h": geometry["h"],
+                })
 
         # Gather all unique paths from the viewers to scan
         paths = []
@@ -2291,6 +2390,9 @@ class MainWindow(QMainWindow):
         for v_data in viewers_data:
             path = v_data.get("path")
             if os.path.exists(path):
+                if self.is_wayland:
+                    v_data["layout_role"] = v_data.get("layout_role") or (
+                        f"bagheera-viewer-{uuid.uuid4().hex}")
                 # Create viewer with a temporary list containing only its image.
                 # The full list will be synced later after the scan completes.
                 viewer = ImageViewer(self.cache, [path], 0, initial_tags=None,
@@ -2298,8 +2400,18 @@ class MainWindow(QMainWindow):
                                      restore_config=v_data, persistent=True)
                 # Apply saved geometry
                 v_geo = v_data.get("geometry")
-                if v_geo:
+                if v_geo and not self.is_wayland:
                     viewer.setGeometry(v_geo["x"], v_geo["y"], v_geo["w"], v_geo["h"])
+                elif v_geo and self.is_wayland:
+                    viewer.update_title()
+                    wayland_windows.append({
+                        "title": viewer.windowTitle(),
+                        "role": viewer._layout_window_role,
+                        "x": v_geo["x"],
+                        "y": v_geo["y"],
+                        "w": v_geo["w"],
+                        "h": v_geo["h"],
+                    })
 
                 self._setup_viewer_sync(viewer)
                 self.viewers.append(viewer)
@@ -2307,6 +2419,11 @@ class MainWindow(QMainWindow):
                     lambda obj=viewer: self.viewers.remove(obj)
                     if obj in self.viewers else None)
                 viewer.show()
+
+        if wayland_windows:
+            QTimer.singleShot(
+                500, lambda targets=wayland_windows:
+                self._apply_kwin_layout(targets))
 
         self.status_lbl.setText(UITexts.LAYOUT_RESTORED)
 
@@ -2322,6 +2439,15 @@ class MainWindow(QMainWindow):
 
         if search_text:
             self.search_input.setEditText(search_text)
+
+    def _apply_kwin_layout(self, windows):
+        """Applies the restored window geometries through KWin on Wayland."""
+        try:
+            self.kwin_layout_backend.apply_layout(windows, os.getpid())
+        except RuntimeError as error:
+            QMessageBox.warning(
+                self, UITexts.ERROR,
+                f"Could not restore window positions through KWin: {error}")
 
     # --- UI and Menu Logic ---
     def _add_sidebar_menu_action(self, menu, icon, text, action_name, widget):
@@ -2356,7 +2482,7 @@ class MainWindow(QMainWindow):
             menu, "view-history", UITexts.MENU_SHOW_HISTORY,
             "show_history_tab", self.history_tab)
 
-        if self.is_xcb:
+        if hasattr(self, "layouts_tab"):
             self._add_sidebar_menu_action(
                 menu, "view-grid", UITexts.MENU_SHOW_LAYOUTS,
                 "show_layouts_tab", self.layouts_tab)
@@ -5868,6 +5994,17 @@ class MainWindow(QMainWindow):
 
     def process_term(self, term, select_paths=None):
         """Processes a search term, file path, or layout directive."""
+        if term.startswith("layout:/"):
+            if not (self.is_xcb or self.is_wayland):
+                return
+            filename = _layout_path_from_term(term)
+            if not os.path.isfile(filename):
+                QMessageBox.critical(
+                    self,
+                    UITexts.ERROR_LOADING_LAYOUT_TITLE.format(PROG_NAME),
+                    UITexts.ERROR_LOADING_LAYOUT_TEXT.format(term[8:]))
+                return
+
         self.add_to_history(term)
         self.update_search_input()
 
@@ -5881,27 +6018,7 @@ class MainWindow(QMainWindow):
         QApplication.processEvents()
 
         if term.startswith("layout:/"):
-            if not self.is_xcb:
-                return
-
-            # Handle loading a layout
-            filename = os.path.join(LAYOUTS_DIR, f"{term[8:]}")
-            base, ext = os.path.splitext(filename)
-            if ext != ".layout":
-                filename = filename + ".layout"
-
-            if os.path.exists(filename):
-                self.restore_layout(filename)
-            else:
-                self.is_cleaning = True
-                if self.scanner:
-                    self.scanner.stop()
-                    self.scanner.wait()
-                QMessageBox.critical(self,
-                                     UITexts.ERROR_LOADING_LAYOUT_TITLE.format(
-                                         PROG_NAME),
-                                     UITexts.ERROR_LOADING_LAYOUT_TEXT.format(term[8:]))
-                QApplication.quit()
+            self.restore_layout(_layout_path_from_term(term))
 
         else:
             # Handle a file path or search query

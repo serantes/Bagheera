@@ -1310,23 +1310,29 @@ class LayoutsWidget(QWidget):
         load_action.triggered.connect(self.load_selected)
         toolbar.addAction(load_action)
 
-        create_action = QAction(QIcon.fromTheme("document-new"), UITexts.CREATE, self)
+        create_action = QAction(
+            QIcon.fromTheme("document-new"), UITexts.CREATE, self)
         create_action.triggered.connect(self.create_layout)
         toolbar.addAction(create_action)
 
-        save_action = QAction(QIcon.fromTheme("document-save"), UITexts.SAVE, self)
+        save_action = QAction(
+            QIcon.fromTheme("document-save"), UITexts.SAVE, self)
         save_action.triggered.connect(self.save_selected_layout)
         toolbar.addAction(save_action)
 
-        rename_action = QAction(QIcon.fromTheme("edit-rename"), UITexts.RENAME_LAYOUT_TOOLTIP, self)
+        rename_action = QAction(
+            QIcon.fromTheme("edit-rename"),
+            UITexts.RENAME_LAYOUT_TOOLTIP, self)
         rename_action.triggered.connect(self.rename_layout)
         toolbar.addAction(rename_action)
 
-        copy_action = QAction(QIcon.fromTheme("edit-copy"), UITexts.COPY, self)
+        copy_action = QAction(
+            QIcon.fromTheme("edit-copy"), UITexts.COPY, self)
         copy_action.triggered.connect(self.copy_layout)
         toolbar.addAction(copy_action)
 
-        delete_action = QAction(QIcon.fromTheme("edit-delete"), UITexts.DELETE, self)
+        delete_action = QAction(
+            QIcon.fromTheme("edit-delete"), UITexts.DELETE, self)
         delete_action.triggered.connect(self.delete_layout)
         toolbar.addAction(delete_action)
 

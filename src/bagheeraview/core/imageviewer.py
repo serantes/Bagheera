@@ -11,6 +11,7 @@ Classes:
 import os
 import subprocess
 import json
+import uuid
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QScrollArea, QLabel, QHBoxLayout, QListWidget,
@@ -1589,6 +1590,12 @@ class ImageViewer(QWidget):
         super().__init__()
         self.main_win = parent
         self.cache = cache
+        self._layout_window_role = None
+        if parent and getattr(parent, "is_wayland", False):
+            self._layout_window_role = (
+                (restore_config or {}).get("layout_role")
+                or f"bagheera-viewer-{uuid.uuid4().hex}")
+            self.setWindowRole(self._layout_window_role)
         self.set_window_icon()
         self._next_region_type = APP_CONFIG.get("next_region_type", "Face")
         self.setAttribute(Qt.WA_DeleteOnClose)

@@ -52,9 +52,9 @@ meaning it can handle thousands of images without performance degradation.
   multiple selections, and `Shift+Click` for range selection.
 * **Double-Click**: Double-clicking a thumbnail opens it in the dedicated Image
   Viewer, optimizing the display for full-size viewing.
-* **Directory Navigation**: When `Scan Max Level` in configuration is set to `0`, 
-  a directory search in Flat mode shows its immediate subdirectories alongside 
-  the images in the current directory; images inside those subdirectories are 
+* **Directory Navigation**: When `Scan Max Level` in configuration is set to `0`,
+  a directory search in Flat mode shows its immediate subdirectories alongside
+  the images in the current directory; images inside those subdirectories are
   not scanned.
   The parent-directory item navigates upward; directory items are unaffected by
   image filters and are hidden in grouped view modes. Double-click or Enter
@@ -111,8 +111,9 @@ access to various tools and information. You can toggle its visibility via the
 main menu or keyboard shortcut.
 
 The sidebar tabs are ordered as follows: **Metadata** (Tags, Information),
-**Browse** (Filter, Bookmarks, History), **Layouts** (X11 only), and **Maps**. The
-configurable shortcuts for these sub-tabs are Ctrl+Shift+T (Tags), Ctrl+Shift+I
+**Browse** (Filter, Bookmarks, History), **Layouts**, and **Maps**. Layouts can
+be saved and restored on X11 or KDE Wayland, but they are not interchangeable.
+The configurable shortcuts for these sub-tabs are Ctrl+Shift+T (Tags), Ctrl+Shift+I
 (Information), Ctrl+Shift+F (Filter), Ctrl+Shift+B (Bookmarks), Ctrl+Shift+H
 (History), Ctrl+Shift+L (Layouts), and Ctrl+Shift+M (Maps).
 
@@ -127,7 +128,13 @@ selected images.
 
 ![Bagheera Image Viewer - Tags Tab Overview](BagheeraView - tags.png)
 
-* **Visual Overview**: The screenshot above shows the **Tags** tab in action under the **Metadata** dock panel. In the central grid, multiple images are selected across a search (`tags=Travel AND tags=Xapón`). On the right, the hierarchical tag tree displays parent tags (e.g., `Travel > Xapón > Kyoto`) with checked boxes indicating applied tags. Partially applied tags across multiple selected files are shown in *italic text* (e.g., *Fushimi Inari* and *Kynkakuji*). Clicking "Apply Changes" at the bottom commits any tag modifications.
+* **Visual Overview**: The screenshot above shows the **Tags** tab in action under
+  the **Metadata** dock panel. In the central grid, multiple images are selected
+  across a search (`tags=Travel AND tags=Xapón`). On the right, the hierarchical
+  tag tree displays parent tags (e.g., `Travel > Xapón > Kyoto`) with checked
+  boxes indicating applied tags. Partially applied tags across multiple selected
+  files are shown in *italic text* (e.g., *Fushimi Inari* and *Kynkakuji*).
+  Clicking "Apply Changes" at the bottom commits any tag modifications.
 
 * **Tag Tree View**: Displays a hierarchical list of tags.
   * **⭐ USED TAGS**: Shows tags currently applied to the selected images.
@@ -178,8 +185,13 @@ This tab helps you filter the images displayed in the thumbnail grid.
 
 ![Bagheera Image Viewer - Filter Tab Overview](BagheeraView - filter.png)
 
-* **Visual Overview**: The screenshot above shows the **Filter** tab inside the **Browse** dock panel. In the file extension filter panel, `.jpg`, `.nef`, and `.nrw` formats are toggleable. In the tag list below, specific tags (`Travel/Xapón/Kyoto/Fushimi Inari` and `Travel/Xapón/Kyoto/Kynkakuji`) are selected, dynamically updating the thumbnail view to display 324 matching items out of 5,767 total images, as shown in the bottom status summary ("5474 items hidden, 324 items shown").
-
+* **Visual Overview**: The screenshot above shows the **Filter** tab inside the
+  **Browse** dock panel. In the file extension filter panel, `.jpg`, `.nef`, and
+  `.nrw` formats are toggleable. In the tag list below, specific tags
+  (`Travel/Xapón/Kyoto/Fushimi Inari` and `Travel/Xapón/Kyoto/Kynkakuji`) are
+  selected, dynamically updating the thumbnail view to display 324 matching items
+  out of 5,767 total images, as shown in the bottom status summary ("5474 items
+  hidden, 324 items shown").
 * **Filter by Filename Input**: Type text to filter images by their filename
   (case-insensitive).
 * **Show files by extension**: Lists file extensions discovered during the scan.
@@ -229,12 +241,12 @@ Keeps a record of your past searches and opened files/directories.
 * **Delete Older Button**: Removes the selected entry and all older entries from
   history.
 
-### 3.3. Layouts Tab (X11 only)
+### 3.3. Layouts Tab
 
-This tab allows you to save and restore the arrangement of your main window and
-any open image viewers. This feature is currently only available on X11 display
-servers because Wayland does not support setting window positions
-programmatically.
+Layouts can be saved, edited, and restored on X11 or KDE Wayland. On Wayland,
+KWin provides the actual frame geometry when saving and KWin scripting applies
+it when restoring the main window and image viewers. Coordinates saved under
+different display-server or monitor configurations may need manual adjustment.
 
 * **Layouts Table**: Lists your saved layouts with their names and last modified
   dates.

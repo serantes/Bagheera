@@ -70,7 +70,7 @@ Junto a la barra de estado se encuentran los siguientes controles para gestionar
 
 La aplicación incluye un panel lateral acoplable (oculto por defecto) que da acceso a herramientas avanzadas. Puedes activar o desactivar su visibilidad desde el menú principal o mediante atajos de teclado.
 
-Las pestañas del panel lateral se organizan en: **Metadatos** (Etiquetas, Información), **Explorar** (Filtro, Marcadores, Historial), **Diseños** (exclusivo de X11) y **Mapas**. Sus atajos de acceso directo son: `Ctrl+Shift+T` (Etiquetas), `Ctrl+Shift+I` (Información), `Ctrl+Shift+F` (Filtro), `Ctrl+Shift+B` (Marcadores), `Ctrl+Shift+H` (Historial), `Ctrl+Shift+L` (Diseños) y `Ctrl+Shift+M` (Mapas).
+Las pestañas del panel lateral se organizan en: **Metadatos** (Etiquetas, Información), **Explorar** (Filtro, Marcadores, Historial), **Diseños** y **Mapas**. Los diseños se pueden guardar y restaurar en X11 o KDE Wayland. Sus atajos de acceso directo son: `Ctrl+Shift+T` (Etiquetas), `Ctrl+Shift+I` (Información), `Ctrl+Shift+F` (Filtro), `Ctrl+Shift+B` (Marcadores), `Ctrl+Shift+H` (Historial), `Ctrl+Shift+L` (Diseños) y `Ctrl+Shift+M` (Mapas).
 
 ### 3.1. Pestaña Metadatos
 
@@ -160,9 +160,9 @@ Guarda un registro de las búsquedas y carpetas abiertas recientemente.
 * **Eliminar seleccionado**: Elimina el registro seleccionado.
 * **Eliminar anteriores**: Elimina la entrada seleccionada y todos los registros más antiguos.
 
-### 3.3. Pestaña Diseños (exclusivo de X11)
+### 3.3. Pestaña Diseños
 
-Permite guardar y restaurar la posición y tamaño de la ventana principal y de las ventanas secundarias del visor. Esta opción solo está disponible en sistemas bajo X11, ya que Wayland no permite posicionar ventanas mediante código por motivos de seguridad.
+Los diseños se pueden guardar, editar y restaurar en X11 o KDE Wayland. En Wayland, KWin proporciona la geometría real del marco de cada ventana al guardar y los scripts de KWin la aplican al restaurar. Las coordenadas guardadas con otra configuración de pantallas o servidor gráfico pueden requerir ajustes manuales.
 
 * **Tabla de diseños**: Lista los diseños guardados con su nombre y fecha de edición.
 * **Cargar**: Aplica la disposición de ventanas seleccionada.
