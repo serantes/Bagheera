@@ -1,14 +1,20 @@
 [Desktop Entry]
-Categories=Graphics;RasterGraphics;Viewer;
+Categories=Qt;KDE;Graphics;Photography;Viewer;
 Comment[en_US]=Bagheera Image Viewer with X11 forced
+Comment[es_ES]=Visor de imágenes Bagheera con X11 forzadas
+Comment[es_GL]=Visor de imaxes Bagheera coas X11 forzadas
 Comment=Bagheera Image Viewer with X11 forced
 Encoding=UTF-8
 Exec=bagheeraview --x11 %u
 GenericName[en_US]=Bagheera Image Viewer (X11)
+GenericName[es_ES]=Visor de imágenes Bagheera (X11)
+GenericName[es_GL]=Visor de imaxes Bagheera (X11)
 GenericName=Bagheera Image Viewer (X11)
 Icon=bagheeraview_x11
 MimeType=inode/directory;image/x-xbitmap;image/x-tga;image/x-portable-pixmap;image/x-portable-graymap;image/x-portable-bitmap;image/x-pict;image/webp;image/vnd.zbrush.pcx;image/vnd.adobe.photoshop;image/tiff;image/png;image/jpeg;image/gif;image/bmp;
 Name[en_US]=Bagheera Image Viewer (X11)
+Name[es_ES]=Visor de imágenes Bagheera (X11)
+Name[es_GL]=Visor de imaxes Bagheera (X11)
 Name=Bagheera Image Viewer (X11)
 NoDisplay=false
 Path=

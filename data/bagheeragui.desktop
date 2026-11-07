@@ -1,14 +1,20 @@
 [Desktop Entry]
 Categories=Utility;
-Comment[en_US]=Bagheera Search Gui
-Comment=Bagheera Search Gui
+Comment[en_US]=Bagheera Search
+Comment[es_ES]=Buscador Bagheera
+Comment[gl_ES]=Procurador Bagheera
+Comment=Bagheera Search
 Encoding=UTF-8
 Exec=bagheeragui
 GenericName[en_US]=Bagheera Search
+GenericName[es_ES]=Buscador Bagheera
+GenericName[gl_ES]=Procurador Bagheera
 GenericName=Bagheera Search
 Icon=bagheeragui
 MimeType=
 Name[en_US]=Bagheera Search
+Name[es_ES]=Buscador Bagheera
+Name[gl_ES]=Procurador Bagheera
 Name=Bagheera Search
 NoDisplay=false
 Path=
