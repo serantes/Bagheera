@@ -144,7 +144,7 @@ def test_escape_closes_after_unsaved_changes_confirmation(
         QMessageBox, "exec", answer_confirmation
     )
 
-    QTest.keyClick(editor.editor.text_area.editor, Qt.Key.Key_Escape)
+    editor.escape_action.trigger()
     qapp.processEvents()
     assert editor.isVisible()
 
@@ -153,7 +153,7 @@ def test_escape_closes_after_unsaved_changes_confirmation(
     )
 
     response[0] = constants.UITexts.TAG_INFO_DISCARD
-    QTest.keyClick(editor.editor.text_area.editor, Qt.Key.Key_Escape)
+    editor.escape_action.trigger()
     qapp.processEvents()
 
     assert not editor.isVisible()
