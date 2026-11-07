@@ -1535,6 +1535,8 @@ class LayoutSelectionDialog(QDialog):
         self.sort_order_combo.currentIndexChanged.connect(self._sort_layouts)
         self._sort_layouts()
 
+        self.table.setFocus()
+
     def _sort_layouts(self):
         """Sorts and displays layouts according to the selected criteria."""
         current_path = self.selected_path()
