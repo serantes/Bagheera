@@ -1,0 +1,12 @@
+<services>
+  <service name="tar_scm">
+    <param name="url">https://github.com/serantes/Bagheera.git</param>
+    <param name="scm">git</param>
+    <param name="revision">1.0.0</param>
+    <param name="filename">bagheera-1.0.0</param>
+  </service>
+  <service name="recompress">
+    <param name="file">bagheera-1.0.0.tar</param>
+    <param name="compression">gz</param>
+  </service>
+</services>
