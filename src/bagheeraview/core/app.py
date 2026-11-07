@@ -34,7 +34,8 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QTabWidget, QProgressDialog, QDockWidget,
     QAbstractItemView, QRadioButton, QButtonGroup, QListView,
     QStyledItemDelegate, QStyle, QDialog, QKeySequenceEdit, QDialogButtonBox,
-    QPlainTextEdit, QCheckBox, QGroupBox, QScrollArea, QGridLayout
+    QPlainTextEdit, QCheckBox, QGroupBox, QScrollArea, QGridLayout,
+    QStyleOptionButton, QToolTip
 )
 from PySide6.QtGui import (
     QDesktopServices, QFont, QFontMetrics, QIcon, QTransform, QImageReader,
@@ -785,6 +786,9 @@ class ThumbnailDelegate(QStyledItemDelegate):
     performant than creating a separate widget for each thumbnail.
     """
     HEADER_HEIGHT = 25
+    HEADER_BUTTON_SIZE = 20
+    HEADER_BUTTON_GAP = 2
+    HEADER_BUTTON_MARGIN = 4
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -845,37 +849,107 @@ class ThumbnailDelegate(QStyledItemDelegate):
 
     def paint_header(self, painter, option, index):
         """Draws a group header item."""
-        folder_path = index.data(DIR_ROLE)
         group_name = index.data(GROUP_NAME_ROLE)
-
         is_collapsed = group_name in self.main_win.proxy_model.collapsed_groups
-
-        prefix = "▶ " if is_collapsed else "▼ "
-        folder_name = prefix + (folder_path if folder_path else UITexts.UNKNOWN)
+        is_active = (
+            group_name in self.main_win._selected_group_names or
+            self.main_win.thumbnail_view.selectionModel().isSelected(index)
+        )
+        background = option.palette.highlight() if is_active \
+            else option.palette.alternateBase()
 
         # Background band
-        painter.fillRect(option.rect, option.palette.alternateBase())
+        painter.fillRect(option.rect, background)
 
         # Separator line
-        sep_color = option.palette.text().color()
+        text_color = option.palette.highlightedText().color() if is_active \
+            else option.palette.text().color()
+        sep_color = text_color
         sep_color.setAlpha(80)
         painter.setPen(sep_color)
         line_y = option.rect.center().y()
         painter.drawLine(option.rect.left(), line_y, option.rect.right(), line_y)
 
-        # Folder name text with its own background to cover the line
+        # Keep the navigation controls in a fixed position at the left of the
+        # header, with the collapse control immediately after them.
+        buttons = self.header_button_rects(option.rect)
+        previous_enabled = self.main_win._group_header_neighbor_row(
+            index.row(), -1) is not None
+        next_enabled = self.main_win._group_header_neighbor_row(
+            index.row(), 1) is not None
+        self._paint_header_button(
+            painter, buttons["previous"], QStyle.SP_ArrowLeft, previous_enabled)
+        self._paint_header_button(
+            painter, buttons["next"], QStyle.SP_ArrowRight, next_enabled)
+        self._paint_header_button(
+            painter, buttons["collapse"],
+            QStyle.SP_ArrowRight if is_collapsed else QStyle.SP_ArrowDown, True)
+
+        # Draw the group label after the controls so it cannot overlap them.
+        folder_name = index.data(DIR_ROLE) or UITexts.UNKNOWN
         font = painter.font()
         font.setBold(True)
         painter.setFont(font)
         fm = painter.fontMetrics()
-        text_w = fm.horizontalAdvance(folder_name) + 20
-        text_bg_rect = QRect(option.rect.center().x() - text_w // 2,
-                             option.rect.top(),
-                             text_w,
-                             option.rect.height())
-        painter.fillRect(text_bg_rect, option.palette.alternateBase())
-        painter.setPen(option.palette.text().color())
-        painter.drawText(option.rect, Qt.AlignCenter, folder_name)
+        text_rect = QRect(
+            buttons["collapse"].right() + self.HEADER_BUTTON_GAP + 1,
+            option.rect.top(),
+            option.rect.right() - buttons["collapse"].right() -
+            self.HEADER_BUTTON_GAP,
+            option.rect.height())
+        text_w = min(fm.horizontalAdvance(folder_name) + 20, text_rect.width())
+        text_bg_rect = QRect(text_rect.center().x() - text_w // 2,
+                             option.rect.top(), text_w, option.rect.height())
+        painter.fillRect(text_bg_rect, background)
+        painter.setPen(text_color)
+        painter.drawText(text_rect, Qt.AlignCenter, folder_name)
+
+    @classmethod
+    def header_button_rects(cls, rect):
+        """Return the previous, next, and collapse control rectangles."""
+        y = rect.top() + (rect.height() - cls.HEADER_BUTTON_SIZE) // 2
+        x = rect.left() + cls.HEADER_BUTTON_MARGIN
+        step = cls.HEADER_BUTTON_SIZE + cls.HEADER_BUTTON_GAP
+        return {
+            "previous": QRect(x, y, cls.HEADER_BUTTON_SIZE,
+                              cls.HEADER_BUTTON_SIZE),
+            "next": QRect(x + step, y, cls.HEADER_BUTTON_SIZE,
+                          cls.HEADER_BUTTON_SIZE),
+            "collapse": QRect(x + 2 * step, y, cls.HEADER_BUTTON_SIZE,
+                              cls.HEADER_BUTTON_SIZE),
+        }
+
+    @classmethod
+    def header_button_at(cls, rect, position):
+        """Return the header control under a viewport position, if any."""
+        for name, button_rect in cls.header_button_rects(rect).items():
+            if button_rect.contains(position):
+                return name
+        return None
+
+    def helpEvent(self, event, view, option, index):
+        if index.data(ITEM_TYPE_ROLE) == "header":
+            tooltips = {
+                "previous": UITexts.PREVIOUS_GROUP,
+                "next": UITexts.NEXT_GROUP,
+                "collapse": UITexts.COLLAPSE_EXPAND_GROUP,
+            }
+            control = self.header_button_at(option.rect, event.pos())
+            if control:
+                QToolTip.showText(event.globalPos(), tooltips[control], view)
+                return True
+        return super().helpEvent(event, view, option, index)
+
+    def _paint_header_button(self, painter, rect, standard_icon, enabled):
+        option = QStyleOptionButton()
+        option.rect = rect
+        option.icon = self.main_win.style().standardIcon(standard_icon)
+        option.iconSize = QSize(12, 12)
+        option.state = QStyle.State_Raised
+        if enabled:
+            option.state |= QStyle.State_Enabled
+        self.main_win.thumbnail_view.style().drawControl(
+            QStyle.CE_PushButton, option, painter, self.main_win.thumbnail_view)
 
     def paint_thumbnail(self, painter, option, index):
         """Draws a thumbnail item with image, text, rating, and tags."""
@@ -1461,6 +1535,8 @@ class MainWindow(QMainWindow):
         self._open_with_cache = {}  # Cache for mime_type -> list of app info
         self._app_info_cache = {}  # Cache for desktop_file_id
         self._group_info_cache = {}
+        self._group_header_rows_cache = None
+        self._selected_group_names = set()
         self._visible_paths_cache = None  # Cache for visible image paths
         self._path_to_model_index = {}
         self._paths_being_modified_by_app = set()  # For ignoring FS events
@@ -1902,6 +1978,12 @@ class MainWindow(QMainWindow):
         self.proxy_model = ThumbnailSortFilterProxyModel(self)
         self.proxy_model.setSourceModel(self.thumbnail_model)
         self.proxy_model.setDynamicSortFilter(False)  # Manual invalidation
+        for signal in (
+                self.proxy_model.rowsInserted, self.proxy_model.rowsRemoved,
+                self.proxy_model.rowsMoved, self.proxy_model.modelReset,
+                self.proxy_model.layoutChanged):
+            signal.connect(
+                lambda *_args: self._invalidate_group_header_rows())
 
         self.thumbnail_view.setModel(self.proxy_model)
         self.thumbnail_view.selectionModel().selectionChanged.connect(
@@ -2839,9 +2921,6 @@ class MainWindow(QMainWindow):
             group_name = self.proxy_model.data(proxy_index, GROUP_NAME_ROLE)
             if group_name:
                 self.toggle_group_collapse(group_name)
-            else:
-                # Fallback for old headers if any
-                self.proxy_model.invalidate()
 
     def get_current_selected_path(self):
         """Returns the file path of the first selected item in the view."""
@@ -4661,6 +4740,7 @@ class MainWindow(QMainWindow):
             self.thumbnail_view.setUpdatesEnabled(True)
             if selected_paths:
                 self.restore_selection(selected_paths)
+            self._update_selected_group_names()
 
             if self.main_dock.isVisible() and \
                self.sidebar_tabs.currentWidget() == self.browse_tabs and \
@@ -5081,6 +5161,9 @@ class MainWindow(QMainWindow):
 
     def on_selection_changed(self, selected, deselected):
         """Callback to update dock widgets when the thumbnail selection changes."""
+        self._update_selected_group_names()
+        self.thumbnail_view.viewport().update()
+
         # Always update tag edit widget data so available_tags is kept fresh
         # for name autocompletion in viewers, even if the sidebar is hidden.
         self.update_tag_edit_widget()
@@ -5091,6 +5174,23 @@ class MainWindow(QMainWindow):
         # Refresh the map tab only when it is currently active (lazy refresh).
         if hasattr(self, 'maps_tab') and self.maps_tab.is_active():
             self.maps_tab.refresh(self.get_selected_paths())
+
+    def _update_selected_group_names(self):
+        """Cache group names containing selected headers or thumbnails."""
+        self._selected_group_names = set()
+        for index in self.thumbnail_view.selectedIndexes():
+            item_type = self.proxy_model.data(index, ITEM_TYPE_ROLE)
+            if item_type == "header":
+                group_name = self.proxy_model.data(index, GROUP_NAME_ROLE)
+            elif item_type == "thumbnail":
+                group_name = self._get_group_info(
+                    self.proxy_model.data(index, PATH_ROLE),
+                    self.proxy_model.data(index, MTIME_ROLE),
+                    self.proxy_model.data(index, RATING_ROLE))[1]
+            else:
+                continue
+            if group_name:
+                self._selected_group_names.add(group_name)
 
     def select_by_paths(self, paths: list):
         """Selects thumbnails matching the given file paths.
@@ -6001,6 +6101,31 @@ class MainWindow(QMainWindow):
 
     def eventFilter(self, source, event):
         """Filters events from child widgets, like viewport resize."""
+        mouse_events = (
+            QEvent.MouseButtonPress, QEvent.MouseButtonRelease,
+            QEvent.MouseButtonDblClick)
+        if source is self._thumbnail_viewport and \
+                event.type() in mouse_events and event.button() == Qt.LeftButton:
+            position = event.position().toPoint()
+            index = self.thumbnail_view.indexAt(position)
+            if index.isValid() and \
+                    self.proxy_model.data(index, ITEM_TYPE_ROLE) == "header":
+                control = self.delegate.header_button_at(
+                    self.thumbnail_view.visualRect(index), position)
+                if control:
+                    if event.type() == QEvent.MouseButtonRelease:
+                        if control == "previous":
+                            self._navigate_to_adjacent_group(index, -1)
+                        elif control == "next":
+                            self._navigate_to_adjacent_group(index, 1)
+                        else:
+                            group_name = self.proxy_model.data(
+                                index, GROUP_NAME_ROLE)
+                            if group_name:
+                                self.toggle_group_collapse(group_name)
+                    event.accept()
+                    return True
+
         if (source is self.thumbnail_view or
                 source is self._thumbnail_viewport) \
                 and event.type() == QEvent.KeyPress:
@@ -6024,6 +6149,37 @@ class MainWindow(QMainWindow):
         if source is self._thumbnail_viewport and event.type() == QEvent.Resize:
             self.thumbnails_refresh_timer.start()
         return super().eventFilter(source, event)
+
+    def _invalidate_group_header_rows(self):
+        self._group_header_rows_cache = None
+
+    def _group_header_neighbor_row(self, current_row, direction):
+        """Return the adjacent group header row, or None at either boundary."""
+        if self._group_header_rows_cache is None:
+            self._group_header_rows_cache = [
+                row for row in range(self.proxy_model.rowCount())
+                if self.proxy_model.data(
+                    self.proxy_model.index(row, 0), ITEM_TYPE_ROLE) == "header"
+            ]
+        header_rows = self._group_header_rows_cache
+        try:
+            target_position = header_rows.index(current_row) + direction
+        except ValueError:
+            return None
+        if 0 <= target_position < len(header_rows):
+            return header_rows[target_position]
+        return None
+
+    def _navigate_to_adjacent_group(self, current_index, direction):
+        """Scroll the adjacent group header to the top of the thumbnail view."""
+        target_row = self._group_header_neighbor_row(
+            current_index.row(), direction)
+        if target_row is None:
+            return False
+        target_index = self.proxy_model.index(target_row, 0)
+        self.thumbnail_view.scrollTo(
+            target_index, QAbstractItemView.PositionAtTop)
+        return True
 
     def open_current_folder(self):
         """Opens the directory of the selected image in the default file manager."""
@@ -6415,12 +6571,31 @@ class MainWindow(QMainWindow):
 
     def toggle_group_collapse(self, group_name):
         """Toggles the collapsed state of a group."""
-        if group_name in self.proxy_model.collapsed_groups:
+        expanding = group_name in self.proxy_model.collapsed_groups
+        if expanding:
             self.proxy_model.collapsed_groups.remove(group_name)
         else:
             self.proxy_model.collapsed_groups.add(group_name)
+        self._invalidate_group_header_rows()
         self.proxy_model.invalidate()
         self._visible_paths_cache = None
+        if expanding:
+            QTimer.singleShot(
+                0, lambda group_name=group_name: self._scroll_to_group(
+                    group_name))
+
+    def _scroll_to_group(self, group_name):
+        """Bring a group's header and visible thumbnails into the viewport."""
+        if group_name in self.proxy_model.collapsed_groups:
+            return False
+        for row in range(self.proxy_model.rowCount()):
+            index = self.proxy_model.index(row, 0)
+            if self.proxy_model.data(index, ITEM_TYPE_ROLE) == "header" and \
+                    self.proxy_model.data(index, GROUP_NAME_ROLE) == group_name:
+                self.thumbnail_view.scrollTo(
+                    index, QAbstractItemView.PositionAtTop)
+                return True
+        return False
 
     def regenerate_thumbnail(self, path):
         """Regenerates the thumbnail for the specified path."""
