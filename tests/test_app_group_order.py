@@ -1,9 +1,11 @@
 from types import SimpleNamespace
+from datetime import datetime
 
 import pytest
 
+from bagheeraview.core import app as app_module
 from bagheeraview.core.app import MainWindow
-from bagheeraview.core.constants import UITexts
+from bagheeraview.core.constants import UITexts, _UI_TEXTS
 
 
 @pytest.mark.parametrize(
@@ -79,3 +81,41 @@ def test_date_group_sort_key_uses_full_timestamp_then_name():
         "/photos/z-earlier.jpg",
         "/photos/a-later.jpg",
     ]
+
+
+@pytest.mark.parametrize(
+    ("language", "expected_name"),
+    [
+        ("en", "May"),
+        ("es", "Mayo"),
+        ("gl", "Maio"),
+    ],
+)
+def test_month_groups_use_selected_language(
+        monkeypatch, language, expected_name):
+    timestamp = datetime(2024, 5, 15).timestamp()
+    proxy_model = SimpleNamespace(
+        group_by_folder=False,
+        group_by_rating=False,
+        group_by_day=False,
+        group_by_week=False,
+        group_by_month=True,
+        group_by_year=False,
+    )
+    window = SimpleNamespace(
+        proxy_model=proxy_model,
+        _group_info_cache={},
+    )
+    monkeypatch.setattr(
+        app_module,
+        "UITexts",
+        SimpleNamespace(
+            MONTH_NAMES=_UI_TEXTS[language]["MONTH_NAMES"],
+        ),
+    )
+
+    _, label = MainWindow._get_group_info(
+        window, "/photos/image.jpg", timestamp, 0)
+
+    assert label == f"{expected_name} 2024"
+    assert len(_UI_TEXTS[language]["MONTH_NAMES"]) == 12

@@ -94,6 +94,7 @@ from .metadatamanager import (
     MetadataManager, XattrManager, load_common_metadata
 )
 from .filesystemwatcher import FileSystemWatcher
+from .section_scrubber import SectionScrubber, build_sections
 
 
 def _parse_resolution_value(value):
@@ -1580,6 +1581,11 @@ class MainWindow(QMainWindow):
         layout.addLayout(top)
 
         # --- Central Area (Virtualized Thumbnail View) ---
+        thumbnail_area = QWidget()
+        thumbnail_area_layout = QHBoxLayout(thumbnail_area)
+        thumbnail_area_layout.setContentsMargins(0, 0, 0, 0)
+        thumbnail_area_layout.setSpacing(4)
+
         self.thumbnail_view = QListView()
         self.thumbnail_view.setViewMode(QListView.IconMode)
         self.thumbnail_view.setResizeMode(QListView.Adjust)
@@ -1595,7 +1601,11 @@ class MainWindow(QMainWindow):
 
         self._set_thumbnail_model(True)
 
-        layout.addWidget(self.thumbnail_view)
+        self.thumbnail_scrubber = SectionScrubber(self.thumbnail_view)
+        self.thumbnail_scrubber.hide()
+        thumbnail_area_layout.addWidget(self.thumbnail_view, 1)
+        thumbnail_area_layout.addWidget(self.thumbnail_scrubber)
+        layout.addWidget(thumbnail_area, 1)
 
         # Bottom bar with status and controls
         bot = QHBoxLayout()
@@ -1991,6 +2001,11 @@ class MainWindow(QMainWindow):
 
         self.delegate = ThumbnailDelegate(self)
         self.thumbnail_view.setItemDelegate(self.delegate)
+        for signal in (
+                self.proxy_model.rowsInserted, self.proxy_model.rowsRemoved,
+                self.proxy_model.rowsMoved, self.proxy_model.modelReset,
+                self.proxy_model.layoutChanged, self.proxy_model.dataChanged):
+            signal.connect(self._schedule_section_scrubber_update)
 
     def _process_model_update_queue(self):
         """Processes a chunk of the pending model updates."""
@@ -2669,6 +2684,7 @@ class MainWindow(QMainWindow):
             self.thread_pool_manager.update_default_thread_count()
             self.thumbnail_view.updateGeometries()
             self.thumbnail_view.viewport().update()
+            self._update_section_scrubber_visibility()
 
     def open_sidebar_tab(self, widget):
         """Show the dock and select a tab, including nested Metadata/Browse tabs."""
@@ -2834,6 +2850,8 @@ class MainWindow(QMainWindow):
         self.rebuild_timer.stop()
         self._model_update_timer.stop()
         self.resume_scan_timer.stop()
+        if hasattr(self, "_section_scrubber_timer"):
+            self._section_scrubber_timer.stop()
 
         # Close all viewers first to stop their preloader threads
         self.close_all_viewers()
@@ -4330,7 +4348,7 @@ class MainWindow(QMainWindow):
                     year=dt.strftime("%G"), week=dt.strftime("%V"))
             elif mode == 'M':
                 sk = dt.strftime("%Y-%m")
-                dn = dt.strftime("%B %Y").capitalize()
+                dn = f"{UITexts.MONTH_NAMES[dt.month - 1]} {dt.year}"
             else:  # Year
                 sk = dn = dt.strftime("%Y")
             res = (sk, dn)
@@ -4741,6 +4759,7 @@ class MainWindow(QMainWindow):
             if selected_paths:
                 self.restore_selection(selected_paths)
             self._update_selected_group_names()
+            self._schedule_section_scrubber_update()
 
             if self.main_dock.isVisible() and \
                self.sidebar_tabs.currentWidget() == self.browse_tabs and \
@@ -5192,6 +5211,104 @@ class MainWindow(QMainWindow):
             if group_name:
                 self._selected_group_names.add(group_name)
 
+    def _is_grouped_view(self):
+        return any((
+            self.proxy_model.group_by_folder,
+            self.proxy_model.group_by_day,
+            self.proxy_model.group_by_week,
+            self.proxy_model.group_by_month,
+            self.proxy_model.group_by_year,
+            self.proxy_model.group_by_rating,
+        ))
+
+    def _timeline_group_label(self, group_name):
+        """Return the compact timeline label for the active grouping mode."""
+        if self.proxy_model.group_by_folder:
+            return os.path.basename(os.path.normpath(group_name)) or group_name
+        if self.proxy_model.group_by_day:
+            try:
+                date = datetime.strptime(group_name, "%Y-%m-%d")
+            except ValueError:
+                return group_name
+            return f"{date.day:02d} {date.month:02d}"
+        if self.proxy_model.group_by_week:
+            parts = group_name.split()
+            if len(parts) >= 4 and parts[0].isdigit() and parts[-1].isdigit():
+                return f"{int(parts[-1]):02d} {parts[0]}"
+            return group_name
+        if self.proxy_model.group_by_month:
+            month_names = UITexts.MONTH_NAMES
+            month, separator, year = group_name.rpartition(" ")
+            if separator and year.isdigit():
+                for month_number, month_name in enumerate(month_names, 1):
+                    if month.casefold() == month_name.casefold():
+                        return f"{month_number:02d} {year}"
+            return group_name
+        if self.proxy_model.group_by_year:
+            return group_name
+        if self.proxy_model.group_by_rating:
+            return group_name.split(maxsplit=1)[0]
+        return group_name
+
+    def _update_section_scrubber_visibility(self):
+        visible = self._is_grouped_view() and APP_CONFIG.get(
+            "thumbnails_timeline_enabled", True)
+        self.thumbnail_scrubber.setVisible(visible)
+        if visible:
+            self._update_section_scrubber()
+        else:
+            self.thumbnail_scrubber.set_sections([])
+
+    def _schedule_section_scrubber_update(self, *_args):
+        if not hasattr(self, "thumbnail_scrubber"):
+            return
+        if not hasattr(self, "_section_scrubber_timer"):
+            self._section_scrubber_timer = QTimer(self)
+            self._section_scrubber_timer.setSingleShot(True)
+            self._section_scrubber_timer.setInterval(50)
+            self._section_scrubber_timer.timeout.connect(
+                self._update_section_scrubber)
+        self._section_scrubber_timer.start()
+
+    def _update_section_scrubber(self):
+        if not self._is_grouped_view() or not APP_CONFIG.get(
+                "thumbnails_timeline_enabled", True):
+            self.thumbnail_scrubber.hide()
+            self.thumbnail_scrubber.set_sections([])
+            return
+
+        tooltips = {}
+        keys = []
+        current_group = None
+        has_group_header = False
+        for row in range(self.proxy_model.rowCount()):
+            index = self.proxy_model.index(row, 0)
+            item_type = self.proxy_model.data(index, ITEM_TYPE_ROLE)
+            if item_type == "header":
+                has_group_header = True
+                current_group = self.proxy_model.data(index, GROUP_NAME_ROLE)
+                tooltips[current_group] = self.proxy_model.data(index, DIR_ROLE)
+            elif item_type == "thumbnail":
+                current_group = self._get_group_info(
+                    self.proxy_model.data(index, PATH_ROLE),
+                    self.proxy_model.data(index, MTIME_ROLE),
+                    self.proxy_model.data(index, RATING_ROLE))[1]
+                tooltips.setdefault(current_group, current_group)
+            if current_group is not None:
+                keys.append(current_group)
+
+        if not has_group_header:
+            self.thumbnail_scrubber.set_sections([])
+            self.thumbnail_scrubber.hide()
+            return
+
+        sections = build_sections(keys, self._timeline_group_label)
+        section_tooltips = [
+            tooltips.get(keys[row], label) for label, row, _count in sections
+        ]
+        self.thumbnail_scrubber.set_sections(sections, section_tooltips)
+        self.thumbnail_scrubber.setVisible(bool(sections))
+
     def select_by_paths(self, paths: list):
         """Selects thumbnails matching the given file paths.
         Called by GeoMapWidget when the user clicks a marker on the map.
@@ -5628,6 +5745,7 @@ class MainWindow(QMainWindow):
             self.start_scan([directory_root])
         else:
             self.rebuild_view(full_reset=True)
+        self._update_section_scrubber_visibility()
 
         self.save_config()
         self.setFocus()
@@ -6579,6 +6697,7 @@ class MainWindow(QMainWindow):
         self._invalidate_group_header_rows()
         self.proxy_model.invalidate()
         self._visible_paths_cache = None
+        self._schedule_section_scrubber_update()
         if expanding:
             QTimer.singleShot(
                 0, lambda group_name=group_name: self._scroll_to_group(

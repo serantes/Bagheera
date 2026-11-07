@@ -1,11 +1,14 @@
 from types import SimpleNamespace
 
+import pytest
+
 from PySide6.QtCore import QRect
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 
+from bagheeraview.core import app as app_module
 from bagheeraview.core.app import MainWindow, ThumbnailDelegate
 from bagheeraview.core.constants import (
-    GROUP_NAME_ROLE, ITEM_TYPE_ROLE, MTIME_ROLE, PATH_ROLE, RATING_ROLE
+    DIR_ROLE, GROUP_NAME_ROLE, ITEM_TYPE_ROLE, MTIME_ROLE, PATH_ROLE, RATING_ROLE
 )
 
 
@@ -114,6 +117,7 @@ def test_expanding_collapsed_group_scrolls_after_filter_invalidation(monkeypatch
         _group_header_rows_cache=None,
         _visible_paths_cache=[],
         _invalidate_group_header_rows=lambda: None,
+        _schedule_section_scrubber_update=lambda: None,
         _scroll_to_group=lambda group_name: MainWindow._scroll_to_group(
             window, group_name),
         thumbnail_view=SimpleNamespace(
@@ -128,3 +132,133 @@ def test_expanding_collapsed_group_scrolls_after_filter_invalidation(monkeypatch
     assert proxy.collapsed_groups == set()
     assert scrolled[0][0].row() == 0
     assert scrolled[0][1].name == "PositionAtTop"
+
+
+def test_scrubber_sections_use_visible_group_headers_and_thumbnails():
+    model = QStandardItemModel()
+    model.setColumnCount(1)
+    for item_type, group, label in (
+            ("header", "/photos/group-a", "Group A"),
+            ("thumbnail", "/photos/group-a", None),
+            ("header", "/photos/group-b", "Group B")):
+        item = QStandardItem()
+        item.setData(item_type, ITEM_TYPE_ROLE)
+        if item_type == "header":
+            item.setData(group, GROUP_NAME_ROLE)
+            item.setData(f"{label} - 12 images", DIR_ROLE)
+        else:
+            item.setData(f"{group}/a.jpg", PATH_ROLE)
+            item.setData(10, MTIME_ROLE)
+            item.setData(1, RATING_ROLE)
+        model.appendRow(item)
+
+    class Scrubber:
+        sections = None
+        tooltips = None
+        visible = False
+
+        def set_sections(self, sections, tooltips=None):
+            self.sections = sections
+            self.tooltips = tooltips
+
+        def setVisible(self, visible):
+            self.visible = visible
+
+    window = SimpleNamespace(
+        proxy_model=SimpleNamespace(
+            group_by_folder=True,
+            group_by_day=False,
+            group_by_week=False,
+            group_by_month=False,
+            group_by_year=False,
+            group_by_rating=False,
+            rowCount=model.rowCount,
+            index=model.index,
+            data=model.data,
+        ),
+        _is_grouped_view=lambda: True,
+        _timeline_group_label=lambda group_name: group_name.rsplit("/", 1)[-1],
+        _get_group_info=lambda path, mtime, rating: (
+            path.rsplit("/", 1)[0], path.rsplit("/", 1)[0]),
+        thumbnail_scrubber=Scrubber(),
+    )
+
+    MainWindow._update_section_scrubber(window)
+
+    assert window.thumbnail_scrubber.sections == [
+        ("group-a", 0, 2),
+        ("group-b", 2, 1),
+    ]
+    assert window.thumbnail_scrubber.tooltips == [
+        "Group A - 12 images",
+        "Group B - 12 images",
+    ]
+    assert window.thumbnail_scrubber.visible is True
+
+
+@pytest.mark.parametrize(
+    ("config", "expected_visible"),
+    [
+        ({}, True),
+        ({"thumbnails_timeline_enabled": False}, False),
+    ],
+)
+def test_timeline_visibility_respects_setting(config, expected_visible, monkeypatch):
+    class Scrubber:
+        visible = None
+        sections = None
+
+        def setVisible(self, visible):
+            self.visible = visible
+
+        def set_sections(self, sections):
+            self.sections = sections
+
+    window = SimpleNamespace(
+        _is_grouped_view=lambda: True,
+        thumbnail_scrubber=Scrubber(),
+        _update_section_scrubber=lambda: None,
+    )
+    monkeypatch.setattr(app_module, "APP_CONFIG", config)
+
+    MainWindow._update_section_scrubber_visibility(window)
+
+    assert window.thumbnail_scrubber.visible is expected_visible
+    if not expected_visible:
+        assert window.thumbnail_scrubber.sections == []
+
+
+@pytest.mark.parametrize(
+    ("grouping", "group_name", "expected_label"),
+    [
+        ("group_by_folder", "/a/b/c", "c"),
+        ("group_by_day", "2024-05-09", "09 05"),
+        ("group_by_week", "2024 - Semana 07", "07 2024"),
+        ("group_by_month", "May 2024", "05 2024"),
+        ("group_by_year", "2024", "2024"),
+        ("group_by_rating", "3 Stars", "3"),
+    ],
+)
+def test_timeline_group_labels_match_grouping_mode(
+        grouping, group_name, expected_label, monkeypatch):
+    if grouping == "group_by_month":
+        monkeypatch.setattr(
+            app_module, "UITexts",
+            SimpleNamespace(MONTH_NAMES=(
+                "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November",
+                "December",
+            )),
+        )
+    flags = {
+        "group_by_folder": False,
+        "group_by_day": False,
+        "group_by_week": False,
+        "group_by_month": False,
+        "group_by_year": False,
+        "group_by_rating": False,
+    }
+    flags[grouping] = True
+    window = SimpleNamespace(proxy_model=SimpleNamespace(**flags))
+
+    assert MainWindow._timeline_group_label(window, group_name) == expected_label

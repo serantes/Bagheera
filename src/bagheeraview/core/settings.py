@@ -323,6 +323,17 @@ class SettingsDialog(QDialog):
         show_filename_layout.addWidget(self.show_filename_check)
         thumbs_layout.addLayout(show_filename_layout)
 
+        filename_lines_layout = QHBoxLayout()
+        self.filename_lines_spin = QSpinBox()
+        self.filename_lines_spin.setRange(1, 3)
+        filename_lines_label = QLabel(UITexts.SETTINGS_THUMBS_FILENAME_LINES_LABEL)
+        filename_lines_layout.addWidget(filename_lines_label)
+        filename_lines_layout.addWidget(self.filename_lines_spin)
+        filename_lines_label.setToolTip(UITexts.SETTINGS_THUMBS_FILENAME_LINES_TOOLTIP)
+        self.filename_lines_spin.setToolTip(
+            UITexts.SETTINGS_THUMBS_FILENAME_LINES_TOOLTIP)
+        thumbs_layout.addLayout(filename_lines_layout)
+
         show_rating_layout = QHBoxLayout()
         self.show_rating_check = QCheckBox(UITexts.SETTINGS_THUMBS_SHOW_RATING_LABEL)
         self.show_rating_check.setToolTip(UITexts.SETTINGS_THUMBS_SHOW_RATING_TOOLTIP)
@@ -335,17 +346,6 @@ class SettingsDialog(QDialog):
         show_tags_layout.addWidget(self.show_tags_check)
         thumbs_layout.addLayout(show_tags_layout)
 
-        filename_lines_layout = QHBoxLayout()
-        self.filename_lines_spin = QSpinBox()
-        self.filename_lines_spin.setRange(1, 3)
-        filename_lines_label = QLabel(UITexts.SETTINGS_THUMBS_FILENAME_LINES_LABEL)
-        filename_lines_layout.addWidget(filename_lines_label)
-        filename_lines_layout.addWidget(self.filename_lines_spin)
-        filename_lines_label.setToolTip(UITexts.SETTINGS_THUMBS_FILENAME_LINES_TOOLTIP)
-        self.filename_lines_spin.setToolTip(
-            UITexts.SETTINGS_THUMBS_FILENAME_LINES_TOOLTIP)
-        thumbs_layout.addLayout(filename_lines_layout)
-
         tags_lines_layout = QHBoxLayout()
         self.tags_lines_spin = QSpinBox()
         self.tags_lines_spin.setRange(1, 4)
@@ -355,6 +355,15 @@ class SettingsDialog(QDialog):
         tags_lines_label.setToolTip(UITexts.SETTINGS_THUMBS_TAGS_LINES_TOOLTIP)
         self.tags_lines_spin.setToolTip(UITexts.SETTINGS_THUMBS_TAGS_LINES_TOOLTIP)
         thumbs_layout.addLayout(tags_lines_layout)
+
+        show_timeline_layout = QHBoxLayout()
+        self.show_timeline_check = QCheckBox(
+            UITexts.SETTINGS_THUMBS_SHOW_TIMELINE_LABEL)
+        self.show_timeline_check.setToolTip(
+            UITexts.SETTINGS_THUMBS_SHOW_TIMELINE_TOOLTIP)
+        show_timeline_layout.addWidget(self.show_timeline_check)
+        thumbs_layout.addLayout(show_timeline_layout)
+
         thumbs_layout.addStretch()
 
         # --- Scanner Tab ---
@@ -1199,6 +1208,7 @@ class SettingsDialog(QDialog):
         show_filename = APP_CONFIG.get("thumbnails_show_filename", True)
         show_rating = APP_CONFIG.get("thumbnails_show_rating", True)
         show_tags = APP_CONFIG.get("thumbnails_show_tags", True)
+        show_timeline = APP_CONFIG.get("thumbnails_timeline_enabled", True)
         filmstrip_position = APP_CONFIG.get("filmstrip_position", "bottom")
 
         duplicate_method = APP_CONFIG.get("duplicate_method", "histogram_hashing")
@@ -1345,6 +1355,7 @@ class SettingsDialog(QDialog):
         self.show_filename_check.setChecked(show_filename)
         self.show_rating_check.setChecked(show_rating)
         self.show_tags_check.setChecked(show_tags)
+        self.show_timeline_check.setChecked(show_timeline)
 
         self.scan_hidden_dirs_checkbox.setChecked(scan_hidden_dirs)
         self.scan_hidden_files_checkbox.setChecked(scan_hidden_files)
@@ -1650,6 +1661,8 @@ class SettingsDialog(QDialog):
         APP_CONFIG["thumbnails_show_filename"] = self.show_filename_check.isChecked()
         APP_CONFIG["thumbnails_show_rating"] = self.show_rating_check.isChecked()
         APP_CONFIG["thumbnails_show_tags"] = self.show_tags_check.isChecked()
+        APP_CONFIG["thumbnails_timeline_enabled"] = \
+            self.show_timeline_check.isChecked()
         APP_CONFIG["viewer_wheel_speed"] = self.viewer_wheel_spin.value()
         APP_CONFIG["duplicate_method"] = self.duplicate_method_combo.currentData()
         APP_CONFIG["duplicate_threshold"] = self.duplicate_threshold_slider.value()

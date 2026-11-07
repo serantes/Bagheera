@@ -711,6 +711,10 @@ _UI_TEXTS = {
         "GROUP_BY_WEEK_FORMAT": "{year} - Week {week}",
         "GROUP_HEADER_FORMAT": "{group_name} - {count} images",
         "GROUP_HEADER_FORMAT_SINGULAR": "{group_name} - 1 image",
+        "MONTH_NAMES": (
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December",
+        ),
         "GROUP_BY_RATING_FORMAT": "{stars} Stars",
         "LOADING_SCAN": "Loading... {} / {}",
         "SHUTTING_DOWN": "Shutting down...",
@@ -1106,6 +1110,9 @@ _UI_TEXTS = {
         "SETTINGS_THUMBS_SHOW_FILENAME_LABEL": "Show filename",
         "SETTINGS_THUMBS_SHOW_RATING_LABEL": "Show rating",
         "SETTINGS_THUMBS_SHOW_TAGS_LABEL": "Show tags",
+        "SETTINGS_THUMBS_SHOW_TIMELINE_LABEL": "Show grouping timeline",
+        "SETTINGS_THUMBS_SHOW_TIMELINE_TOOLTIP": "Show or hide the thumbnail grouping "
+        "timeline.",
         "SETTINGS_THUMBS_SHOW_FILENAME_TOOLTIP": "Show or hide the filename under the "
         "thumbnail.",
         "SETTINGS_THUMBS_SHOW_RATING_TOOLTIP": "Show or hide the rating stars under "
@@ -1523,6 +1530,11 @@ _UI_TEXTS = {
         "GROUP_HEADER_FORMAT": "{group_name} - {count} fotos",
         "GROUP_HEADER_FORMAT_SINGULAR": "{group_name} - 1 foto",
         "GROUP_BY_WEEK_FORMAT": "{year} - Semana {week}",
+        "MONTH_NAMES": (
+            "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+            "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre",
+            "Diciembre",
+        ),
         "GROUP_BY_RATING_FORMAT": "{stars} Estrellas",
         "SHUTTING_DOWN": "Cerrando...",
         "LOADED_PARTIAL": "Cargadas {} / {}",
@@ -1928,6 +1940,9 @@ _UI_TEXTS = {
         "SETTINGS_THUMBS_SHOW_FILENAME_LABEL": "Mostrar nombre de archivo",
         "SETTINGS_THUMBS_SHOW_RATING_LABEL": "Mostrar valoración",
         "SETTINGS_THUMBS_SHOW_TAGS_LABEL": "Mostrar etiquetas",
+        "SETTINGS_THUMBS_SHOW_TIMELINE_LABEL": "Mostrar línea de tiempo de grupos",
+        "SETTINGS_THUMBS_SHOW_TIMELINE_TOOLTIP": "Mostrar u ocultar la línea de tiempo "
+        "de los grupos de miniaturas.",
         "SETTINGS_THUMBS_SHOW_FILENAME_TOOLTIP": "Mostrar u ocultar el nombre del "
         "archivo debajo de la miniatura.",
         "SETTINGS_THUMBS_SHOW_RATING_TOOLTIP": "Mostrar u ocultar las estrellas de "
@@ -2343,6 +2358,11 @@ _UI_TEXTS = {
         "GROUP_HEADER_FORMAT": "{group_name} - {count} imaxes",
         "GROUP_HEADER_FORMAT_SINGULAR": "{group_name} - 1 imaxe",
         "GROUP_BY_WEEK_FORMAT": "{year} - Semana {week}",
+        "MONTH_NAMES": (
+            "Xaneiro", "Febreiro", "Marzo", "Abril", "Maio", "Xuño",
+            "Xullo", "Agosto", "Setembro", "Outubro", "Novembro",
+            "Decembro",
+        ),
         "GROUP_BY_RATING_FORMAT": "{stars} Estrelas",
         "SHUTTING_DOWN": "Pechando...",
         "LOADED_PARTIAL": "Cargadas {} / {}",
@@ -2749,6 +2769,9 @@ _UI_TEXTS = {
         "SETTINGS_THUMBS_SHOW_FILENAME_LABEL": "Amosar nome de ficheiro",
         "SETTINGS_THUMBS_SHOW_RATING_LABEL": "Amosar valoración",
         "SETTINGS_THUMBS_SHOW_TAGS_LABEL": "Amosar etiquetas",
+        "SETTINGS_THUMBS_SHOW_TIMELINE_LABEL": "Amosar liña de tempo dos grupos",
+        "SETTINGS_THUMBS_SHOW_TIMELINE_TOOLTIP": "Amosar ou ocultar a liña de tempo "
+        "dos grupos de miniaturas.",
         "SETTINGS_THUMBS_SHOW_FILENAME_TOOLTIP": "Amosar ou ocultar o nome do ficheiro "
         "debaixo da miniatura.",
         "SETTINGS_THUMBS_SHOW_RATING_TOOLTIP": "Amosar ou ocultar as estrelas de "
