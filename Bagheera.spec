@@ -39,20 +39,21 @@ BuildRequires:  python313-setuptools
 
 # --- BASE RUNTIME DEPENDENCIES (from pyproject.toml) ---
 Requires:       python313-exiv2
-Requires:       python313-face-recognition
-Requires:       python313-face_recognition_models
 Requires:       python313-faiss
-#Requires:       python313-faiss-gpu
 Requires:       python313-geopy
-#Requires:       python313-imagehash
 Requires:       python313-lmdb
-#Requires:       python313-mediapipe
 Requires:       python313-numpy
 Requires:       python313-pillow
 Requires:       python313-psutil
 Requires:       python313-pyparsing
 Requires:       python313-pyside6
 Requires:       python313-watchdog
+
+# -- NOT AVAILABLE PACKAGES ---
+#Requires:       python313-face-recognition
+#Requires:       python313-faiss-gpu
+#Requires:       python313-imagehash
+#Requires:       python313-mediapipe
 
 # System and desktop integration utilities
 BuildRequires:  fdupes
@@ -78,7 +79,7 @@ and an image viewer optimized for KDE and Baloo.
 %fdupes %{buildroot}%{python3_sitearch}
 
 # Register and integrate .desktop launchers in KDE/GNOME
-%suse_update_desktop_file -r bagheeraview Utility GraphicsViewer
+%suse_update_desktop_file -r bagheeraview Qt KDE Graphics Photography Viewer
 %suse_update_desktop_file -r bagheeragui Utility System
 
 %files

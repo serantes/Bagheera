@@ -33,6 +33,7 @@ all = [
     "exiv2",
     "face-recognition",
     "face_recognition_models",
+    #"faiss",
     "faiss-cpu",
     "faiss-gpu",
     "mediapipe",
@@ -42,6 +43,7 @@ full = [
     "exiv2",
     "face-recognition",
     "face_recognition_models",
+    #"faiss",
     "faiss-cpu",
     "faiss-gpu",
     "mediapipe"
@@ -53,8 +55,9 @@ faces = [
     "mediapipe"
 ]
 duplicates = [
+    #"faiss",
     "faiss-cpu",
-    "faiss-gpu"
+    "faiss-gpu",
 ]
 test = ["pytest"]
 
