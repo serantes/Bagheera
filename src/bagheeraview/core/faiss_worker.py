@@ -355,7 +355,7 @@ class FaissPairSearcher:
 
         n = len(paths_list)
         k = min(self.top_k + 1, n)
-        if isinstance(index, faiss.GpuIndex) and k > _GPU_MAX_K:
+        if hasattr(faiss, 'GpuIndex') and isinstance(index, faiss.GpuIndex) and k > _GPU_MAX_K:
             logger.info(f"Requested k={k} exceeds GPU constraints; "
                         f"capping k at {_GPU_MAX_K} for CUDA execution.")
             k = _GPU_MAX_K
@@ -615,7 +615,7 @@ class FAISSSimilarSearchWorker(QThread):
                 # Search all of them
                 k = len(paths_list)
                 # If we successfully migrated to a GPU index, enforce the CUDA k-selection limit
-                if isinstance(index, faiss.GpuIndex):
+                if hasattr(faiss, 'GpuIndex') and isinstance(index, faiss.GpuIndex):
                     max_gpu_k = 2048
                     if k > max_gpu_k:
                         logger.info(f"Requested k={k} exceeds GPU constraints. Capping k at {max_gpu_k} for CUDA execution.")
