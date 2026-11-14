@@ -1,4 +1,5 @@
 import pytest
+from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import QApplication, QHeaderView, QToolButton
 
 from bagheeragui.gui import app as gui
@@ -406,7 +407,7 @@ def test_path_elision_tracks_column_width_and_preserves_full_path(window, monkey
 
     def capture(text, metrics, width):
         result = original(text, metrics, width)
-        displayed.append((text, metrics.horizontalAdvance(result), width, result))
+        displayed.append((text, QFontMetrics(metrics), width, result))
         return result
 
     monkeypatch.setattr(delegate, "displayed_path", capture)
@@ -414,13 +415,20 @@ def test_path_elision_tracks_column_width_and_preserves_full_path(window, monkey
     QApplication.processEvents()
     displayed.clear()
     table.viewport().grab()
-    text, pixel_width, width, short_path = displayed[-1]
+    _, metrics, width, _ = displayed[-1]
+    padding = table.columnWidth(1) - width
+    suffix = "/vacation-final-image.png"
+    table.setColumnWidth(1, metrics.horizontalAdvance("/…" + suffix) + padding)
+    QApplication.processEvents()
+    displayed.clear()
+    table.viewport().grab()
+    text, metrics, width, short_path = displayed[-1]
     assert text == path
-    assert short_path.startswith("/") and short_path.endswith("/vacation-final-image.png")
+    assert short_path.startswith("/") and short_path.endswith(suffix)
     assert "…" in short_path
-    assert pixel_width <= width
+    assert metrics.horizontalAdvance(short_path) <= width
 
-    table.setColumnWidth(1, 800)
+    table.setColumnWidth(1, metrics.horizontalAdvance(path) + padding)
     QApplication.processEvents()
     displayed.clear()
     table.viewport().grab()
@@ -428,8 +436,6 @@ def test_path_elision_tracks_column_width_and_preserves_full_path(window, monkey
     assert table.item(0, 1).text() == path
     assert table.item(0, 1).toolTip() == path
 
-    metrics = window.fontMetrics()
-    suffix = "/vacation-final-image.png"
     width = metrics.horizontalAdvance("…" + suffix)
     assert original(path, metrics, width) == "…" + suffix
     narrow = original(path, metrics, 20)
