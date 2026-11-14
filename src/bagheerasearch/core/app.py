@@ -125,6 +125,68 @@ def parse_query_clauses(query: str) -> Tuple[str, Optional[str], List[Subquery]]
     )
 
 
+def parse_search_arguments(parser, argv=None):
+    """Parse command options while retaining query words in their original order."""
+    argv = sys.argv[1:] if argv is None else argv
+    for arg in argv:
+        if arg.split("=", 1)[0] in ("--having", "--subquery", "--subquery-having"):
+            parser.error(HelpTexts.ERR_REMOVED_OPTION.format(arg))
+
+    args, unknown_args = parser.parse_known_args(argv)
+    unknown_options = [arg for arg in unknown_args if arg.startswith("-")]
+    if unknown_options:
+        parser.error(HelpTexts.ERR_UNKNOWN_OPTIONS.format(" ".join(unknown_options)))
+    return args, unknown_args
+
+
+def build_search_request(parser, args, unknown_args):
+    """Build the query and options shared by CLI and library clients."""
+    query_parts = [args.query] if args.query else []
+    query_parts.extend(unknown_args)
+    query_text, having, subqueries = parse_query_clauses(" ".join(query_parts))
+
+    if args.day is not None and args.month is None:
+        parser.error(HelpTexts.ERR_MISSING_MONTH)
+    if args.month is not None and args.year is None:
+        parser.error(HelpTexts.ERR_MISSING_YEAR)
+
+    main_options = {}
+    if not subqueries:
+        if args.limit is not None:
+            main_options["limit"] = args.limit
+        if args.offset is not None:
+            main_options["offset"] = args.offset
+    if args.type:
+        main_options["type"] = args.type
+    if args.directory:
+        main_options["directory"] = args.directory
+    if args.year is not None:
+        main_options["year"] = args.year
+    if args.month is not None:
+        main_options["month"] = args.month
+    if args.day is not None:
+        main_options["day"] = args.day
+    if args.sort:
+        main_options["sort"] = args.sort
+
+    other_options = {
+        "having": having,
+        "id": getattr(args, "id", False),
+        "konsole": getattr(args, "konsole", False),
+        "limit": args.limit if subqueries and args.limit is not None else 99999999999,
+        "offset": args.offset if subqueries and args.offset is not None else 0,
+        "subquery": None,
+        "subquery_indent": getattr(args, "subquery_indent", None) or "",
+        "subquery_having": None,
+        "sort": args.sort,
+        "type": None,
+        "verbose": getattr(args, "verbose", False),
+    }
+    if subqueries:
+        other_options["subqueries"] = subqueries
+    return query_text, main_options, other_options
+
+
 def main() -> None:
     """Main entry point for the CLI tool."""
     parser = argparse.ArgumentParser(
@@ -148,14 +210,7 @@ def main() -> None:
     parser.add_argument("--help-query", action="store_true", help=HelpTexts.ARG_HELP_QUERY)
     parser.add_argument("--version", action="store_true", help=HelpTexts.ARG_VERSION)
 
-    for arg in sys.argv[1:]:
-        if arg.split("=", 1)[0] in ("--having", "--subquery", "--subquery-having"):
-            parser.error(HelpTexts.ERR_REMOVED_OPTION.format(arg))
-
-    args, unknown_args = parser.parse_known_args()
-    unknown_options = [arg for arg in unknown_args if arg.startswith("-")]
-    if unknown_options:
-        parser.error(HelpTexts.ERR_UNKNOWN_OPTIONS.format(" ".join(unknown_options)))
+    args, unknown_args = parse_search_arguments(parser)
 
     if args.version:
         print_version()
@@ -165,19 +220,8 @@ def main() -> None:
         print_help_query()
         return
 
-    query_parts = [args.query] if args.query else []
-    if unknown_args:
-        query_parts.extend(unknown_args)
-
-    query_text, having, subqueries = parse_query_clauses(" ".join(query_parts))
-
-    if args.day is not None and args.month is None:
-        parser.error(HelpTexts.ERR_MISSING_MONTH)
-
-    if args.month is not None and args.year is None:
-        parser.error(HelpTexts.ERR_MISSING_YEAR)
-
-    if not query_text and not subqueries and not args.type and not args.directory:
+    query_text, main_options, other_options = build_search_request(parser, args, unknown_args)
+    if not query_text and not other_options.get("subqueries") and not args.type and not args.directory:
         parser.print_help()
         return
 
@@ -189,43 +233,6 @@ def main() -> None:
     #         save_config(user_config)
     # elif "last_sort_order" in user_config:
     #     args.sort = user_config["last_sort_order"]
-
-    # Build options dictionary
-    main_options = {}
-    if not subqueries:
-        if args.limit is not None:
-            main_options["limit"] = args.limit
-        if args.offset is not None:
-            main_options["offset"] = args.offset
-    if args.type:
-        main_options["type"] = args.type
-
-    if args.directory:
-        main_options["directory"] = args.directory
-    if args.year is not None:
-        main_options["year"] = args.year
-    if args.month is not None:
-        main_options["month"] = args.month
-    if args.day is not None:
-        main_options["day"] = args.day
-    if args.sort:
-        main_options["sort"] = args.sort
-
-    other_options = {
-        "having": having,
-        "id": args.id,
-        "konsole": args.konsole,
-        "limit": args.limit if subqueries and args.limit is not None else 99999999999,
-        "offset": args.offset if subqueries and args.offset is not None else 0,
-        "subquery": None,
-        "subquery_indent": args.subquery_indent or "",
-        "subquery_having": None,
-        "sort": args.sort,
-        "type": None,
-        "verbose": args.verbose,
-    }
-    if subqueries:
-        other_options["subqueries"] = subqueries
 
     if other_options["verbose"]:
         start_time = time.time()

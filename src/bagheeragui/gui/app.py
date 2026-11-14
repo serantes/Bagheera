@@ -11,7 +11,7 @@ from datetime import datetime
 
 from PySide6.QtCore import (
     QDir, QLocale, QMimeDatabase, QProcess, QSize, QStringListModel,
-    QThread, Qt, QUrl, Signal, Slot
+    QThread, QTimer, Qt, QUrl, Signal, Slot
 )
 from PySide6.QtGui import (
     QDesktopServices, QIcon, QImage, QKeySequence, QPixmap, QShortcut
@@ -19,8 +19,9 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QComboBox, QCompleter, QFileDialog,
     QFileSystemModel, QFormLayout, QFrame, QGroupBox, QHBoxLayout,
-    QHeaderView, QLabel, QMainWindow, QMenu, QMessageBox,
-    QProgressBar, QPushButton, QSpinBox, QTableWidget, QTableWidgetItem,
+    QHeaderView, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
+    QProgressBar, QPushButton, QScrollArea, QSpinBox, QTableWidget, QTableWidgetItem,
+    QStyledItemDelegate, QStyle, QStyleOptionViewItem, QToolButton,
     QVBoxLayout, QWidget, QCheckBox
 )
 
@@ -37,7 +38,12 @@ try:
 except ImportError:
     HAVE_BALOO_TOOLS = False
 
+# --- CONFIGURATION ---
+PROG_NAME = "Bagheera Search"
 PROG_ID = "bagheeragui"
+PROG_VERSION = "1.0.0"
+PROG_BY = "Ignacio Serantes"
+PROG_DATE = "2026-05-24"
 CONFIG_FILE = f"{PROG_ID}rc"
 CONFIG_LOCATION = os.environ.get('XDG_CONFIG_HOME') or os.path.expanduser('~/.config')
 CONFIG_DIR = os.path.join(CONFIG_LOCATION, 'iserantes', PROG_ID)
@@ -68,6 +74,16 @@ def save_app_config(config):
 # --- INTERNATIONALIZATION (i18n) ---
 TRANSLATIONS: dict = {
     'en': {
+        'Search Placeholder': "Search... e.g. album HAVING rating=5 SUBQUERY cat",
+        'Subquery operator help': (
+            "Combines this subquery with the preceding subqueries. "
+            "For the first subquery, AND and OR are ignored, but NOT is applied."
+        ),
+        'Clear value': 'Clear value',
+        'Hide Icons help': (
+            "Hiding icons skips thumbnail generation and can speed up searches "
+            "with many results."
+        ),
         'HAVING_EXAMPLES': (
             "Syntax examples for 'Having':\n\n"
             "· width > height\n"
@@ -93,8 +109,8 @@ TRANSLATIONS: dict = {
             "· album HAVING rating=5 SUBQUERY cat OR SUBQUERY dog\n"
             "· album SUBQUERY (all items in matching folders)\n"
             "Use the controls for directory, type, limit and other options. "
-            "The advanced HAVING applies to the main query; an activated "
-            "subquery is added after the clauses in the search bar.\n"
+            "The advanced HAVING applies to the main query; activated "
+            "subqueries follow the clauses in the search bar in displayed order.\n"
             "AND / AND NOT take precedence over OR EXCLUSIVE (XOR), then OR / OR NOT. "
             "The first subquery starts the result set; its NOT is respected."
         ),
@@ -102,7 +118,7 @@ TRANSLATIONS: dict = {
     'es': {
         'Search': 'Buscar',
         'Search Placeholder': (
-            "Escribe tu búsqueda aquí... (ej: 'vacaciones playa')"),
+            "Busca... p. ej. album HAVING rating=5 SUBQUERY cat"),
         'Basic Filters': 'Filtros Básicos',
         'Directory:': 'Directorio:',
         'Type:': 'Tipo:',
@@ -115,13 +131,24 @@ TRANSLATIONS: dict = {
         'Month:': 'Mes:',
         'Day:': 'Día:',
         'Advanced': 'Avanzado',
-        'Having:': 'Manteniendo:',
+        'Having:': 'HAVING principal:',
         'Subquery:': 'Subconsulta:',
-        'Subquery having:': 'Manteniendo subconsulta:',
+        'Subquery having:': 'HAVING subconsulta:',
         'Subquery operator:': 'Operador de subconsulta:',
+        'Add subquery': 'Añadir subconsulta',
+        'Remove subquery': 'Eliminar subconsulta',
+        'Subquery operator help': (
+            'Combina esta subconsulta con las anteriores. En la primera '
+            'subconsulta se ignoran AND y OR, pero se aplica NOT.'
+        ),
         'Options must be selected using the controls: {0}': (
             'Las opciones deben seleccionarse mediante los controles: {0}'),
         'Search error: {0}': 'Error de búsqueda: {0}',
+        'Clear value': 'Borrar valor',
+        'Hide Icons help': (
+            'Ocultar los iconos evita generar miniaturas y puede acelerar '
+            'las búsquedas con muchos resultados.'
+        ),
         'Icon': 'Icono',
         'Syntax Help': 'Ayuda de sintaxis',
         'HAVING_EXAMPLES': (
@@ -149,8 +176,8 @@ TRANSLATIONS: dict = {
             "· album HAVING rating=5 SUBQUERY cat OR SUBQUERY dog\n"
             "· album SUBQUERY (todos los elementos de las carpetas encontradas)\n"
             "Usa los controles para el directorio, tipo, límite y demás opciones. "
-            "El HAVING avanzado se aplica a la consulta principal; la subconsulta "
-            "activada se añade después de las cláusulas de la barra.\n"
+            "El HAVING avanzado se aplica a la consulta principal; las subconsultas "
+            "activadas siguen a las cláusulas de la barra en el orden mostrado.\n"
             "AND / AND NOT tienen prioridad sobre OR EXCLUSIVE (XOR) y después "
             "OR / OR NOT. La primera subconsulta inicia el conjunto y respeta NOT."
         ),
@@ -199,7 +226,7 @@ TRANSLATIONS: dict = {
     'gl': {
         'Search': 'Buscar',
         'Search Placeholder': (
-            "Escribe a túa busca aquí... (ex: 'vacacións praia')"),
+            "Busca... p. ex. album HAVING rating=5 SUBQUERY cat"),
         'Basic Filters': 'Filtros Básicos',
         'Directory:': 'Directorio:',
         'Type:': 'Tipo:',
@@ -212,13 +239,24 @@ TRANSLATIONS: dict = {
         'Month:': 'Mes:',
         'Day:': 'Día:',
         'Advanced': 'Avanzado',
-        'Having:': 'Mantendo:',
+        'Having:': 'HAVING principal:',
         'Subquery:': 'Subconsulta:',
-        'Subquery having:': 'Mantendo subconsulta:',
+        'Subquery having:': 'HAVING subconsulta:',
         'Subquery operator:': 'Operador de subconsulta:',
+        'Add subquery': 'Engadir subconsulta',
+        'Remove subquery': 'Eliminar subconsulta',
+        'Subquery operator help': (
+            'Combina esta subconsulta coas anteriores. Na primeira subconsulta '
+            'ignóranse AND e OR, pero aplícase NOT.'
+        ),
         'Options must be selected using the controls: {0}': (
             'As opcións deben seleccionarse cos controis: {0}'),
         'Search error: {0}': 'Erro de busca: {0}',
+        'Clear value': 'Borrar valor',
+        'Hide Icons help': (
+            'Ocultar as iconas evita xerar miniaturas e pode acelerar '
+            'as buscas con moitos resultados.'
+        ),
         'Icon': 'Icona',
         'Syntax Help': 'Axuda de sintaxe',
         'HAVING_EXAMPLES': (
@@ -246,8 +284,8 @@ TRANSLATIONS: dict = {
             "· album HAVING rating=5 SUBQUERY cat OR SUBQUERY dog\n"
             "· album SUBQUERY (todos os elementos dos cartafoles atopados)\n"
             "Usa os controis para o directorio, tipo, límite e demais opcións. "
-            "O HAVING avanzado aplícase á consulta principal; a subconsulta "
-            "activada engádese despois das cláusulas da barra.\n"
+            "O HAVING avanzado aplícase á consulta principal; as subconsultas "
+            "activadas seguen as cláusulas da barra na orde amosada.\n"
             "AND / AND NOT teñen prioridade sobre OR EXCLUSIVE (XOR) e despois "
             "OR / OR NOT. A primeira subconsulta inicia o conxunto e respecta NOT."
         ),
@@ -307,7 +345,7 @@ def _(text: str) -> str:
         The translated string if available, otherwise the source text.
     """
     lang_code = QLocale.system().name()[:2]
-    return TRANSLATIONS.get(lang_code, {}).get(text, text)
+    return TRANSLATIONS.get(lang_code, TRANSLATIONS['en']).get(text, text)
 
 
 def find_query_option(query):
@@ -329,6 +367,76 @@ def find_query_option(query):
             return query[i:].split(maxsplit=1)[0]
         i += 1
     return None
+
+
+def clear_value_icon():
+    return QIcon.fromTheme(
+        "edit-clear", QApplication.style().standardIcon(QStyle.SP_DialogResetButton))
+
+
+def clear_value_button(action):
+    button = QToolButton()
+    button.setIcon(clear_value_icon())
+    button.setToolTip(_("Clear value"))
+    button.setAccessibleName(_("Clear value"))
+    button.clicked.connect(action)
+    return button
+
+
+def add_inline_clear_button(line_edit):
+    action = line_edit.addAction(clear_value_icon(), QLineEdit.TrailingPosition)
+    action.setText(_("Clear value"))
+    action.setToolTip(_("Clear value"))
+    action.triggered.connect(line_edit.clear)
+
+
+def history_clear_icon():
+    fallback = QIcon.fromTheme(
+        "edit-clear", QApplication.style().standardIcon(QStyle.SP_DialogResetButton))
+    return QIcon.fromTheme("edit-clear-history", fallback)
+
+
+def clearable_list(combo):
+    layout = QHBoxLayout()
+    layout.addWidget(combo, 1)
+    button = clear_value_button(lambda: combo.setCurrentIndex(0))
+    button.setEnabled(combo.isEnabled())
+    layout.addWidget(button)
+    combo.clear_value_button = button
+    return layout
+
+
+class PathItemDelegate(QStyledItemDelegate):
+    @staticmethod
+    def displayed_path(path, metrics, width):
+        if metrics.horizontalAdvance(path) <= width:
+            return path
+        separator = path.rstrip(os.sep).rfind(os.sep)
+        if separator > 0:
+            suffix = path[separator:]
+            if metrics.horizontalAdvance(path[:1] + "…" + suffix) <= width:
+                low, high = 1, separator
+                while low < high:
+                    mid = (low + high + 1) // 2
+                    if metrics.horizontalAdvance(path[:mid] + "…" + suffix) <= width:
+                        low = mid
+                    else:
+                        high = mid - 1
+                return path[:low] + "…" + suffix
+            if metrics.horizontalAdvance("…" + suffix) <= width:
+                return "…" + suffix
+        return metrics.elidedText(path, Qt.ElideMiddle, max(0, width))
+
+    def paint(self, painter, option, index):
+        styled_option = QStyleOptionViewItem(option)
+        self.initStyleOption(styled_option, index)
+        widget = styled_option.widget
+        style = widget.style() if widget else QApplication.style()
+        text_rect = style.subElementRect(QStyle.SE_ItemViewItemText, styled_option, widget)
+        styled_option.text = self.displayed_path(
+            styled_option.text, styled_option.fontMetrics, text_rect.width())
+        styled_option.textElideMode = Qt.ElideNone
+        style.drawControl(QStyle.CE_ItemViewItem, styled_option, painter, widget)
 
 
 class SearchWorker(QThread):
@@ -397,6 +505,82 @@ class SearchWorker(QThread):
             self.finished.emit()
 
 
+class SubqueryRow(QWidget):
+    def __init__(self, window, removable):
+        super().__init__()
+        form = QFormLayout(self)
+        form.setContentsMargins(0, 0, 0, 0)
+        if removable:
+            separator = QFrame()
+            separator.setFrameShape(QFrame.HLine)
+            form.addRow(separator)
+
+        self.operator_combo = QComboBox()
+        for operator in ("AND", "AND NOT", "OR", "OR NOT", "OR EXCLUSIVE"):
+            self.operator_combo.addItem(operator, operator)
+        self.operator_combo.setToolTip(_("Subquery operator help"))
+        operator_layout = QHBoxLayout()
+        operator_layout.addLayout(clearable_list(self.operator_combo))
+        if removable:
+            self.remove_button = QPushButton("-")
+            self.remove_button.setFixedWidth(30)
+            self.remove_button.setToolTip(_("Remove subquery"))
+            self.remove_button.setAccessibleName(_("Remove subquery"))
+            self.remove_button.clicked.connect(lambda: window._remove_subquery_row(self))
+            operator_layout.addWidget(self.remove_button)
+        form.addRow(_("Subquery operator:"), operator_layout)
+
+        self.query_input = QComboBox()
+        self.query_input.setEditable(True)
+        self.query_input.lineEdit().setClearButtonEnabled(True)
+        self.query_input.setInsertPolicy(QComboBox.NoInsert)
+        self.query_input.addItems(window.config.get("subquery_history", []))
+        self.query_input.lineEdit().setPlaceholderText(
+            _("Internal query for files in folders"))
+        query_layout = QHBoxLayout()
+        query_layout.addWidget(self.query_input, 1)
+        clear_query = QPushButton()
+        clear_query.setIcon(history_clear_icon())
+        clear_query.setFixedWidth(30)
+        clear_query.setToolTip(_("Clear History"))
+        clear_query.clicked.connect(
+            lambda: window._clear_combo_history(self.query_input, "subquery_history"))
+        query_layout.addWidget(clear_query)
+        form.addRow(_("Subquery:"), query_layout)
+
+        self.having_input = QComboBox()
+        self.having_input.setEditable(True)
+        add_inline_clear_button(self.having_input.lineEdit())
+        self.having_input.setInsertPolicy(QComboBox.NoInsert)
+        self.having_input.addItems(window.config.get("subquery_having_history", []))
+        self.having_input.lineEdit().setPlaceholderText(_("e.g.: width > height"))
+        having_layout = QHBoxLayout()
+        help_button = QPushButton()
+        help_icon = QIcon.fromTheme("help-about")
+        if help_icon.isNull():
+            help_button.setText("?")
+        else:
+            help_button.setIcon(help_icon)
+        help_button.setFixedWidth(30)
+        help_button.setToolTip(_("Syntax Help"))
+        help_button.setFocusPolicy(Qt.NoFocus)
+        help_button.clicked.connect(window._show_syntax_help)
+        having_layout.addWidget(help_button)
+        having_layout.addWidget(self.having_input, 1)
+        clear_having = QPushButton()
+        clear_having.setIcon(history_clear_icon())
+        clear_having.setFixedWidth(30)
+        clear_having.setToolTip(_("Clear History"))
+        clear_having.clicked.connect(
+            lambda: window._clear_combo_history(self.having_input, "subquery_having_history"))
+        having_layout.addWidget(clear_having)
+        form.addRow(_("Having") + ":", having_layout)
+
+        self.operator_combo.currentIndexChanged.connect(window._reset_offset_on_query_change)
+        self.query_input.lineEdit().textChanged.connect(window._reset_offset_on_query_change)
+        self.having_input.lineEdit().textChanged.connect(window._reset_offset_on_query_change)
+
+
 class BagheeraSearchWindow(QMainWindow):
     """
     Main window class for the Bagheera Search application.
@@ -406,7 +590,7 @@ class BagheeraSearchWindow(QMainWindow):
         super().__init__()
         self.worker = None
         self.config = load_app_config()
-        self.setWindowTitle(_("Bagheera Search"))
+        self.setWindowTitle(f"{PROG_NAME} v{PROG_VERSION}")
         self.resize(1000, 700)
         self._setup_ui()
         self._setup_property_completers()
@@ -423,6 +607,7 @@ class BagheeraSearchWindow(QMainWindow):
         search_bar_layout = QHBoxLayout()
         self.query_input = QComboBox()
         self.query_input.setEditable(True)
+        self.query_input.lineEdit().setClearButtonEnabled(True)
         self.query_input.setInsertPolicy(QComboBox.NoInsert)
         self.query_input.addItems(self.config.get("query_history", []))
         self.query_input.lineEdit().setPlaceholderText(_("Search Placeholder"))
@@ -434,7 +619,7 @@ class BagheeraSearchWindow(QMainWindow):
         # )
 
         self.btn_clear_query_history = QPushButton()
-        self.btn_clear_query_history.setIcon(QIcon.fromTheme("edit-clear"))
+        self.btn_clear_query_history.setIcon(history_clear_icon())
         self.btn_clear_query_history.setToolTip(_("Clear History"))
         self.btn_clear_query_history.setFixedWidth(30)
         self.btn_clear_query_history.clicked.connect(
@@ -449,6 +634,7 @@ class BagheeraSearchWindow(QMainWindow):
             self.btn_help_query.setIcon(help_icon)
         self.btn_help_query.setFixedWidth(30)
         self.btn_help_query.setToolTip(_("Syntax Help"))
+        self.btn_help_query.setFocusPolicy(Qt.NoFocus)
         self.btn_help_query.clicked.connect(self._show_query_help)
 
         self.btn_search = QPushButton(_("Search"))
@@ -470,9 +656,9 @@ class BagheeraSearchWindow(QMainWindow):
         self.btn_export.clicked.connect(self._export_to_csv)
         self.btn_export.setEnabled(False)
 
+        search_bar_layout.addWidget(self.btn_help_query)
         search_bar_layout.addWidget(self.query_input, 1)
         search_bar_layout.addWidget(self.btn_clear_query_history)
-        search_bar_layout.addWidget(self.btn_help_query)
         search_bar_layout.addWidget(self.btn_search)
         search_bar_layout.addWidget(self.btn_cancel)
         search_bar_layout.addWidget(self.btn_clear)
@@ -488,8 +674,10 @@ class BagheeraSearchWindow(QMainWindow):
 
         self.dir_input = QComboBox()
         self.dir_input.setEditable(True)
+        self.dir_input.lineEdit().setClearButtonEnabled(True)
         self.dir_input.setInsertPolicy(QComboBox.NoInsert)
         self.dir_input.addItems(self.config.get("directory_history", []))
+        self.dir_input.setMinimumWidth(180)
 
         # Local path autocompletion
         dir_completer = QCompleter(self)
@@ -500,7 +688,7 @@ class BagheeraSearchWindow(QMainWindow):
         self.dir_input.setCompleter(dir_completer)
 
         self.btn_clear_dir_history = QPushButton()
-        self.btn_clear_dir_history.setIcon(QIcon.fromTheme("edit-clear"))
+        self.btn_clear_dir_history.setIcon(history_clear_icon())
         self.btn_clear_dir_history.setToolTip(_("Clear History"))
         self.btn_clear_dir_history.setFixedWidth(30)
         self.btn_clear_dir_history.clicked.connect(
@@ -511,9 +699,11 @@ class BagheeraSearchWindow(QMainWindow):
         self.btn_browse.setFixedWidth(30)
         self.btn_browse.clicked.connect(self._browse_directory)
         dir_layout = QHBoxLayout()
-        dir_layout.addWidget(self.dir_input)
+        dir_layout.addWidget(QLabel(_("Directory:")))
+        dir_layout.addWidget(self.dir_input, 1)
         dir_layout.addWidget(self.btn_clear_dir_history)
         dir_layout.addWidget(self.btn_browse)
+        main_layout.addLayout(dir_layout)
 
         self.type_combo = QComboBox()
         types = [
@@ -531,12 +721,12 @@ class BagheeraSearchWindow(QMainWindow):
         for text, data in sort_options:
             self.sort_combo.addItem(text, data)
 
-        basic_form.addRow(_("Directory:"), dir_layout)
-        basic_form.addRow(_("Type:"), self.type_combo)
-        basic_form.addRow(_("Order:"), self.sort_combo)
+        basic_form.addRow(_("Type:"), clearable_list(self.type_combo))
+        basic_form.addRow(_("Order:"), clearable_list(self.sort_combo))
         filters_container.addWidget(basic_group)
 
         self.hide_icons_check = QCheckBox(_("Hide Icons"))
+        self.hide_icons_check.setToolTip(_("Hide Icons help"))
         self.hide_icons_check.setChecked(False)
         self.hide_icons_check.toggled.connect(self._toggle_icon_column_visibility)
         basic_form.addRow(self.hide_icons_check)
@@ -554,13 +744,21 @@ class BagheeraSearchWindow(QMainWindow):
         self.offset_spin.setRange(0, 1000000)
         self.offset_spin.setValue(0)
 
-        self.btn_prev_page = QPushButton(_("Previous"))
-        self.btn_prev_page.setIcon(QIcon.fromTheme("go-previous"))
+        self.btn_prev_page = QPushButton()
+        self.btn_prev_page.setIcon(QIcon.fromTheme(
+            "go-previous", self.style().standardIcon(QStyle.SP_ArrowLeft)))
+        self.btn_prev_page.setToolTip(_("Previous"))
+        self.btn_prev_page.setAccessibleName(_("Previous"))
+        self.btn_prev_page.setFixedWidth(30)
         self.btn_prev_page.clicked.connect(self._go_to_previous_page)
         self.btn_prev_page.setEnabled(False)
 
-        self.btn_next_page = QPushButton(_("Next"))
-        self.btn_next_page.setIcon(QIcon.fromTheme("go-next"))
+        self.btn_next_page = QPushButton()
+        self.btn_next_page.setIcon(QIcon.fromTheme(
+            "go-next", self.style().standardIcon(QStyle.SP_ArrowRight)))
+        self.btn_next_page.setToolTip(_("Next"))
+        self.btn_next_page.setAccessibleName(_("Next"))
+        self.btn_next_page.setFixedWidth(30)
         self.btn_next_page.clicked.connect(self._go_to_next_page)
         self.btn_next_page.setEnabled(False)
 
@@ -589,10 +787,9 @@ class BagheeraSearchWindow(QMainWindow):
 
         limit_form.addRow(_("Max Results:"), self.limit_spin)
         limit_form.addRow(_("Offset:"), offset_layout)
-        limit_form.addRow(_("Year:"), self.year_combo)
-        limit_form.addRow(_("Month:"), self.month_combo)
-        limit_form.addRow(_("Day:"), self.day_combo)
-        filters_container.addWidget(limit_group)
+        limit_form.addRow(_("Year:"), clearable_list(self.year_combo))
+        limit_form.addRow(_("Month:"), clearable_list(self.month_combo))
+        limit_form.addRow(_("Day:"), clearable_list(self.day_combo))
 
         # Group 3: Advanced (HAVING / SUBQUERY)
         adv_group = QGroupBox(_("Advanced"))
@@ -601,11 +798,12 @@ class BagheeraSearchWindow(QMainWindow):
         h_layout = QHBoxLayout()
         self.having_input = QComboBox()
         self.having_input.setEditable(True)
+        add_inline_clear_button(self.having_input.lineEdit())
         self.having_input.setInsertPolicy(QComboBox.NoInsert)
         self.having_input.addItems(self.config.get("having_history", []))
         self.having_input.lineEdit().setPlaceholderText(_("e.g.: width > height"))
         btn_clear_h = QPushButton()
-        btn_clear_h.setIcon(QIcon.fromTheme("edit-clear"))
+        btn_clear_h.setIcon(history_clear_icon())
         btn_clear_h.setFixedWidth(30)
         btn_clear_h.setToolTip(_("Clear History"))
         btn_clear_h.clicked.connect(
@@ -620,61 +818,12 @@ class BagheeraSearchWindow(QMainWindow):
             btn_help_h.setIcon(help_icon)
         btn_help_h.setFixedWidth(30)
         btn_help_h.setToolTip(_("Syntax Help"))
+        btn_help_h.setFocusPolicy(Qt.NoFocus)
         btn_help_h.clicked.connect(self._show_syntax_help)
 
-        h_layout.addWidget(self.having_input, 1)
         h_layout.addWidget(btn_help_h)
+        h_layout.addWidget(self.having_input, 1)
         h_layout.addWidget(btn_clear_h)
-
-        # Subquery Input
-        sq_layout = QHBoxLayout()
-        self.subquery_input = QComboBox()
-        self.subquery_input.setEditable(True)
-        self.subquery_input.setInsertPolicy(QComboBox.NoInsert)
-        self.subquery_input.addItems(self.config.get("subquery_history", []))
-        self.subquery_input.lineEdit().setPlaceholderText(_("Internal query for files in folders"))
-        btn_clear_sq = QPushButton()
-        btn_clear_sq.setIcon(QIcon.fromTheme("edit-clear"))
-        btn_clear_sq.setFixedWidth(30)
-        btn_clear_sq.setToolTip(_("Clear History"))
-        btn_clear_sq.clicked.connect(
-            lambda: self._clear_combo_history(
-                self.subquery_input, "subquery_history")
-        )
-        sq_layout.addWidget(self.subquery_input, 1)
-        sq_layout.addWidget(btn_clear_sq)
-
-        # Subquery Having Input
-        sqh_layout = QHBoxLayout()
-        self.subquery_having_input = QComboBox()
-        self.subquery_having_input.setEditable(True)
-        self.subquery_having_input.setInsertPolicy(QComboBox.NoInsert)
-        self.subquery_having_input.addItems(self.config.get("subquery_having_history", []))
-        self.subquery_having_input.lineEdit().setPlaceholderText(_("e.g.: width > height"))
-        btn_clear_sqh = QPushButton()
-        btn_clear_sqh.setIcon(QIcon.fromTheme("edit-clear"))
-        btn_clear_sqh.setFixedWidth(30)
-        btn_clear_sqh.setToolTip(_("Clear History"))
-        btn_clear_sqh.clicked.connect(
-            lambda: self._clear_combo_history(
-                self.subquery_having_input, "subquery_having_history")
-        )
-
-        btn_help_sqh = QPushButton()
-        if help_icon.isNull():
-            btn_help_sqh.setText("?")
-        else:
-            btn_help_sqh.setIcon(help_icon)
-        btn_help_sqh.setFixedWidth(30)
-        btn_help_sqh.setToolTip(_("Syntax Help"))
-        btn_help_sqh.clicked.connect(self._show_syntax_help)
-
-        sqh_layout.addWidget(self.subquery_having_input, 1)
-        sqh_layout.addWidget(btn_help_sqh)
-        sqh_layout.addWidget(btn_clear_sqh)
-
-        self.subquery_input.setEnabled(False)
-        self.subquery_having_input.setEnabled(False)
 
         adv_form.addRow(_("Having:"), h_layout)
 
@@ -686,13 +835,34 @@ class BagheeraSearchWindow(QMainWindow):
         separator.setFrameShadow(QFrame.Sunken)
         adv_form.addRow(separator)
 
-        self.subquery_active_check.setChecked(False)
-        self.subquery_active_check.toggled.connect(self._toggle_subquery_fields)
-        adv_form.addRow(self.subquery_active_check)
+        subquery_header = QHBoxLayout()
+        subquery_header.addWidget(self.subquery_active_check)
+        self.btn_add_subquery = QPushButton("+ " + _("Add subquery"))
+        self.btn_add_subquery.clicked.connect(lambda: self._add_subquery_row())
+        subquery_header.addWidget(self.btn_add_subquery)
+        adv_form.addRow(subquery_header)
 
-        adv_form.addRow(_("Subquery:"), sq_layout)
-        adv_form.addRow(_("Subquery having:"), sqh_layout)
+        self.subquery_scroll = QScrollArea()
+        self.subquery_scroll.setWidgetResizable(True)
+        self.subquery_scroll.setFrameShape(QFrame.NoFrame)
+        self.subquery_scroll.setMinimumHeight(115)
+        self.subquery_scroll.setMaximumHeight(155)
+        subquery_container = QWidget()
+        self.subquery_rows_layout = QVBoxLayout(subquery_container)
+        self.subquery_rows_layout.setContentsMargins(0, 0, 0, 0)
+        self.subquery_rows_layout.setSpacing(12)
+        self.subquery_scroll.setWidget(subquery_container)
+        self.subquery_rows = []
+        first_row = self._add_subquery_row(refresh=False)
+        self.subquery_input = first_row.query_input
+        self.subquery_having_input = first_row.having_input
+        self.subquery_operator_combo = first_row.operator_combo
+        self.subquery_active_check.toggled.connect(self._toggle_subquery_fields)
+        self._toggle_subquery_fields(False)
+        adv_form.addRow(self.subquery_scroll)
         filters_container.addWidget(adv_group)
+        filters_container.addWidget(limit_group)
+        filters_container.setStretch(1, 1)
 
         main_layout.addLayout(filters_container)
 
@@ -714,6 +884,9 @@ class BagheeraSearchWindow(QMainWindow):
         self.results_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.results_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.results_table.setSortingEnabled(True)
+        self.results_table.setWordWrap(False)
+        self.results_table.setTextElideMode(Qt.ElideMiddle)
+        self.results_table.setItemDelegateForColumn(1, PathItemDelegate(self.results_table))
         self.results_table.setContextMenuPolicy(
             Qt.CustomContextMenu
         )
@@ -745,6 +918,8 @@ class BagheeraSearchWindow(QMainWindow):
         self.first_page_shortcut = QShortcut(QKeySequence("Ctrl+Home"), self)
         self.first_page_shortcut.activated.connect(self._go_to_first_page)
         self.query_input.lineEdit().textChanged.connect(self._reset_offset_on_query_change)
+        self.having_input.lineEdit().textChanged.connect(self._reset_offset_on_query_change)
+        self.subquery_active_check.toggled.connect(self._reset_offset_on_query_change)
 
     def _setup_property_completers(self):
         """
@@ -767,10 +942,10 @@ class BagheeraSearchWindow(QMainWindow):
             "photoSaturation", "photoSharpness", "photoWhiteBalance"
         ]
 
-        for combo in [
-            self.query_input, self.having_input,
-            self.subquery_input, self.subquery_having_input
-        ]:
+        combos = [self.query_input, self.having_input]
+        for row in self.subquery_rows:
+            combos.extend((row.query_input, row.having_input))
+        for combo in combos:
             history = [combo.itemText(i) for i in range(combo.count())]
             full_list = sorted(list(set(properties + history)))
 
@@ -982,7 +1157,30 @@ class BagheeraSearchWindow(QMainWindow):
         if self.worker and self.worker.isRunning():
             return
 
-        query_text = self.query_input.currentText()
+        query_input = self.query_input.currentText()
+        having_input = self.having_input.currentText().strip()
+        active_subquery = self.subquery_active_check.isChecked()
+        row_inputs = [
+            (row, row.query_input.currentText().strip(), row.having_input.currentText().strip())
+            for row in self.subquery_rows
+        ] if active_subquery else []
+        expressions = [query_input, having_input]
+        for row, row_query, row_having in row_inputs:
+            expressions.extend((row_query, row_having))
+        for expression in expressions:
+            option = find_query_option(expression)
+            if option:
+                QMessageBox.warning(
+                    self, _("Search"), _("Options must be selected using the controls: {0}").format(option)
+                )
+                return
+
+        query_text, having, subqueries = parse_query_clauses(query_input)
+        if having_input:
+            having = " AND ".join(part for part in (having, having_input) if part)
+        for row, row_query, row_having in row_inputs:
+            subqueries.append(Subquery(
+                row.operator_combo.currentData(), row_query, row_having or None))
 
         # main_opts: only include present values
         main_opts = {}
@@ -1019,39 +1217,25 @@ class BagheeraSearchWindow(QMainWindow):
             except ValueError:
                 pass
 
-        # other_options: mandatory parameters (None if not provided)
-        subquery_text = None
-        subquery_having_text = None
-        if self.subquery_active_check.isChecked():
-            subquery_text = self.subquery_input.currentText()
-            # If subquery is active but text is empty, send empty string
-            if not subquery_text.strip():
-                subquery_text = ""
-            subquery_having_text = self.subquery_having_input.currentText()
-
         other_opts = {
-            "having": self.having_input.currentText()
-            if self.having_input.currentText() else None,
-            "subquery": subquery_text,
-            "subquery_having": subquery_having_text if subquery_having_text else None,
+            "having": having,
+            "subquery": None,
+            "subquery_having": None,
             "limit": main_opts.get("limit"),
             "offset": main_opts.get("offset", 0),
         }
-
-        if other_opts.get("subquery") is not None:
-            other_opts["type"] = main_opts.get("type")
-            main_opts["type"] = None
+        if subqueries:
+            other_opts["subqueries"] = subqueries
+            main_opts.pop("limit")
+            main_opts.pop("offset")
 
         # Update history
-        self._update_combo_history(self.query_input, "query_history", query_text)
+        self._update_combo_history(self.query_input, "query_history", query_input)
         self._update_combo_history(self.dir_input, "directory_history", dir_text)
-        self._update_combo_history(self.having_input, "having_history", other_opts.get("having"))
-        self._update_combo_history(
-            self.subquery_input, "subquery_history",
-            other_opts.get("subquery"))
-        self._update_combo_history(
-            self.subquery_having_input, "subquery_having_history",
-            other_opts.get("subquery_having"))
+        self._update_combo_history(self.having_input, "having_history", having_input)
+        for row, row_query, row_having in row_inputs:
+            self._update_combo_history(row.query_input, "subquery_history", row_query)
+            self._update_combo_history(row.having_input, "subquery_having_history", row_having)
         self._save_current_state()
 
         self.status_label.setText(_("Searching..."))
@@ -1069,6 +1253,7 @@ class BagheeraSearchWindow(QMainWindow):
             self.hide_icons_check.isChecked()
         )
         self.worker.results_found.connect(self._display_results)
+        self.worker.search_failed.connect(self._on_search_error)
         self.worker.finished.connect(self._on_search_finished)
         self.worker.start()
 
@@ -1077,6 +1262,7 @@ class BagheeraSearchWindow(QMainWindow):
         year_str = self.year_combo.currentText()
         has_year = year_str != _("Any") and year_str.strip() != ""
         self.month_combo.setEnabled(has_year)
+        self.month_combo.clear_value_button.setEnabled(has_year)
 
         if not has_year:
             self.month_combo.setCurrentIndex(0)
@@ -1084,6 +1270,7 @@ class BagheeraSearchWindow(QMainWindow):
         month_str = self.month_combo.currentText()
         has_month = self.month_combo.isEnabled() and month_str != _("Any")
         self.day_combo.setEnabled(has_month)
+        self.day_combo.clear_value_button.setEnabled(has_month)
 
         if not has_month:
             self.day_combo.setCurrentIndex(0)
@@ -1112,13 +1299,39 @@ class BagheeraSearchWindow(QMainWindow):
         """Hides or shows the icon column in the results table."""
         self.results_table.setColumnHidden(0, checked)
 
+    def _add_subquery_row(self, refresh=True):
+        row = SubqueryRow(self, removable=bool(self.subquery_rows))
+        self.subquery_rows.append(row)
+        self.subquery_rows_layout.addWidget(row)
+        if refresh:
+            self._reset_offset_on_query_change()
+            self._setup_property_completers()
+            QTimer.singleShot(0, lambda: self._show_subquery_row(row))
+        return row
+
+    def _show_subquery_row(self, row):
+        if row in self.subquery_rows:
+            self.subquery_rows_layout.activate()
+            self.subquery_scroll.widget().adjustSize()
+            self.subquery_scroll.ensureWidgetVisible(row)
+
+    def _remove_subquery_row(self, row):
+        if row not in self.subquery_rows[1:]:
+            return
+        self.subquery_rows.remove(row)
+        self.subquery_rows_layout.removeWidget(row)
+        for combo in (row.query_input, row.having_input):
+            completer = combo.lineEdit().property("custom_completer")
+            if completer:
+                completer.deleteLater()
+        row.hide()
+        row.deleteLater()
+        self._reset_offset_on_query_change()
+
     def _toggle_subquery_fields(self, checked):
-        """Enables/disables subquery and subquery_having fields based on checkbox."""
-        self.subquery_input.setEnabled(checked)
-        self.subquery_having_input.setEnabled(checked)
-        if not checked:
-            self.subquery_input.setEditText("")
-            self.subquery_having_input.setEditText("")
+        """Enable or disable the subquery editor without discarding its contents."""
+        self.subquery_scroll.setEnabled(checked)
+        self.btn_add_subquery.setEnabled(checked)
 
     def _reset_offset_on_query_change(self):
         """
@@ -1180,6 +1393,13 @@ class BagheeraSearchWindow(QMainWindow):
             "subquery": self.subquery_input.currentText(),
             "subquery_having": self.subquery_having_input.currentText(),
             "subquery_active": self.subquery_active_check.isChecked(),
+            "subquery_operator": self.subquery_operator_combo.currentData(),
+            "extra_subqueries": [
+                {"operator": row.operator_combo.currentData(),
+                 "query": row.query_input.currentText(),
+                 "having": row.having_input.currentText()}
+                for row in self.subquery_rows[1:]
+            ],
             "hide_icons": self.hide_icons_check.isChecked(),
         }
         save_app_config(self.config)
@@ -1196,6 +1416,19 @@ class BagheeraSearchWindow(QMainWindow):
         self.subquery_input.setEditText(state.get("subquery", ""))
         self.subquery_having_input.setEditText(state.get("subquery_having", ""))
         self.subquery_active_check.setChecked(state.get("subquery_active", False))
+        idx = self.subquery_operator_combo.findData(state.get("subquery_operator", "AND"))
+        if idx >= 0:
+            self.subquery_operator_combo.setCurrentIndex(idx)
+        for row in self.subquery_rows[1:]:
+            self._remove_subquery_row(row)
+        for values in state.get("extra_subqueries", []):
+            row = self._add_subquery_row(refresh=False)
+            idx = row.operator_combo.findData(values.get("operator", "AND"))
+            if idx >= 0:
+                row.operator_combo.setCurrentIndex(idx)
+            row.query_input.setEditText(values.get("query", ""))
+            row.having_input.setEditText(values.get("having", ""))
+        self._setup_property_completers()
         self.hide_icons_check.setChecked(state.get("hide_icons", False))
         self.limit_spin.setValue(state.get("limit", 100))
         # self.offset_spin.setValue(state.get("offset", 0))
@@ -1228,18 +1461,29 @@ class BagheeraSearchWindow(QMainWindow):
         history = history[:25]
         self.config[key] = history
 
+        for target in self._history_combos(combo, key):
+            self._set_history_items(target, history, target.currentText())
+
+        # Refrescamos los completadores para incluir las nuevas entradas del historial
+        self._setup_property_completers()
+
+    def _history_combos(self, combo, key):
+        if key == "subquery_history":
+            return [row.query_input for row in self.subquery_rows]
+        if key == "subquery_having_history":
+            return [row.having_input for row in self.subquery_rows]
+        return [combo]
+
+    def _set_history_items(self, combo, history, text):
         combo.blockSignals(True)
         if combo.lineEdit():
             combo.lineEdit().blockSignals(True)
         combo.clear()
         combo.addItems(history)
-        combo.setEditText(value)
+        combo.setEditText(text)
         if combo.lineEdit():
             combo.lineEdit().blockSignals(False)
         combo.blockSignals(False)
-
-        # Refrescamos los completadores para incluir las nuevas entradas del historial
-        self._setup_property_completers()
 
     def _clear_combo_history(self, combo, key):
         """Clears the history for a given combo and updates config."""
@@ -1257,10 +1501,9 @@ class BagheeraSearchWindow(QMainWindow):
             self.config[key] = []
             save_app_config(self.config)
 
-        combo.blockSignals(True)
-        combo.clear()
-        combo.setEditText("")
-        combo.blockSignals(False)
+        for target in self._history_combos(combo, key):
+            self._set_history_items(target, [], "" if target is combo else target.currentText())
+        self._setup_property_completers()
 
     @Slot(list)
     def _display_results(self, results):
@@ -1294,7 +1537,9 @@ class BagheeraSearchWindow(QMainWindow):
             icon_item.setIcon(icon)
 
             self.results_table.setItem(i, 0, icon_item)
-            self.results_table.setItem(i, 1, QTableWidgetItem(path))
+            path_item = QTableWidgetItem(path)
+            path_item.setToolTip(path)
+            self.results_table.setItem(i, 1, path_item)
             self.results_table.setItem(i, 2, QTableWidgetItem(item_type))
         self.results_table.setSortingEnabled(True)
 
@@ -1366,6 +1611,10 @@ class BagheeraSearchWindow(QMainWindow):
         if HAVE_SEARCH_LIB:
             self.btn_search.setEnabled(True)
 
+    @Slot(str)
+    def _on_search_error(self, message):
+        self.status_label.setText(_("Search error: {0}").format(message))
+
     def _clear_filters(self):
         """
         Resets all search input fields and filters to their default states.
@@ -1383,6 +1632,9 @@ class BagheeraSearchWindow(QMainWindow):
         self.subquery_input.setEditText("")
         self.subquery_having_input.setEditText("")
         self.subquery_active_check.setChecked(False)
+        self.subquery_operator_combo.setCurrentIndex(0)
+        for row in self.subquery_rows[1:]:
+            self._remove_subquery_row(row)
         self.hide_icons_check.setChecked(False)
 
         self.results_table.setRowCount(0)

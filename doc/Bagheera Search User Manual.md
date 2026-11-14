@@ -27,6 +27,24 @@ bagheerasearch "your query terms" [options]
 
 For more options, please consult the CLI help (`--help`).
 
+### BagheeraGui
+
+The graphical interface accepts `HAVING` and multiple `SUBQUERY` clauses in
+the search bar. Use its controls rather than command-line options for the
+directory, type, limit, offset and other filters. The advanced HAVING field
+adds a filter to the main query. The optional subquery controls can add or
+remove multiple subqueries, appended in their displayed order after those in
+the search bar. Each has its own operator and HAVING filter. An active
+subquery with an empty query searches all items in the selected folders.
+Deactivating the controls preserves their contents for later use. The search
+bar's syntax help describes the operators.
+
+Clear icons erase the current text or reset a list to its default without
+deleting its history. Hiding icons skips thumbnail generation and can improve
+performance for large result sets. Long result paths are shortened in the
+middle according to the column width; the full path remains available in the
+tooltip and is used for opening and exporting.
+
 ---
 
 ## 3. Query Syntax
