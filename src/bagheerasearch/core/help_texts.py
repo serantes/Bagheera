@@ -11,7 +11,7 @@ DEFAULT_LANGUAGE = "en"
 _HELP_TEXTS = {
     "en": {
         "CLI_DESC": "An improved search tool for Baloo",
-        "ARG_QUERY": "list of words to query for",
+        "ARG_QUERY": "query [HAVING expression] [[operator] SUBQUERY query [HAVING expression]]...",
         "ARG_DIR": "limit search to specified directory tree",
         "ARG_HAVING": "having expression applied over query results",
         "ARG_ID": "show document IDs",
@@ -34,6 +34,8 @@ _HELP_TEXTS = {
         "COPYRIGHT_INFO": "Copyright (C) {year} by {author} and, mostly, the good people at KDE",
         "ERR_MISSING_MONTH": "Missing --month (required when --day is used)",
         "ERR_MISSING_YEAR": "Missing --year (required when --month is used)",
+        "ERR_REMOVED_OPTION": "option {} has been removed; use HAVING or SUBQUERY in the query",
+        "ERR_UNKNOWN_OPTIONS": "unrecognized arguments: {}",
         "MSG_QUERY": "Query: '{}'",
         "MSG_MAIN_OPTS": "Main Options: {}",
         "MSG_OTHER_OPTS": "Other Options: {}",
@@ -196,21 +198,21 @@ Supported natural language patterns are:
 
 <NUMBER> can be any number or a number text from ONE to TWENTY.
 
-- 'Subquery' option -
+- SUBQUERY clause -
 
-The '--subquery' option allows you to perform a secondary search within the folders obtained from main query. This is particularly useful for refining searches within specific folders. When using '--subquery', the main query first filters folders based on the initial criteria; the subquery is then applied to all files located within those folders to further narrow down the search.
-You can provide a query string with the '--subquery' option to filter the results of the main query, or you can use the option without additional text to simply list all items within those results.
-This behavior is useful for performing deep searches. For example, you can search for all folders with 'Project' in their name and then use a subquery to find documents within those folders that were modified in the last week.
+The main query selects folders. Each SUBQUERY searches independently inside those folders, and --type applies to the items found there. The first SUBQUERY starts the result set: its AND or OR is ignored, but NOT complements its results. Subsequent SUBQUERY or AND SUBQUERY clauses intersect results; AND NOT SUBQUERY subtracts them; OR SUBQUERY unions them; OR NOT SUBQUERY unions them with the complement; OR EXCLUSIVE SUBQUERY computes the symmetric difference (XOR).
+The complement is relative to all indexed items in the selected folders matching the subquery type and date filters. AND and AND NOT take precedence over XOR, which takes precedence over OR and OR NOT. Operators at the same precedence are evaluated left to right.
+An empty SUBQUERY matches all items in the selected folders. HAVING filters the immediately preceding search; empty HAVING clauses are ignored and repeated HAVING clauses on that search are joined with AND. Clause names and operators must be uppercase. Limit and offset apply after combining results.
 
 Example:
-This is a complex query to locate all files of the 'Presentation' type situated within any directory that contains 'KDE' in its name, specifically under the '~/Documents' path. The search is further refined to include only those files that contain either 'Baloo' or 'Bagheera' in their metadata or filename and are not tagged as 'Obsolete' or 'Revised'.
+Find presentations in folders matching KDE, containing Baloo or Bagheera and not tagged Obsolete.
 
-    {prog_id} --directory '~/Documents' KDE --subquery 'Baloo OR Bagheera' --type Presentation --having 'NOT (tags=Obsolete OR tags=Revised)'
+    {prog_id} --directory '~/Documents' KDE SUBQUERY Baloo HAVING 'NOT tags=Obsolete' OR SUBQUERY Bagheera HAVING 'NOT tags=Obsolete' --type Presentation
 
 
-- 'Having' and 'subquery-having' options -
+- HAVING clause -
 
-The '--having' and '--subquery-having' options allow you to filter the results returned by Baloo. They support the standard Baloo syntax plus the 'NOT' operator.
+The HAVING clause filters the results returned by Baloo. It supports the standard Baloo syntax plus the 'NOT' operator.
 
 Additionally, you can use:
 
@@ -225,16 +227,16 @@ Important Remarks:
 · Empty Values: You can check for the presence or absence of values using empty quotes. For example, 'tags!=""' matches any file with at least one tag, while 'tags=""' matches files with no tags.
 · Tag Levels: Comparisons are performed against the full tag path and each individual level. A file tagged 'Person/María Callas' matches 'Maria', 'Callas', 'Person', and the full string.
 · Character Limit: Unlike Baloo, the 3-character minimum limit for string values is not enforced within 'having' options.
-· Unicode Characters: If the query contains Unicode characters double quotes are required. For example, if your tag is 富士山, you must write --having 'tags="富士山"' or the query will not return any results.
+· Unicode Characters: If the query contains Unicode characters double quotes are required. For example, if your tag is 富士山, write HAVING 'tags="富士山"' or the query will not return any results.
 
 Having exclusion example:
 Get files tagget as "Science" ignoring "Science Fiction" tag.
 
-    {prog_id} tags=Science --having "NOT tags=Fiction" """
+    {prog_id} tags=Science HAVING "NOT tags=Fiction" """
     },
     "es": {
         "CLI_DESC": "Una herramienta de búsqueda mejorada para Baloo",
-        "ARG_QUERY": "lista de palabras para buscar",
+        "ARG_QUERY": "consulta [HAVING expresión] [[operador] SUBQUERY consulta [HAVING expresión]]...",
         "ARG_DIR": "limitar la búsqueda al árbol de directorios especificado",
         "ARG_HAVING": "expresión 'having' aplicada sobre los resultados de la consulta",
         "ARG_ID": "mostrar los IDs de los documentos",
@@ -257,6 +259,8 @@ Get files tagget as "Science" ignoring "Science Fiction" tag.
         "COPYRIGHT_INFO": "Copyright (C) {year} por {author} y, mayormente, la buena gente de KDE",
         "ERR_MISSING_MONTH": "Falta --month (requerido cuando se usa --day)",
         "ERR_MISSING_YEAR": "Falta --year (requerido cuando se usa --month)",
+        "ERR_REMOVED_OPTION": "la opción {} se ha eliminado; use HAVING o SUBQUERY en la consulta",
+        "ERR_UNKNOWN_OPTIONS": "argumentos no reconocidos: {}",
         "MSG_QUERY": "Consulta: '{}'",
         "MSG_MAIN_OPTS": "Opciones principales: {}",
         "MSG_OTHER_OPTS": "Otras opciones: {}",
@@ -419,21 +423,21 @@ Los patrones de lenguaje natural admitidos son:
 
 <NUMBER> puede ser cualquier número o el texto de un número del ONE al TWENTY (en inglés).
 
-- Opción 'Subquery' -
+- Cláusula SUBQUERY -
 
-La opción '--subquery' le permite realizar una búsqueda secundaria dentro de las carpetas obtenidas de la consulta principal. Esto es particularmente útil para refinar búsquedas dentro de carpetas específicas. Al usar '--subquery', la consulta principal primero filtra las carpetas según los criterios iniciales; luego, la subconsulta se aplica a todos los archivos ubicados dentro de esas carpetas para afinar aún más la búsqueda.
-Puede proporcionar una cadena de consulta con la opción '--subquery' para filtrar los resultados de la consulta principal, o puede usar la opción sin texto adicional para simplemente se muestren todos los elementos obtenidos.
-Este comportamiento es útil para realizar búsquedas profundas. Por ejemplo, puede buscar todas las carpetas que contengan 'Proyecto' en su nombre y luego usar una subconsulta para encontrar documentos dentro de esas carpetas que fueron modificados en la última semana.
+La consulta principal selecciona carpetas. Cada SUBQUERY busca independientemente dentro de ellas; --type se aplica a los elementos encontrados. La primera SUBQUERY inicia el conjunto: se ignora su AND u OR, pero se respeta NOT. Las siguientes SUBQUERY o AND SUBQUERY intersectan resultados; AND NOT SUBQUERY los resta; OR SUBQUERY los une; OR NOT SUBQUERY los une con el complemento; OR EXCLUSIVE SUBQUERY calcula la diferencia simétrica (XOR).
+El complemento se calcula respecto a los elementos indexados en las carpetas seleccionadas que cumplen los filtros de tipo y fecha de las subconsultas. AND y AND NOT tienen prioridad sobre XOR, que tiene prioridad sobre OR y OR NOT. Los operadores de igual prioridad se evalúan de izquierda a derecha.
+Una SUBQUERY vacía coincide con todos los elementos de las carpetas seleccionadas. HAVING filtra la búsqueda inmediatamente anterior; las cláusulas HAVING vacías se ignoran y las repetidas en una búsqueda se unen con AND. Los nombres de cláusulas y operadores deben estar en mayúsculas. El límite y el desplazamiento se aplican después de combinar los resultados.
 
 Ejemplo:
-Esta es una consulta compleja para localizar todos los archivos del tipo 'Presentation' situados dentro de cualquier directorio que contenga 'KDE' en su nombre, específicamente bajo la ruta '~/Documents'. La búsqueda se refina aún más para incluir solo aquellos archivos que contengan 'Baloo' o 'Bagheera' en sus metadatos o nombre de archivo y que no estén etiquetados como 'Obsolete' o 'Revised'.
+Buscar presentaciones en carpetas que coincidan con KDE, que contengan Baloo o Bagheera y no estén etiquetadas como Obsolete.
 
-    {prog_id} --directory '~/Documents' KDE --subquery 'Baloo OR Bagheera' --type Presentation --having 'NOT (tags=Obsolete OR tags=Revised)'
+    {prog_id} --directory '~/Documents' KDE SUBQUERY Baloo HAVING 'NOT tags=Obsolete' OR SUBQUERY Bagheera HAVING 'NOT tags=Obsolete' --type Presentation
 
 
-- Opciones '--having' y '--subquery-having' -
+- Cláusula HAVING -
 
-Las opciones '--having' y '--subquery-having' le permiten filtrar los resultados devueltos por Baloo. Admiten la sintaxis estándar de Baloo y además el operador 'NOT'.
+La cláusula HAVING permite filtrar los resultados devueltos por Baloo. Admite la sintaxis estándar de Baloo y además el operador 'NOT'.
 
 Aparte, puede usar para comparar los siguientes operadores:
 
@@ -448,16 +452,16 @@ Observaciones importantes:
 · Valores vacíos: Puede verificar la presencia o ausencia de valores usando comillas vacías. Por ejemplo, 'tags!=""' coincide con cualquier archivo con al menos una etiqueta, mientras que 'tags=""' coincide con archivos sin etiquetas.
 · Niveles de etiquetas: Las comparaciones se realizan contra la ruta completa de la etiqueta y cada nivel individual. Un archivo etiquetado como 'Persona/María Callas' coincide con 'Maria', 'Callas', 'Persona' y la cadena completa.
 · Límite de caracteres: A diferencia de Baloo, el límite mínimo de 3 caracteres para valores de cadena no se aplica dentro de las opciones 'having'.
-· Caracteres Unicode: Si la consulta contiene caracteres Unicode es obligatorio usar comillas dobles. Por ejemplo, si la etiqueta es 富士山, debe escribir --having 'tags="富士山"' o la consulta no devolverá ningún resultado.
+· Caracteres Unicode: Si la consulta contiene caracteres Unicode es obligatorio usar comillas dobles. Por ejemplo, si la etiqueta es 富士山, debe escribir HAVING 'tags="富士山"' o la consulta no devolverá ningún resultado.
 
 Ejemplo de exclusión con Having:
 Obtener archivos etiquetados como "Ciencia" ignorando la etiqueta "Ciencia Ficción".
 
-    {prog_id} tags=Ciencia --having "NOT tags=Ficción" """
+    {prog_id} tags=Ciencia HAVING "NOT tags=Ficción" """
     },
     "gl": {
         "CLI_DESC": "Unha ferramenta de busca mellorada para Baloo",
-        "ARG_QUERY": "lista de palabras para buscar",
+        "ARG_QUERY": "consulta [HAVING expresión] [[operador] SUBQUERY consulta [HAVING expresión]]...",
         "ARG_DIR": "limitar a busca á árbore de directorios especificada",
         "ARG_HAVING": "expresión 'having' aplicada sobre os resultados da consulta",
         "ARG_ID": "amosar os IDs dos documentos",
@@ -480,6 +484,8 @@ Obtener archivos etiquetados como "Ciencia" ignorando la etiqueta "Ciencia Ficci
         "COPYRIGHT_INFO": "Copyright (C) {year} por {author} e, maiormente, a boa xente de KDE",
         "ERR_MISSING_MONTH": "Falta --month (requirido cando se usa --day)",
         "ERR_MISSING_YEAR": "Falta --year (requirido cando se usa --month)",
+        "ERR_REMOVED_OPTION": "a opción {} eliminouse; use HAVING ou SUBQUERY na consulta",
+        "ERR_UNKNOWN_OPTIONS": "argumentos non recoñecidos: {}",
         "MSG_QUERY": "Consulta: '{}'",
         "MSG_MAIN_OPTS": "Opcións principais: {}",
         "MSG_OTHER_OPTS": "Outras opcións: {}",
@@ -642,21 +648,21 @@ Os patróns de linguaxe natural admitidos son:
 
 <NUMBER> pode ser calquera número ou o texto dun número do ONE ao TWENTY (en inglés).
 
-- Opción 'Subquery' -
+- Cláusula SUBQUERY -
 
-A opción '--subquery' permítelle realizar unha busca secundaria dentro dos cartafoles obtidos da consulta principal. Isto é particularmente útil para refinar buscas dentro de cartafoles específicos. Ao usar '--subquery', a consulta principal primeiro filtra os cartafoles segundo os criterios iniciais; logo, a subconsulta aplícase a todos os ficheiros situados dentro deses cartafoles para afinar aínda máis a busca.
-Pode proporcionar unha cadea de consulta coa opción '--subquery' para filtrar os resultados da consulta principal, ou pode usar a opción sen texto adicional para que simplemente se amosen todos os elementos obtidos.
-Este comportamento é útil para realizar buscas profundas. Por exemplo, pode buscar todos os cartafoles que conteñan 'Proxecto' no seu nome e logo usar unha subconsulta para atopar documentos dentro deses cartafoles que foron modificados na última semana.
+A consulta principal selecciona cartafoles. Cada SUBQUERY busca independentemente dentro deles; --type aplícase aos elementos atopados. A primeira SUBQUERY inicia o conxunto: ignórase o seu AND ou OR, pero respéctase NOT. As seguintes SUBQUERY ou AND SUBQUERY intersectan resultados; AND NOT SUBQUERY réstaos; OR SUBQUERY úneos; OR NOT SUBQUERY úneos co complemento; OR EXCLUSIVE SUBQUERY calcula a diferenza simétrica (XOR).
+O complemento calcúlase respecto dos elementos indexados nos cartafoles seleccionados que cumpren os filtros de tipo e data das subconsultas. AND e AND NOT teñen prioridade sobre XOR, que ten prioridade sobre OR e OR NOT. Os operadores da mesma prioridade avalíanse de esquerda a dereita.
+Unha SUBQUERY baleira coincide con todos os elementos dos cartafoles seleccionados. HAVING filtra a busca inmediatamente anterior; as cláusulas HAVING baleiras ignóranse e as repetidas nunha busca únense con AND. Os nomes das cláusulas e dos operadores deben estar en maiúsculas. O límite e o desprazamento aplícanse despois de combinar os resultados.
 
 Exemplo:
-Esta é unha consulta complexa para localizar todos os ficheiros do tipo 'Presentation' situados dentro de calquera directorio que conteña 'KDE' no seu nome, especificamente baixo a ruta '~/Documents'. A busca refínase aínda máis para incluír só aqueles ficheiros que conteñan 'Baloo' ou 'Bagheera' nos seus metadatos ou nome de ficheiro e que non estean etiquetados como 'Obsolete' ou 'Revised'.
+Buscar presentacións en cartafoles que coincidan con KDE, que conteñan Baloo ou Bagheera e non estean etiquetadas como Obsolete.
 
-    {prog_id} --directory '~/Documents' KDE --subquery 'Baloo OR Bagheera' --type Presentation --having 'NOT (tags=Obsolete OR tags=Revised)'
+    {prog_id} --directory '~/Documents' KDE SUBQUERY Baloo HAVING 'NOT tags=Obsolete' OR SUBQUERY Bagheera HAVING 'NOT tags=Obsolete' --type Presentation
 
 
-- Opcións '--having' e '--subquery-having' -
+- Cláusula HAVING -
 
-As opcións '--having' e '--subquery-having' permítenlle filtrar os resultados devoltos por Baloo. Admiten a sintaxis estándar de Baloo e ademais o operador 'NOT'.
+A cláusula HAVING permite filtrar os resultados devoltos por Baloo. Admite a sintaxe estándar de Baloo e ademais o operador 'NOT'.
 
 Aparte, pode usar para comparar os seguintes operadores:
 
@@ -671,12 +677,12 @@ Observacións importantes:
 · Valores baleiros: Pode verificar a presenza ou ausencia de valores usando comiñas baleiras. Por exemplo, 'tags!=""' coincide con calquera ficheiro con polo menos unha etiqueta, mentres que 'tags=""' coincide con ficheiros sen etiquetas.
 · Niveis de etiquetas: As comparacións realízanse contra a ruta completa da etiqueta e cada nivel individual. Un ficheiro etiquetado como 'Persoa/María Callas' coincide con 'Maria', 'Callas', 'Persoa' e a cadea completa.
 · Límite de caracteres: A diferenza de Baloo, o límite mínimo de 3 caracteres para valores de cadea non se aplica dentro das opcións 'having'.
-· Caracteres Unicode: Se a consulta contén caracteres Unicode e obrigatorio usar comiñas dobres. Por exemplo, se a etiqueta é 富士山, debe escribir --having 'tags="富士山"' ou a consulta non devolverá ningún resultado.
+· Caracteres Unicode: Se a consulta contén caracteres Unicode é obrigatorio usar comiñas dobres. Por exemplo, se a etiqueta é 富士山, debe escribir HAVING 'tags="富士山"' ou a consulta non devolverá ningún resultado.
 
 Exemplo de exclusión con Having:
 Obter ficheiros etiquetados como "Ciencia" ignorando a etiqueta "Ciencia Ficción".
 
-    {prog_id} tags=Ciencia --having "NOT tags=Ficción" """
+    {prog_id} tags=Ciencia HAVING "NOT tags=Ficción" """
     }
 }
 

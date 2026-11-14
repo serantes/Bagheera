@@ -168,9 +168,8 @@ extraction.
 - **Natural Language Queries**: Search for modified files using intuitive
   expressions like `MODIFIED TODAY`, `MODIFIED LAST 2 WEEKS`, or *`MODIFIED 3
   MONTHS AGO`\*.
-- **Subquery Search**: Efficiently search directory structures and execute a
-  second query on all files found.
-- **Advanced Filtering**: Use `\--having` and `\--subquery-having` with the
+- **Subquery Search**: Combine searches within selected folders using set operations.
+- **Advanced Filtering**: Use `HAVING` before or after `SUBQUERY` with the
   additional logical operator `NOT`, comparison operators like \*not equal* `!=`
   , *does not contain* `!:`, *case-sensitive equal* `==`, and
   property-to-property comparisons like `width > height`.
@@ -199,18 +198,30 @@ Exclude specific types or tags using complex logic:
 
 ```bash
 # Fetch files containing 'report' while abandoning results where the file path includes 'pdf' or the file is marked with the 'Draft' tag.
-bagheerasearch report --having "pdf OR tags:Draft"
+bagheerasearch report HAVING "pdf OR tags:Draft"
 ```
 #### Subquery Search
 
-Execute a search over folders and include a second subquery for the results
-found inside those folders.
+Combine searches inside the folders selected by the main query.
 
 ```bash
-# Fetch all directories in '~/Documents' where the folder name contains 'KDE' and fetch all presentation files in those folders where the filename contains 'Baloo' or 'Bagheera'. Exclude files tagged as 'Obsolete' or 'Revised'.
-bagheerasearch --directory '~/Documents' KDE --subquery 'Baloo OR Bagheera' --type Presentation --having 'NOT (tags=Obsolete OR tags=Revised)'
+# Fetch presentations matching Baloo or Bagheera within folders matching KDE.
+bagheerasearch --directory '~/Documents' KDE SUBQUERY Baloo OR SUBQUERY Bagheera --type Presentation
 ```
 ### Query Syntax
+
+Use `query [HAVING expression] [[operator] SUBQUERY [query] [HAVING expression]]...`.
+The main query selects folders; the first subquery starts the result set.
+Its `AND`/`OR` is ignored, but `NOT` complements its results. Subsequent
+`SUBQUERY` and `AND SUBQUERY` intersect results, `AND NOT SUBQUERY` subtracts,
+`OR SUBQUERY` unions, `OR NOT SUBQUERY` unions with the complement within the
+selected folders, and `OR EXCLUSIVE SUBQUERY` computes XOR. `AND`/`AND NOT` take precedence
+over XOR, then `OR`/`OR NOT`; equal-precedence operators are left-associative.
+An empty `SUBQUERY` searches all items within the selected folders; an empty `HAVING` is ignored.
+Clause names are uppercase, and repeated `HAVING` clauses in a search are joined
+with `AND`. Options may appear between query terms. Quote shell operators and
+retain inner quotes for literal values. Pagination applies to the combined
+results in first-appearance order; `--sort` applies separately to each search.
 
 #### Comparison Operators
 
@@ -250,27 +261,22 @@ for the full list):
 ### BagheeraSearch Command Help
 
 ```text
-usage: bagheerasearch [-h] [-d DIRECTORY] [-e HAVING] [-i] [-k] [-l LIMIT] [-o OFFSET] [-q [SUBQUERY]] [-n SUBQUERY_INDENT] [-x SUBQUERY_HAVING]
+usage: bagheerasearch [-h] [-d DIRECTORY] [-i] [-k] [-l LIMIT] [-o OFFSET] [-n SUBQUERY_INDENT]
                       [-s SORT] [-t TYPE] [-v] [--day DAY] [--month MONTH] [--year YEAR] [--help-query] [--version]
                       [query]
 An improved search tool for Baloo
 positional arguments:
-  query                 list of words to query for
+  query                 query [HAVING expression] [[operator] SUBQUERY query [HAVING expression]]...
 options:
   -h, --help            show this help message and exit
   -d, --directory DIRECTORY
                         limit search to specified directory tree
-  -e, --having HAVING   having expression applied over query results
   -i, --id              show document IDs
   -k, --konsole         show files using file:/ and quotes
   -l, --limit LIMIT     the maximum number of results
   -o, --offset OFFSET   offset from which to start the search
-  -q, --subquery [SUBQUERY]
-                        enable a subquery over folder results with or without a query
   -n, --subquery-indent SUBQUERY_INDENT
                         subquery results indent character
-  -x, --subquery-having SUBQUERY_HAVING
-                        having expression applied over subquery results
   -s, --sort SORT       sorting criteria <auto|none>
   -t, --type TYPE       type of Baloo data to be searched
   -v, --verbose         Verbose mode

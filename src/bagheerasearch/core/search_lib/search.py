@@ -4,11 +4,14 @@ A Python interface for the Baloo search wrapper.
 """
 
 import ctypes
+import itertools
 import json
 import os
 import re
 import sys
+from os import stat as stat_path
 from pathlib import Path
+from stat import S_ISDIR
 from typing import Dict, Any, Iterator, Optional, Union
 
 from ...tools.baloo_tools import (get_dates, get_info, get_mime_type, get_xattr_terms)
@@ -431,6 +434,106 @@ class BagheeraSearcher:
 
         return query_text
 
+    def search_combined(
+        self,
+        query_text: str,
+        main_options: Dict[str, Any],
+        search_opts: Dict[str, Any],
+    ) -> Iterator[Dict[str, Any]]:
+        """Combine subquery results from folders selected by the main query."""
+        options = dict(main_options)
+        options.pop("limit", None)
+        options.pop("offset", None)
+        items: Dict[int, Dict[str, Any]] = {}
+        evaluator = _get_evaluator()
+
+        def filter_results(files: list, having: Optional[str]) -> Iterator[Dict[str, Any]]:
+            predicate = None
+            needs = {}
+            if having:
+                expression = parse_date(having)
+                predicate = evaluator.compile(expression)
+                needs = {k: v > 0 for k, v in analyze_query_properties(expression).items()}
+            for item in files:
+                file_id = int(item["id"], 16)
+                if not predicate or predicate(self._get_item_info(item, file_id, needs)):
+                    yield item
+
+        folder_options = dict(options)
+        folder_options["type"] = "folder"
+        folder_options["query"] = self.parse_properties(parse_date(query_text))
+        folders = list(filter_results(self._execute_query(folder_options), search_opts["having"]))
+        if not folders:
+            return
+
+        def result_set(query: str, having: Optional[str]) -> set:
+            query_options = dict(options)
+            query_options["query"] = self.parse_properties(parse_date(query))
+            result = set()
+            for folder in folders:
+                query_options["directory"] = folder["path"]
+                files = self._execute_query(query_options)
+                if options.get("type") and options["type"].lower() != "folder":
+                    files = [item for item in files if not S_ISDIR(stat_path(item["path"]).st_mode)]
+                for item in filter_results(files, having):
+                    file_id = int(item["id"], 16)
+                    items.setdefault(file_id, item)
+                    result.add(file_id)
+            return result
+
+        results = []
+        operators = []
+        needs_universe = False
+        first_operator = None
+        for index, (operator, query, having) in enumerate(search_opts["subqueries"]):
+            if operator not in ("AND", "AND NOT", "OR", "OR NOT", "OR EXCLUSIVE", "NOT"):
+                raise ValueError(f"Unknown subquery operator: {operator}")
+            if index == 0:
+                first_operator = operator
+            else:
+                if operator == "NOT":
+                    operator = "AND NOT"
+                operators.append(operator)
+            results.append(result_set(query, having))
+            needs_universe = needs_universe or operator == "OR NOT" or (
+                index == 0 and operator in ("NOT", "AND NOT"))
+
+        universe = result_set("", None) if needs_universe else set()
+        if first_operator in ("NOT", "AND NOT", "OR NOT"):
+            results[0] = universe - results[0]
+        for i, operator in enumerate(operators):
+            if operator == "OR NOT":
+                results[i + 1] = universe - results[i + 1]
+                operators[i] = "OR"
+
+        for level in ("AND", "OR EXCLUSIVE", "OR"):
+            i = 0
+            while i < len(operators):
+                operator = operators[i]
+                if operator != level and not (level == "AND" and operator == "AND NOT"):
+                    i += 1
+                    continue
+                if operator == "AND NOT":
+                    combined = results[i] - results[i + 1]
+                elif level == "AND":
+                    combined = results[i] & results[i + 1]
+                elif level == "OR EXCLUSIVE":
+                    combined = results[i] ^ results[i + 1]
+                else:
+                    combined = results[i] | results[i + 1]
+                results[i:i + 2] = [combined]
+                operators.pop(i)
+
+        selected = (
+            (file_id, item) for file_id, item in items.items()
+            if file_id in results[0] and file_id not in self.ids_processed
+        )
+        offset = search_opts.get("offset", 0)
+        limit = search_opts.get("limit", 99999999999)
+        for file_id, item in itertools.islice(selected, offset, offset + limit):
+            self.ids_processed.add(file_id)
+            yield item
+
     def search(
         self,
         query_text: str,
@@ -440,6 +543,10 @@ class BagheeraSearcher:
         """
         Main search generator. Yields file dictionaries.
         """
+        if search_opts.get("subqueries"):
+            yield from self.search_combined(query_text, main_options, search_opts)
+            return
+
         ee = _get_evaluator()
 
         if search_opts['having']:

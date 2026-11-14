@@ -18,9 +18,6 @@ bagheerasearch "your query terms" [options]
 
 - `--help-query`: Shows detailed help regarding the supported query syntax.
 - `--type [type]`: Filters results by file type (e.g., `image`, `video`, `audio`).
-- `--having [query]`: Applies a filtering expression over the initial query results.
-- `--subquery [query]`: Enables a secondary search over the folders returned by the main query.
-- `--subquery-having [query]`: Applies a filtering expression over the subquery results.
 - `--id`: Displays document IDs.
 - `--konsole`: Displays files using the `file:/` protocol and quotes.
 - `--year [YYYY]`: Filters results by a specific year.
@@ -36,6 +33,21 @@ For more options, please consult the CLI help (`--help`).
 
 **Bagheera** Search supports Baloo's rich query syntax for keyword matching. Additionally, the `having` options support an even more advanced syntax for fine-grained filtering.
 
+```text
+query [HAVING expression] [[operator] SUBQUERY [query] [HAVING expression]]...
+```
+
+Each `HAVING` filters the immediately preceding search; an empty `HAVING` is
+ignored and repeated `HAVING` clauses in a search are joined with `AND`.
+An empty `SUBQUERY` searches all items in the folders selected by the main query. Clause names and
+operators are uppercase. Options can be interspersed with the query:
+after an option and its value, text continues in the current section. The whole
+query may also be passed as a single quoted argument. Preserve inner quotes
+where needed for literal values and quote shell operators such as `>` and `(`.
+For example, `bagheerasearch 'filename="HAVING" SUBQUERY'` searches for the
+literal value `HAVING` in the main query. The old `--having`, `--subquery`, and
+`--subquery-having` options and their short aliases are no longer supported.
+
 ### Logical Operators
 
 Combine multiple criteria using uppercase logical operators:
@@ -45,7 +57,7 @@ Combine multiple criteria using uppercase logical operators:
 - `NOT`: Inverts the following condition (only available within `having` options).
 - `(...)`: Use parentheses to group expressions and define the order of evaluation.
 
-**Example:** `bagheerasearch type=images AND "modified>=2025-01-01" AND (tags:vacaciones OR tags:summer) --having "NOT (tags:work OR tags:trabajo)"`
+**Example:** `bagheerasearch 'type=images AND modified>=2025-01-01 AND (tags:vacaciones OR tags:summer) HAVING NOT (tags:work OR tags:trabajo)'`
 
 ### Property Filters
 
@@ -78,7 +90,7 @@ A full list of available properties is provided in Chapter 7.
 
 - **Find large images**: `bagheerasearch "width > 1920" AND "height > 1080"`
 - **Find specific ratings**: `bagheerasearch rating = 5`
-- **Property-to-Property comparison**: `bagheerasearch --having "width > height"` (finds landscape images).
+- **Property-to-Property comparison**: `bagheerasearch --type image HAVING "width > height"` (finds landscape images).
 
 ---
 
@@ -244,7 +256,7 @@ The following properties are undocumented but available in the source code. They
 
 ## 8. Having
 
-The `--having` option allows you to filter the results returned by **Baloo**. It supports the standard **Baloo** syntax plus the `NOT` operator. If you need multiple terms or you use operators like `>`, `>=`, `<`  or `<=` single or double quotes are mandatory.
+The `HAVING` clause allows you to filter the results returned by **Baloo**. It supports the standard **Baloo** syntax plus the `NOT` operator. Quote or escape shell operators like `>`, `>=`, `<` or `<=`.
 
 Additionally, you can use:
 
@@ -260,20 +272,41 @@ Additionally, you can use:
 - **Empty Values**: You can check for the presence or absence of values using empty quotes. For example, `tags!=""` matches any file with at least one tag, while `tags=""` matches files with no tags.
 - **Tag Levels**: Comparisons are performed against the full tag path and each individual level. A file tagged `Person/María Callas` matches `Maria`, `María`, `Callas`, `Person`, and the full string.
 - **Character Limit**: Unlike **Baloo**, the 3-character minimum limit for string values is not enforced within `having` options.
-- **Unicode characters**: If the query contains Unicode characters, double quotes are required. For example, if your tag is `María` or `マリア`, you must write --having 'tags="マリア" tags="María"' or the query will not return any results.
+- **Unicode characters**: If the query contains Unicode characters, double quotes are required. For example, if your tag is `María` or `マリア`, you must write `HAVING 'tags="マリア" tags="María"'` or the query will not return any results.
 
 ---
 
 ## 9. Subqueries
 
-**Bagheera** supports a secondary search within the folders returned by a main query. This is particularly useful for deep searches. If you need multiple terms or you use operators like `>`, `>=`, `<` or `<=` single or double quotes are mandatory.
+The main query selects folders; each `SUBQUERY` searches inside those folders.
+The global directory restricts the main query, while `--type` filters the
+subquery results. Date filters apply to both. The first subquery starts the
+result set: a preceding `AND`, `OR` or `OR EXCLUSIVE` is ignored, but `NOT`
+complements its results. Subsequent results are combined by file ID:
 
-When using `--subquery`, the main query first identifies relevant folders; the subquery is then applied to the files contained within those folders. You can also use `--subquery-having` to filter these results further.
+For a `--type` other than `Folder`, directories are excluded even if Baloo's
+index incorrectly classifies them as that type.
 
-**Example:** Search for folders named "Project" and find documents within them modified in the last week.
+- `SUBQUERY` or `AND SUBQUERY`: intersection.
+- `AND NOT SUBQUERY`: difference.
+- `OR SUBQUERY`: union.
+- `OR NOT SUBQUERY`: union with the complement of the subquery.
+- `OR EXCLUSIVE SUBQUERY`: symmetric difference (XOR).
+
+The complement consists of indexed items in the selected folders that meet the
+subquery type and date filters and are absent from that subquery's filtered
+results. If the main query selects no folders, the result is empty.
+`AND` and `AND NOT` have precedence over `OR EXCLUSIVE`, which has precedence
+over `OR` and `OR NOT`. Operators at the same precedence are evaluated left to
+right. Each search can have its own `HAVING`. Results retain the order of their
+first appearance in the searches; `--offset` and `--limit` apply after the set
+operations. The ordering requested by `--sort` applies separately to each search,
+not globally to the combined result.
+
+**Example:** Find documents modified last week inside folders matching "Project".
 
 ```bash
-bagheerasearch Project –-subquery "MODIFIED LAST WEEK"
+bagheerasearch --type Document Project AND SUBQUERY "MODIFIED LAST WEEK"
 ```
 
 ---
@@ -287,7 +320,7 @@ Here are some practical examples of how to use **Bagheera Search** effectively:
 bagheerasearch --type image MODIFIED TODAY
 
 # Landscape is not tagged as "Work".
-bagheerasearch --type image --having "width > height AND NOT tags:Work"
+bagheerasearch --type image HAVING "width > height AND NOT tags:Work"
 
 # Find high-rated files one year ago.
 bagheerasearch "rating >= 9 AND MODIFIED 1 YEAR AGO"
@@ -295,14 +328,14 @@ bagheerasearch "rating >= 9 AND MODIFIED 1 YEAR AGO"
 # Complex multi-criteria search.
 bagheerasearch "(tags:cosplay OR tags:portrait) AND width < 1000 AND rating > 0"
 
-# Get files from folders named "KDE" in "~/Documents".
-bagheerasearch --directory '~/Documents' KDE --subquery
+# Get files matching Baloo inside folders matching KDE in "~/Documents".
+bagheerasearch --directory '~/Documents' KDE SUBQUERY Baloo
 
-# Get all presentations not tagged as "Obsolete" or "Revised" from folders named "KDE" in "~/Documents".
-bagheerasearch --directory '~/Documents' KDE --subquery 'Baloo OR Bagheera' --type Presentation --having 'NOT (tags=Obsolete OR tags=Revised)'
+# Get presentations matching Baloo or Bagheera inside folders matching KDE.
+bagheerasearch --directory '~/Documents' KDE SUBQUERY Baloo OR SUBQUERY Bagheera --type Presentation
 
 # Get files tagged as "Science" ignoring "Science Fiction" tag.
-bagheerasearch tags=Science --having "NOT tags=Fiction"
+bagheerasearch tags=Science HAVING "NOT tags=Fiction"
 ```
 
 ---

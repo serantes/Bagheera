@@ -7,9 +7,11 @@ Bagheera Search Tool - CLI Client
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
+from typing import Dict, List, NamedTuple, Optional, Tuple
 from .help_texts import HelpTexts
 
 # --- CONFIGURATION ---
@@ -56,6 +58,73 @@ def print_version() -> None:
         HelpTexts.COPYRIGHT_INFO.format(year=PROG_DATE[:4], author=PROG_BY)
     )
 
+
+class Subquery(NamedTuple):
+    operator: str
+    query: str
+    having: Optional[str]
+
+
+def parse_query_clauses(query: str) -> Tuple[str, Optional[str], List[Subquery]]:
+    """Split the query into independently evaluated search sections."""
+    main_section: Dict[str, List[str]] = {"query": [], "having": []}
+    current = main_section
+    subquery_sections: List[Tuple[str, Dict[str, List[str]]]] = []
+    section = "query"
+    quote = None
+    start = 0
+    i = 0
+    while i < len(query):
+        char = query[i]
+        if char == "\\" and i + 1 < len(query):
+            i += 2
+            continue
+        if quote:
+            if char == quote:
+                quote = None
+        elif char == '"' or (char == "'" and
+                             (i == 0 or query[i - 1].isspace() or query[i - 1] in "=!:<>")):
+            quote = char
+        elif i == 0 or query[i - 1].isspace():
+            keyword = next(
+                (word for word in ("HAVING", "SUBQUERY")
+                 if query.startswith(word, i)
+                 and (i + len(word) == len(query) or query[i + len(word)].isspace())),
+                None,
+            )
+            if keyword:
+                text = query[start:i].strip()
+                operator = "AND"
+                if keyword == "SUBQUERY":
+                    match = re.search(r"(?:^|\s)(AND NOT|OR EXCLUSIVE|OR NOT|AND|OR|NOT)\s*$", text)
+                    if match:
+                        operator = match.group(1)
+                        text = text[:match.start()].strip()
+                if text:
+                    current[section].append(text)
+                if keyword == "SUBQUERY":
+                    current = {"query": [], "having": []}
+                    subquery_sections.append((operator, current))
+                    section = "query"
+                else:
+                    section = "having"
+                i += len(keyword)
+                start = i
+                continue
+        i += 1
+
+    text = query[start:].strip()
+    if text:
+        current[section].append(text)
+
+    return (
+        " ".join(main_section["query"]),
+        " AND ".join(main_section["having"]) or None,
+        [Subquery(operator, " ".join(parts["query"]), " AND ".join(parts["having"]) or None)
+         for operator, parts in subquery_sections],
+    )
+
+
 def main() -> None:
     """Main entry point for the CLI tool."""
     parser = argparse.ArgumentParser(
@@ -63,14 +132,11 @@ def main() -> None:
     )
     parser.add_argument("query", nargs="?", help=HelpTexts.ARG_QUERY)
     parser.add_argument("-d", "--directory", help=HelpTexts.ARG_DIR)
-    parser.add_argument("-e", "--having", help=HelpTexts.ARG_HAVING)
     parser.add_argument("-i", "--id", action="store_true", help=HelpTexts.ARG_ID)
     parser.add_argument("-k", "--konsole", action="store_true", help=HelpTexts.ARG_KONSOLE)
     parser.add_argument("-l", "--limit", type=int, help=HelpTexts.ARG_LIMIT)
     parser.add_argument("-o", "--offset", type=int, help=HelpTexts.ARG_OFFSET)
-    parser.add_argument("-q", "--subquery", nargs="?", const="", default=None, help=HelpTexts.ARG_SUBQUERY)
     parser.add_argument("-n", "--subquery-indent", help=HelpTexts.ARG_SUBQUERY_INDENT)
-    parser.add_argument("-x", "--subquery-having", help=HelpTexts.ARG_SUBQUERY_HAVING)
     parser.add_argument("-s", "--sort", help=HelpTexts.ARG_SORT)
     parser.add_argument("-t", "--type", help=HelpTexts.ARG_TYPE)
     parser.add_argument("-v", "--verbose", action="store_true", help=HelpTexts.ARG_VERBOSE)
@@ -82,7 +148,14 @@ def main() -> None:
     parser.add_argument("--help-query", action="store_true", help=HelpTexts.ARG_HELP_QUERY)
     parser.add_argument("--version", action="store_true", help=HelpTexts.ARG_VERSION)
 
+    for arg in sys.argv[1:]:
+        if arg.split("=", 1)[0] in ("--having", "--subquery", "--subquery-having"):
+            parser.error(HelpTexts.ERR_REMOVED_OPTION.format(arg))
+
     args, unknown_args = parser.parse_known_args()
+    unknown_options = [arg for arg in unknown_args if arg.startswith("-")]
+    if unknown_options:
+        parser.error(HelpTexts.ERR_UNKNOWN_OPTIONS.format(" ".join(unknown_options)))
 
     if args.version:
         print_version()
@@ -96,7 +169,7 @@ def main() -> None:
     if unknown_args:
         query_parts.extend(unknown_args)
 
-    query_text = " ".join(query_parts)
+    query_text, having, subqueries = parse_query_clauses(" ".join(query_parts))
 
     if args.day is not None and args.month is None:
         parser.error(HelpTexts.ERR_MISSING_MONTH)
@@ -104,7 +177,7 @@ def main() -> None:
     if args.month is not None and args.year is None:
         parser.error(HelpTexts.ERR_MISSING_YEAR)
 
-    if not query_text and not args.subquery and not args.type and not args.directory:
+    if not query_text and not subqueries and not args.type and not args.directory:
         parser.print_help()
         return
 
@@ -119,15 +192,13 @@ def main() -> None:
 
     # Build options dictionary
     main_options = {}
-    if args.subquery is not None:
-        main_options["type"] = "folder"
-    else:
+    if not subqueries:
         if args.limit is not None:
             main_options["limit"] = args.limit
         if args.offset is not None:
             main_options["offset"] = args.offset
-        if args.type:
-            main_options["type"] = args.type
+    if args.type:
+        main_options["type"] = args.type
 
     if args.directory:
         main_options["directory"] = args.directory
@@ -141,18 +212,20 @@ def main() -> None:
         main_options["sort"] = args.sort
 
     other_options = {
-        "having": args.having,
+        "having": having,
         "id": args.id,
         "konsole": args.konsole,
-        "limit": args.limit if args.limit and args.subquery is not None else 99999999999,
-        "offset": args.offset if args.offset and args.subquery is not None else 0,
-        "subquery": args.subquery,
+        "limit": args.limit if subqueries and args.limit is not None else 99999999999,
+        "offset": args.offset if subqueries and args.offset is not None else 0,
+        "subquery": None,
         "subquery_indent": args.subquery_indent or "",
-        "subquery_having": args.subquery_having,
+        "subquery_having": None,
         "sort": args.sort,
-        "type": args.type if args.subquery is not None else None,
+        "type": None,
         "verbose": args.verbose,
     }
+    if subqueries:
+        other_options["subqueries"] = subqueries
 
     if other_options["verbose"]:
         start_time = time.time()
