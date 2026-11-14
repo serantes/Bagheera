@@ -353,7 +353,8 @@ def test_or_not_uses_unfiltered_universe_with_global_options(monkeypatch, capsys
     monkeypatch.setattr(
         sys, "argv",
         ["bagheerasearch", "main SUBQUERY first HAVING rating=5 OR NOT SUBQUERY second HAVING rating=7",
-         "--directory", "/photos", "--type", "image", "--year", "2025"],
+         "--directory", "/photos", "--type", "image", "--year", "2025",
+         "--month", "7", "--day", "14"],
     )
     main()
 
@@ -362,10 +363,62 @@ def test_or_not_uses_unfiltered_universe_with_global_options(monkeypatch, capsys
     assert queries[0]["directory"] == "/photos" and queries[0]["type"] == "folder"
     assert all(query["directory"] == "/photos/matching" and query["type"] == "image"
                for query in queries[1:])
-    assert all(query["year"] == 2025 for query in queries)
+    assert not any(key in queries[0] for key in ("year", "month", "day"))
+    assert all((query["year"], query["month"], query["day"]) == (2025, 7, 14)
+               for query in queries[1:])
 
 
-def test_legacy_library_subquery_still_searches_inside_folders(monkeypatch):
+@pytest.mark.parametrize(
+    ("date_args", "expected_dates", "expected_paths"),
+    [
+        (["--year", "2025"], {"year": 2025}, ["/one", "/two", "/three"]),
+        (["--year", "2025", "--month", "7"], {"year": 2025, "month": 7},
+         ["/one", "/three"]),
+        (["--year", "2025", "--month", "7", "--day", "14"],
+         {"year": 2025, "month": 7, "day": 14}, ["/one"]),
+    ],
+)
+@pytest.mark.parametrize("with_subquery", [False, True])
+def test_date_filters_target_results_not_selected_folders(
+        date_args, expected_dates, expected_paths, with_subquery, monkeypatch, capsys):
+    from bagheerasearch.core.search_lib.search import BagheeraSearcher
+
+    queries = []
+    records = [
+        ({"id": "1", "path": "/one"}, {"year": 2025, "month": 7, "day": 14}),
+        ({"id": "2", "path": "/two"}, {"year": 2025, "month": 8, "day": 1}),
+        ({"id": "4", "path": "/three"}, {"year": 2025, "month": 7, "day": 15}),
+        ({"id": "3", "path": "/old"}, {"year": 2024, "month": 7, "day": 14}),
+    ]
+
+    def execute_query(self, options):
+        queries.append(dict(options))
+        if with_subquery and options["query"] == "main":
+            # The folder predates the requested file dates.
+            return [] if any(key in options for key in ("year", "month", "day")) else [
+                {"id": "10", "path": "/folder"}]
+        return [
+            item for item, date in records
+            if all(date[key] == options[key] for key in expected_dates if key in options)
+        ]
+
+    monkeypatch.setattr(BagheeraSearcher, "_load_baloo_wrapper", lambda self, path: None)
+    monkeypatch.setattr(BagheeraSearcher, "_execute_query", execute_query)
+    expression = "main SUBQUERY" if with_subquery else "main"
+    monkeypatch.setattr(sys, "argv", ["bagheerasearch", expression, *date_args])
+    main()
+
+    assert capsys.readouterr().out.splitlines() == expected_paths
+    result_query = queries[-1]
+    assert {key: result_query[key] for key in expected_dates} == expected_dates
+    assert all(key not in result_query for key in {"year", "month", "day"} - expected_dates.keys())
+    if with_subquery:
+        assert not any(key in queries[0] for key in ("year", "month", "day"))
+        assert result_query["directory"] == "/folder"
+
+
+@pytest.mark.parametrize("subquery", ["child", ""])
+def test_legacy_library_subquery_still_searches_inside_folders(monkeypatch, subquery):
     from bagheerasearch.core.search_lib.search import BagheeraSearcher
 
     queries = []
@@ -380,11 +433,18 @@ def test_legacy_library_subquery_still_searches_inside_folders(monkeypatch):
     monkeypatch.setattr(BagheeraSearcher, "_execute_query", execute_query)
     searcher = BagheeraSearcher()
     options = {
-        "having": None, "subquery": "child", "subquery_having": None,
+        "having": None, "subquery": subquery, "subquery_having": None,
         "limit": 10, "offset": 0, "type": "image",
     }
 
-    assert list(searcher.search("main", {"type": "folder"}, options)) == [
+    main_options = {"type": "folder", "year": 2025, "month": 7, "day": 14}
+    assert list(searcher.search("main", main_options, options)) == [
         {"id": "2", "path": "/folder/file"}
     ]
+    assert not any(key in queries[0] for key in ("year", "month", "day"))
+    assert {key: queries[1][key] for key in ("year", "month", "day")} == {
+        "year": 2025, "month": 7, "day": 14,
+    }
+    assert main_options["year"] == 2025
     assert queries[1]["directory"] == "/folder"
+    assert queries[1]["query"] == subquery

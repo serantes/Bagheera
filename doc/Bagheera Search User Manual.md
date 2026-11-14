@@ -25,6 +25,9 @@ bagheerasearch "your query terms" [options]
 - `--day [DD]`: Filters results by day (requires `--year` and `--month`).
 - `--version`: Displays the current version of the **Bagheera Search**.
 
+Without subqueries, the type and date filters apply to the main search. With
+subqueries, they apply only to the items found inside the selected folders.
+
 For more options, please consult the CLI help (`--help`).
 
 ### BagheeraGui
@@ -297,8 +300,9 @@ Additionally, you can use:
 ## 9. Subqueries
 
 The main query selects folders; each `SUBQUERY` searches inside those folders.
-The global directory restricts the main query, while `--type` filters the
-subquery results. Date filters apply to both. The first subquery starts the
+The global directory restricts the main query, while `--type`, `--year`,
+`--month` and `--day` filter only the subquery results, not the folders selected
+by the main query. The first subquery starts the
 result set: a preceding `AND`, `OR` or `OR EXCLUSIVE` is ignored, but `NOT`
 complements its results. Subsequent results are combined by file ID:
 

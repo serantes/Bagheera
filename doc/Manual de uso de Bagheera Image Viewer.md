@@ -34,7 +34,9 @@ Con el motor de búsqueda Bagheera se pueden utilizar las cláusulas `HAVING` y
 entre subconsultas. Por ejemplo:
 `tags=album HAVING rating=5 SUBQUERY tags=cat OR SUBQUERY tags=dog --type image`.
 Una `SUBQUERY` vacía busca el contenido de las carpetas seleccionadas; un
-`HAVING` vacío se ignora. Consulta el [manual de Bagheera Search](Bagheera%20Search%20User%20Manual.md)
+`HAVING` vacío se ignora. Con subconsultas, `--type`, `--year`, `--month` y
+`--day` filtran solo los elementos encontrados dentro de esas carpetas.
+Consulta el [manual de Bagheera Search](Bagheera%20Search%20User%20Manual.md)
 para conocer la sintaxis completa y la precedencia de los operadores. Estas
 cláusulas requieren el motor Bagheera; el motor Baloo externo utiliza su propia
 sintaxis de búsqueda.

@@ -474,11 +474,16 @@ def test_gui_runs_combined_query_with_having_and_typed_empty_subquery(window, tm
     window.hide_icons_check.setChecked(True)
     window.query_input.setEditText("album HAVING rating=5 SUBQUERY HAVING rating=5")
     window.type_combo.setCurrentIndex(window.type_combo.findData("image"))
+    window.year_combo.setEditText("2025")
+    window.month_combo.setCurrentIndex(7)
+    window.day_combo.setCurrentIndex(14)
 
     window.perform_search()
 
     assert [call["query"] for call in calls] == ["album", ""]
     assert calls[1]["directory"] == str(folder) and calls[1]["type"] == "image"
+    assert not any(key in calls[0] for key in ("year", "month", "day"))
+    assert (calls[1]["year"], calls[1]["month"], calls[1]["day"]) == (2025, 7, 14)
     assert window.results_table.rowCount() == 1
     assert window.results_table.item(0, 1).text() == str(image)
 

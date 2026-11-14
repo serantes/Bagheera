@@ -200,7 +200,7 @@ Supported natural language patterns are:
 
 - SUBQUERY clause -
 
-The main query selects folders. Each SUBQUERY searches independently inside those folders, and --type applies to the items found there. The first SUBQUERY starts the result set: its AND or OR is ignored, but NOT complements its results. Subsequent SUBQUERY or AND SUBQUERY clauses intersect results; AND NOT SUBQUERY subtracts them; OR SUBQUERY unions them; OR NOT SUBQUERY unions them with the complement; OR EXCLUSIVE SUBQUERY computes the symmetric difference (XOR).
+The main query selects folders. Each SUBQUERY searches independently inside those folders; --type, --year, --month and --day apply only to the items found there, not to the folders. The first SUBQUERY starts the result set: its AND or OR is ignored, but NOT complements its results. Subsequent SUBQUERY or AND SUBQUERY clauses intersect results; AND NOT SUBQUERY subtracts them; OR SUBQUERY unions them; OR NOT SUBQUERY unions them with the complement; OR EXCLUSIVE SUBQUERY computes the symmetric difference (XOR).
 The complement is relative to all indexed items in the selected folders matching the subquery type and date filters. AND and AND NOT take precedence over XOR, which takes precedence over OR and OR NOT. Operators at the same precedence are evaluated left to right.
 An empty SUBQUERY matches all items in the selected folders. HAVING filters the immediately preceding search; empty HAVING clauses are ignored and repeated HAVING clauses on that search are joined with AND. Clause names and operators must be uppercase. Limit and offset apply after combining results.
 
@@ -425,7 +425,7 @@ Los patrones de lenguaje natural admitidos son:
 
 - Cláusula SUBQUERY -
 
-La consulta principal selecciona carpetas. Cada SUBQUERY busca independientemente dentro de ellas; --type se aplica a los elementos encontrados. La primera SUBQUERY inicia el conjunto: se ignora su AND u OR, pero se respeta NOT. Las siguientes SUBQUERY o AND SUBQUERY intersectan resultados; AND NOT SUBQUERY los resta; OR SUBQUERY los une; OR NOT SUBQUERY los une con el complemento; OR EXCLUSIVE SUBQUERY calcula la diferencia simétrica (XOR).
+La consulta principal selecciona carpetas. Cada SUBQUERY busca independientemente dentro de ellas; --type, --year, --month y --day se aplican solo a los elementos encontrados, no a las carpetas. La primera SUBQUERY inicia el conjunto: se ignora su AND u OR, pero se respeta NOT. Las siguientes SUBQUERY o AND SUBQUERY intersectan resultados; AND NOT SUBQUERY los resta; OR SUBQUERY los une; OR NOT SUBQUERY los une con el complemento; OR EXCLUSIVE SUBQUERY calcula la diferencia simétrica (XOR).
 El complemento se calcula respecto a los elementos indexados en las carpetas seleccionadas que cumplen los filtros de tipo y fecha de las subconsultas. AND y AND NOT tienen prioridad sobre XOR, que tiene prioridad sobre OR y OR NOT. Los operadores de igual prioridad se evalúan de izquierda a derecha.
 Una SUBQUERY vacía coincide con todos los elementos de las carpetas seleccionadas. HAVING filtra la búsqueda inmediatamente anterior; las cláusulas HAVING vacías se ignoran y las repetidas en una búsqueda se unen con AND. Los nombres de cláusulas y operadores deben estar en mayúsculas. El límite y el desplazamiento se aplican después de combinar los resultados.
 
@@ -650,7 +650,7 @@ Os patróns de linguaxe natural admitidos son:
 
 - Cláusula SUBQUERY -
 
-A consulta principal selecciona cartafoles. Cada SUBQUERY busca independentemente dentro deles; --type aplícase aos elementos atopados. A primeira SUBQUERY inicia o conxunto: ignórase o seu AND ou OR, pero respéctase NOT. As seguintes SUBQUERY ou AND SUBQUERY intersectan resultados; AND NOT SUBQUERY réstaos; OR SUBQUERY úneos; OR NOT SUBQUERY úneos co complemento; OR EXCLUSIVE SUBQUERY calcula a diferenza simétrica (XOR).
+A consulta principal selecciona cartafoles. Cada SUBQUERY busca independentemente dentro deles; --type, --year, --month e --day aplícanse só aos elementos atopados, non aos cartafoles. A primeira SUBQUERY inicia o conxunto: ignórase o seu AND ou OR, pero respéctase NOT. As seguintes SUBQUERY ou AND SUBQUERY intersectan resultados; AND NOT SUBQUERY réstaos; OR SUBQUERY úneos; OR NOT SUBQUERY úneos co complemento; OR EXCLUSIVE SUBQUERY calcula a diferenza simétrica (XOR).
 O complemento calcúlase respecto dos elementos indexados nos cartafoles seleccionados que cumpren os filtros de tipo e data das subconsultas. AND e AND NOT teñen prioridade sobre XOR, que ten prioridade sobre OR e OR NOT. Os operadores da mesma prioridade avalíanse de esquerda a dereita.
 Unha SUBQUERY baleira coincide con todos os elementos dos cartafoles seleccionados. HAVING filtra a busca inmediatamente anterior; as cláusulas HAVING baleiras ignóranse e as repetidas nunha busca únense con AND. Os nomes das cláusulas e dos operadores deben estar en maiúsculas. O límite e o desprazamento aplícanse despois de combinar os resultados.
 

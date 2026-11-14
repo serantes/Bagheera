@@ -460,6 +460,8 @@ class BagheeraSearcher:
                     yield item
 
         folder_options = dict(options)
+        for date_filter in ("year", "month", "day"):
+            folder_options.pop(date_filter, None)
         folder_options["type"] = "folder"
         folder_options["query"] = self.parse_properties(parse_date(query_text))
         folders = list(filter_results(self._execute_query(folder_options), search_opts["having"]))
@@ -571,12 +573,17 @@ class BagheeraSearcher:
         # Make a copy to avoid mutating the caller's dict
         options = dict(main_options)
         options["query"] = self.parse_properties(parse_date(query_text))
-        files = self._execute_query(options)
+        is_subquery = search_opts.get("subquery") is not None
+        main_query_options = options
+        if is_subquery:
+            main_query_options = dict(options)
+            for date_filter in ("year", "month", "day"):
+                main_query_options.pop(date_filter, None)
+        files = self._execute_query(main_query_options)
 
         if not files:
             return
 
-        is_subquery = search_opts.get("subquery") is not None
         if is_subquery:
             if search_opts.get("type"):
                 options["type"] = search_opts["type"]

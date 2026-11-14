@@ -84,13 +84,17 @@ def test_view_executes_combined_search_with_having_and_pagination(tmp_path, monk
     )
     ImageScanner._search(
         scanner, 'main HAVING rating=5 SUBQUERY first HAVING tags="orange cat" '
-        "OR EXCLUSIVE SUBQUERY second --type image --offset 1 --limit 1",
+        "OR EXCLUSIVE SUBQUERY second --type image --offset 1 --limit 1 "
+        "--year 2025 --month 7 --day 14",
     )
 
     assert scanner.all_files == [str(paths[2])]
     assert [call["query"] for call in calls] == ["main", "first", "second"]
     assert calls[0]["type"] == "folder"
     assert all(call["directory"] == str(folder) and call["type"] == "image"
+               for call in calls[1:])
+    assert not any(key in calls[0] for key in ("year", "month", "day"))
+    assert all((call["year"], call["month"], call["day"]) == (2025, 7, 14)
                for call in calls[1:])
 
 

@@ -48,7 +48,8 @@ clauses, including `AND`, `AND NOT`, `OR`, `OR NOT` and `OR EXCLUSIVE`
 between subqueries. For example:
 `tags=album HAVING rating=5 SUBQUERY tags=cat OR SUBQUERY tags=dog --type image`.
 An empty `SUBQUERY` searches the contents of the selected folders; an empty
-`HAVING` is ignored. See the [Bagheera Search manual](Bagheera%20Search%20User%20Manual.md)
+`HAVING` is ignored. With subqueries, `--type`, `--year`, `--month` and `--day`
+filter only the items found inside those folders. See the [Bagheera Search manual](Bagheera%20Search%20User%20Manual.md)
 for the complete syntax and operator precedence. These clauses require the
 Bagheera engine; the external Baloo engine uses its own query syntax.
 
