@@ -52,6 +52,7 @@ from .imageviewer import ImageViewer
 from .metadatamanager import load_common_metadata
 
 if HAVE_BAGHEERASEARCH_LIB:
+    from bagheerasearch.core.app import build_search_request, parse_search_arguments
     from bagheerasearch.core.search_lib.search import BagheeraSearcher
 
 try:
@@ -66,6 +67,65 @@ logger = logging.getLogger(__name__)
 ThumbnailResult = collections.namedtuple(
     'ThumbnailResult', ['image', 'mtime', 'tier'])
 EMPTY_THUMBNAIL = ThumbnailResult(None, 0, 0)
+
+
+class SearchArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        raise ValueError(message)
+
+
+def split_search_query(query):
+    """Split shell-style options while retaining quotes within expressions."""
+    lexer = shlex.shlex(str(query), posix=True)
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    arguments = []
+    start = 0
+    expects_value = False
+    options_with_values = {
+        "-d", "--directory", "-l", "--limit", "-o", "--offset",
+        "-s", "--sort", "-t", "--type", "--day", "--month", "--year",
+    }
+    while True:
+        token = lexer.get_token()
+        if token is None:
+            break
+        end = lexer.instream.tell()
+        raw = str(query)[start:end].strip()
+        start = end
+        if not expects_value and not token.startswith("-") and raw[:1] not in ("'", '"'):
+            marker = "\0"
+            while marker in raw:
+                marker += "\0"
+            quoted = []
+            quote_chars = []
+            quote = None
+            escaped = False
+            for char in raw:
+                if escaped:
+                    quoted.append(char)
+                    escaped = False
+                elif char == "\\" and quote != "'":
+                    quoted.append(char)
+                    escaped = True
+                elif quote and char == quote:
+                    quoted.extend((char, marker))
+                    quote_chars.append(char)
+                    quote = None
+                elif not quote and char in ("'", '"'):
+                    quoted.extend((marker, char))
+                    quote_chars.append(char)
+                    quote = char
+                else:
+                    quoted.append(char)
+            if marker in "".join(quoted):
+                parts = shlex.split("".join(quoted))[0].split(marker)
+                token = parts[0]
+                for char, part in zip(quote_chars, parts[1:]):
+                    token += char + part
+        arguments.append(token)
+        expects_value = not expects_value and token in options_with_values
+    return arguments
 
 
 class ThreadPoolManager:
@@ -2060,99 +2120,30 @@ class ImageScanner(QThread):
             pass
 
     def _parse_query(self, query):
-        parser = argparse.ArgumentParser(prog="bagheera-search",
-                                         add_help=False)
+        parser = SearchArgumentParser(prog="bagheera-search", add_help=False)
 
-        # Main arguments
         parser.add_argument("query", nargs="?", default="")
         parser.add_argument("-d", "--directory")
-        parser.add_argument("-e", "--having", nargs="?", const="",
-                            default=None)
         parser.add_argument("-l", "--limit", type=int)
         parser.add_argument("-o", "--offset", type=int)
-        parser.add_argument("-r", "--subquery", nargs="?", const="",
-                            default=None)
-        parser.add_argument("-x", "--subquery-having", nargs="?", const="",
-                            default=None)
         parser.add_argument("-s", "--sort")
         parser.add_argument("-t", "--type")
 
-        # Date filters
         parser.add_argument("--day", type=int)
         parser.add_argument("--month", type=int)
         parser.add_argument("--year", type=int)
 
-        try:
-            args_list = shlex.split(str(query))
-            args, unknown_args = parser.parse_known_args(args_list)
-
-            if args.day is not None and args.month is None:
-                raise ValueError("Missing --month (required when --day is used)")
-
-            if args.month is not None and args.year is None:
-                raise ValueError("Missing --year (required when --month is used)")
-
-            query_parts = [args.query] if args.query else []
-            if unknown_args:
-                query_parts.extend(unknown_args)
-
-            query_text = " ".join(query_parts)
-
-            # Build options dictionary
-            main_options = {}
-            if args.subquery is not None:
-                main_options["type"] = "folder"
-            else:
-                if args.limit is not None:
-                    main_options["limit"] = args.limit
-                if args.offset is not None:
-                    main_options["offset"] = args.offset
-                if args.type:
-                    main_options["type"] = args.type
-
-            if args.directory:
-                main_options["directory"] = args.directory
-            if args.year is not None:
-                main_options["year"] = args.year
-            if args.month is not None:
-                main_options["month"] = args.month
-            if args.day is not None:
-                main_options["day"] = args.day
-            if args.sort:
-                main_options["sort"] = args.sort
-            if args.having and args.having == '':
-                args.subquery_having = None
-            if args.subquery_having and args.subquery_having == '':
-                args.subquery_having = None
-            other_options = {
-                "having": args.having,
-                "id": False,
-                "konsole": False,
-                "limit": args.limit if args.limit and args.subquery is not None
-                else 99999999999,
-                "offset": args.offset if args.offset and args.subquery is not None
-                else 0,
-                "subquery": args.subquery,
-                "subquery_indent": "",
-                "subquery_having": args.subquery_having,
-                "sort": args.sort,
-                "type": args.type if args.subquery is not None else None,
-                "verbose": False,
-            }
-
-            return query_text, main_options, other_options
-
-        except ValueError as e:
-            print(f"Arguments error: {e}")
-            return None, []
-        except Exception as e:
-            print(f"Unexpected error parsing query: {e}")
-            return None, []
+        args, unknown_args = parse_search_arguments(parser, split_search_query(query))
+        return build_search_request(parser, args, unknown_args)
 
     def _search(self, query):
         engine = APP_CONFIG.get("search_engine", "Bagheera")
         if HAVE_BAGHEERASEARCH_LIB and (engine == "Bagheera" or not SEARCH_CMD):
-            query_text, main_options, other_options = self._parse_query(query)
+            try:
+                query_text, main_options, other_options = self._parse_query(query)
+            except ValueError as e:
+                logger.error("Arguments error: %s", e)
+                return
             try:
                 searcher = BagheeraSearcher()
                 for item in searcher.search(query_text, main_options, other_options):

@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 try:
+    from bagheerasearch.core.app import Subquery, parse_query_clauses
     from bagheerasearch.core.search_lib.search import BagheeraSearcher
     HAVE_SEARCH_LIB = True
 except ImportError:
@@ -87,7 +88,15 @@ TRANSLATIONS: dict = {
             "· MODIFIED TODAY / YESTERDAY\n"
             "· MODIFIED THIS WEEK / MONTH / YEAR\n"
             "· MODIFIED LAST 5 DAYS / 2 MONTHS\n"
-            "· MODIFIED 10 DAYS AGO"
+            "· MODIFIED 10 DAYS AGO\n\n"
+            "Clauses (in CAPS):\n"
+            "· album HAVING rating=5 SUBQUERY cat OR SUBQUERY dog\n"
+            "· album SUBQUERY (all items in matching folders)\n"
+            "Use the controls for directory, type, limit and other options. "
+            "The advanced HAVING applies to the main query; an activated "
+            "subquery is added after the clauses in the search bar.\n"
+            "AND / AND NOT take precedence over OR EXCLUSIVE (XOR), then OR / OR NOT. "
+            "The first subquery starts the result set; its NOT is respected."
         ),
     },
     'es': {
@@ -109,6 +118,10 @@ TRANSLATIONS: dict = {
         'Having:': 'Manteniendo:',
         'Subquery:': 'Subconsulta:',
         'Subquery having:': 'Manteniendo subconsulta:',
+        'Subquery operator:': 'Operador de subconsulta:',
+        'Options must be selected using the controls: {0}': (
+            'Las opciones deben seleccionarse mediante los controles: {0}'),
+        'Search error: {0}': 'Error de búsqueda: {0}',
         'Icon': 'Icono',
         'Syntax Help': 'Ayuda de sintaxis',
         'HAVING_EXAMPLES': (
@@ -131,7 +144,15 @@ TRANSLATIONS: dict = {
             "· MODIFIED TODAY / YESTERDAY\n"
             "· MODIFIED THIS WEEK / MONTH / YEAR\n"
             "· MODIFIED LAST 5 DAYS / 2 MONTHS\n"
-            "· MODIFIED 10 DAYS AGO"
+            "· MODIFIED 10 DAYS AGO\n\n"
+            "Cláusulas (en MAYÚSCULAS):\n"
+            "· album HAVING rating=5 SUBQUERY cat OR SUBQUERY dog\n"
+            "· album SUBQUERY (todos los elementos de las carpetas encontradas)\n"
+            "Usa los controles para el directorio, tipo, límite y demás opciones. "
+            "El HAVING avanzado se aplica a la consulta principal; la subconsulta "
+            "activada se añade después de las cláusulas de la barra.\n"
+            "AND / AND NOT tienen prioridad sobre OR EXCLUSIVE (XOR) y después "
+            "OR / OR NOT. La primera subconsulta inicia el conjunto y respeta NOT."
         ),
         'Path': 'Ruta',
         'Ready': 'Listo',
@@ -194,6 +215,10 @@ TRANSLATIONS: dict = {
         'Having:': 'Mantendo:',
         'Subquery:': 'Subconsulta:',
         'Subquery having:': 'Mantendo subconsulta:',
+        'Subquery operator:': 'Operador de subconsulta:',
+        'Options must be selected using the controls: {0}': (
+            'As opcións deben seleccionarse cos controis: {0}'),
+        'Search error: {0}': 'Erro de busca: {0}',
         'Icon': 'Icona',
         'Syntax Help': 'Axuda de sintaxe',
         'HAVING_EXAMPLES': (
@@ -216,7 +241,15 @@ TRANSLATIONS: dict = {
             "· MODIFIED TODAY / YESTERDAY\n"
             "· MODIFIED THIS WEEK / MONTH / YEAR\n"
             "· MODIFIED LAST 5 DAYS / 2 MONTHS\n"
-            "· MODIFIED 10 DAYS AGO"
+            "· MODIFIED 10 DAYS AGO\n\n"
+            "Cláusulas (en MAIÚSCULAS):\n"
+            "· album HAVING rating=5 SUBQUERY cat OR SUBQUERY dog\n"
+            "· album SUBQUERY (todos os elementos dos cartafoles atopados)\n"
+            "Usa os controis para o directorio, tipo, límite e demais opcións. "
+            "O HAVING avanzado aplícase á consulta principal; a subconsulta "
+            "activada engádese despois das cláusulas da barra.\n"
+            "AND / AND NOT teñen prioridade sobre OR EXCLUSIVE (XOR) e despois "
+            "OR / OR NOT. A primeira subconsulta inicia o conxunto e respecta NOT."
         ),
         'Path': 'Ruta',
         'Ready': 'Listo',
@@ -277,11 +310,33 @@ def _(text: str) -> str:
     return TRANSLATIONS.get(lang_code, {}).get(text, text)
 
 
+def find_query_option(query):
+    """Find an option outside quoted query text."""
+    quote = None
+    i = 0
+    while i < len(query):
+        char = query[i]
+        if char == "\\" and i + 1 < len(query):
+            i += 2
+            continue
+        if quote:
+            if char == quote:
+                quote = None
+        elif char == '"' or (char == "'" and
+                             (i == 0 or query[i - 1].isspace() or query[i - 1] in "=!:<>")):
+            quote = char
+        elif char == "-" and (i == 0 or query[i - 1].isspace()):
+            return query[i:].split(maxsplit=1)[0]
+        i += 1
+    return None
+
+
 class SearchWorker(QThread):
     """
     Worker thread to handle the search process without blocking the GUI.
     """
     results_found = Signal(list)
+    search_failed = Signal(str)
     finished = Signal()
 
     def __init__(self, query, main_opts, other_opts, thumb_size, hide_icons):
@@ -337,7 +392,7 @@ class SearchWorker(QThread):
 
             self.results_found.emit(results)
         except Exception as e:
-            print(f"Search error: {e}")
+            self.search_failed.emit(str(e))
         finally:
             self.finished.emit()
 

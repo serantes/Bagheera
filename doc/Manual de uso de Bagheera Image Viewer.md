@@ -29,6 +29,16 @@ Ubicada en la parte superior, te permite:
 * **Navegar por rutas**: Escribe directamente la ruta de una carpeta para escanearla o de un archivo para abrirlo en el visor.
 * **Botón Explorar**: Abre el selector de archivos del sistema para elegir una imagen o directorio.
 
+Con el motor de búsqueda Bagheera se pueden utilizar las cláusulas `HAVING` y
+`SUBQUERY`, y los operadores `AND`, `AND NOT`, `OR`, `OR NOT` y `OR EXCLUSIVE`
+entre subconsultas. Por ejemplo:
+`tags=album HAVING rating=5 SUBQUERY tags=cat OR SUBQUERY tags=dog --type image`.
+Una `SUBQUERY` vacía busca el contenido de las carpetas seleccionadas; un
+`HAVING` vacío se ignora. Consulta el [manual de Bagheera Search](Bagheera%20Search%20User%20Manual.md)
+para conocer la sintaxis completa y la precedencia de los operadores. Estas
+cláusulas requieren el motor Bagheera; el motor Baloo externo utiliza su propia
+sintaxis de búsqueda.
+
 ### 2.2. Cuadrícula de miniaturas
 
 El espacio central muestra tus imágenes como miniaturas. Esta vista está virtualizada, lo que permite manejar miles de archivos sin resentir la fluidez de la aplicación.

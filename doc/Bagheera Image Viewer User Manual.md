@@ -43,6 +43,15 @@ Located at the top of the window, the search bar allows you to:
   open it in the viewer.
 * **Browse Button**: Opens a file dialog to select an image to scan.
 
+With the Bagheera search engine, queries support `HAVING` and `SUBQUERY`
+clauses, including `AND`, `AND NOT`, `OR`, `OR NOT` and `OR EXCLUSIVE`
+between subqueries. For example:
+`tags=album HAVING rating=5 SUBQUERY tags=cat OR SUBQUERY tags=dog --type image`.
+An empty `SUBQUERY` searches the contents of the selected folders; an empty
+`HAVING` is ignored. See the [Bagheera Search manual](Bagheera%20Search%20User%20Manual.md)
+for the complete syntax and operator precedence. These clauses require the
+Bagheera engine; the external Baloo engine uses its own query syntax.
+
 ### 2.2. Thumbnail Grid
 
 The central area displays your images as thumbnails. This view is virtualized,
