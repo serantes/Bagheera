@@ -11,7 +11,7 @@
 %global debug_package %{nil}
 
 Name:           bagheera
-Version:        1.0.0
+Version:        1.1.0
 Release:        1
 Summary:        Bagheera: Search Tool and Image Viewer for KDE/Baloo
 License:        GPL-3.0-or-later
@@ -100,5 +100,9 @@ and an image viewer optimized for KDE and Baloo.
 %{_datadir}/icons/hicolor/*/apps/bagheeragui.*
 
 %changelog
+* Sat Nov 14 2026 Ignacio Serantes <kde@aynoa.es> - 1.1.0
+- Add HAVING and SUBQUERY syntax and update the graphical applications.
+- Improve desktop integration and GPU availability checks.
+
 * Wed Nov 1 2026 Ignacio Serantes <kde@aynoa.es> - 1.0.0
 - Initial release.

@@ -41,9 +41,9 @@ except ImportError:
 # --- CONFIGURATION ---
 PROG_NAME = "Bagheera Search"
 PROG_ID = "bagheeragui"
-PROG_VERSION = "1.0.0"
+PROG_VERSION = "1.1.0"
 PROG_BY = "Ignacio Serantes"
-PROG_DATE = "2026-05-24"
+PROG_DATE = "2026-11-14"
 CONFIG_FILE = f"{PROG_ID}rc"
 CONFIG_LOCATION = os.environ.get('XDG_CONFIG_HOME') or os.path.expanduser('~/.config')
 CONFIG_DIR = os.path.join(CONFIG_LOCATION, 'iserantes', PROG_ID)
@@ -134,7 +134,7 @@ TRANSLATIONS: dict = {
         'Having:': 'HAVING principal:',
         'Subquery:': 'Subconsulta:',
         'Subquery having:': 'HAVING subconsulta:',
-        'Subquery operator:': 'Operador de subconsulta:',
+        'Operator:': 'Operador:',
         'Add subquery': 'Añadir subconsulta',
         'Remove subquery': 'Eliminar subconsulta',
         'Subquery operator help': (
@@ -242,7 +242,7 @@ TRANSLATIONS: dict = {
         'Having:': 'HAVING principal:',
         'Subquery:': 'Subconsulta:',
         'Subquery having:': 'HAVING subconsulta:',
-        'Subquery operator:': 'Operador de subconsulta:',
+        'Operator:': 'Operador:',
         'Add subquery': 'Engadir subconsulta',
         'Remove subquery': 'Eliminar subconsulta',
         'Subquery operator help': (
@@ -528,7 +528,7 @@ class SubqueryRow(QWidget):
             self.remove_button.setAccessibleName(_("Remove subquery"))
             self.remove_button.clicked.connect(lambda: window._remove_subquery_row(self))
             operator_layout.addWidget(self.remove_button)
-        form.addRow(_("Subquery operator:"), operator_layout)
+        form.addRow(_("Operator:"), operator_layout)
 
         self.query_input = QComboBox()
         self.query_input.setEditable(True)

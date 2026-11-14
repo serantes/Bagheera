@@ -17,9 +17,9 @@ from .help_texts import HelpTexts
 # --- CONFIGURATION ---
 PROG_NAME = "Bagheera Search Tool"
 PROG_ID = "bagheerasearch"
-PROG_VERSION = "1.0.0"
+PROG_VERSION = "1.1.0"
 PROG_BY = "Ignacio Serantes"
-PROG_DATE = "2026-05-24"
+PROG_DATE = "2026-11-14"
 
 CONFIG_DIR = Path.home() / ".config" / PROG_ID
 CONFIG_FILE = CONFIG_DIR / "config.json"

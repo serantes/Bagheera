@@ -3,7 +3,7 @@ Bagheera Search GUI: a search tool for Baloo.
 """
 
 __appname__ = "BagheeraGui"
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "Ignacio Serantes"
 __email__ = "kde@aynoa.net"
 __license__ = "GPLv3"
