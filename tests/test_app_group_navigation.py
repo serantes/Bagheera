@@ -2,14 +2,24 @@ from types import SimpleNamespace
 
 import pytest
 
-from PySide6.QtCore import QRect
+from PySide6.QtCore import QItemSelectionModel, QRect, Qt
 from PySide6.QtGui import QStandardItem, QStandardItemModel
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QAbstractItemView, QApplication
 
 from bagheeraview.core import app as app_module
-from bagheeraview.core.app import MainWindow, ThumbnailDelegate
-from bagheeraview.core.constants import (
-    DIR_ROLE, GROUP_NAME_ROLE, ITEM_TYPE_ROLE, MTIME_ROLE, PATH_ROLE, RATING_ROLE
+from bagheeraview.core.app import (
+    MainWindow, ThumbnailDelegate, ThumbnailListView
 )
+from bagheeraview.core.constants import (
+    DIR_ROLE, GROUP_NAME_ROLE, ITEM_TYPE_ROLE, MTIME_ROLE, PATH_ROLE,
+    RATING_ROLE
+)
+
+
+@pytest.fixture
+def qapp():
+    return QApplication.instance() or QApplication([])
 
 
 def _window_with_groups():
@@ -132,6 +142,82 @@ def test_expanding_collapsed_group_scrolls_after_filter_invalidation(monkeypatch
     assert proxy.collapsed_groups == set()
     assert scrolled[0][0].row() == 0
     assert scrolled[0][1].name == "PositionAtTop"
+
+
+@pytest.mark.parametrize(
+    ("command", "expected_paths"),
+    [
+        (QItemSelectionModel.Select,
+         {"/photos/group-a/one.jpg", "/photos/group-a/two.jpg",
+          "/photos/group-b/one.jpg"}),
+        (QItemSelectionModel.Deselect, {"/photos/group-b/one.jpg"}),
+        (QItemSelectionModel.Toggle,
+         {"/photos/group-a/two.jpg", "/photos/group-b/one.jpg"}),
+    ],
+)
+def test_group_selection_commands_affect_only_target_group(
+        command, expected_paths):
+    model = QStandardItemModel()
+    for path in (
+            "/photos/group-a/one.jpg",
+            "/photos/group-a/two.jpg",
+            "/photos/group-b/one.jpg"):
+        item = QStandardItem()
+        item.setData("thumbnail", ITEM_TYPE_ROLE)
+        item.setData(path, PATH_ROLE)
+        item.setData(10, MTIME_ROLE)
+        item.setData(1, RATING_ROLE)
+        model.appendRow(item)
+
+    selection_model = QItemSelectionModel(model)
+    selection_model.select(model.index(0, 0), QItemSelectionModel.Select)
+    selection_model.select(model.index(2, 0), QItemSelectionModel.Select)
+    window = SimpleNamespace(
+        proxy_model=model,
+        thumbnail_view=SimpleNamespace(
+            isVisible=lambda: True,
+            selectionModel=lambda: selection_model),
+        _get_group_info=lambda path, mtime, rating: (
+            None, path.rsplit("/", 2)[1]),
+    )
+
+    MainWindow._select_group_thumbnails(
+        window, "group-a", command)
+
+    selected_paths = {
+        model.data(index, PATH_ROLE)
+        for index in selection_model.selectedIndexes()
+    }
+    assert selected_paths == expected_paths
+
+
+def test_right_clicking_group_header_preserves_thumbnail_selection(qapp):
+    model = QStandardItemModel()
+    for item_type in ("thumbnail", "thumbnail", "header"):
+        item = QStandardItem()
+        item.setData(item_type, ITEM_TYPE_ROLE)
+        if item_type == "header":
+            item.setFlags(Qt.ItemIsEnabled)
+        model.appendRow(item)
+
+    view = ThumbnailListView()
+    view.setModel(model)
+    view.setSelectionMode(QAbstractItemView.ExtendedSelection)
+    view.setContextMenuPolicy(Qt.CustomContextMenu)
+    view.resize(300, 200)
+    view.show()
+    qapp.processEvents()
+
+    selection_model = view.selectionModel()
+    selection_model.select(model.index(0, 0), QItemSelectionModel.Select)
+    selection_model.select(model.index(1, 0), QItemSelectionModel.Select)
+
+    header_rect = view.visualRect(model.index(2, 0))
+    QTest.mouseClick(
+        view.viewport(), Qt.RightButton, pos=header_rect.center())
+    qapp.processEvents()
+
+    assert [index.row() for index in selection_model.selectedIndexes()] == [0, 1]
 
 
 def test_scrubber_sections_use_visible_group_headers_and_thumbnails():

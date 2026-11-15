@@ -797,6 +797,18 @@ class GpsLookupWorker(QRunnable):
             self.path, self.mtime, self.version, has_gps)
 
 
+class ThumbnailListView(QListView):
+    """Keeps thumbnail selections when opening a group header context menu."""
+
+    def selectionCommand(self, index, event=None):
+        if event is not None and \
+           event.type() == QEvent.MouseButtonPress and \
+           event.button() == Qt.RightButton and index.isValid() and \
+           index.data(ITEM_TYPE_ROLE) == "header":
+            return QItemSelectionModel.NoUpdate
+        return super().selectionCommand(index, event)
+
+
 class ThumbnailDelegate(QStyledItemDelegate):
     """Draws each thumbnail in the virtualized view.
 
@@ -1604,7 +1616,7 @@ class MainWindow(QMainWindow):
         thumbnail_area_layout.setContentsMargins(0, 0, 0, 0)
         thumbnail_area_layout.setSpacing(4)
 
-        self.thumbnail_view = QListView()
+        self.thumbnail_view = ThumbnailListView()
         self.thumbnail_view.setViewMode(QListView.IconMode)
         self.thumbnail_view.setResizeMode(QListView.Adjust)
         self.thumbnail_view.setMovement(QListView.Static)
@@ -6480,6 +6492,25 @@ class MainWindow(QMainWindow):
                 action_toggle = menu.addAction(UITexts.COLLAPSE_EXPAND_GROUP)
                 action_toggle.triggered.connect(
                     lambda: self.toggle_group_collapse(group_name))
+                menu.addSeparator()
+                action_select_all = menu.addAction(
+                    QIcon.fromTheme("edit-select-all"),
+                    UITexts.CONTEXT_MENU_SELECT_ALL)
+                action_select_all.triggered.connect(
+                    lambda: self._select_group_thumbnails(
+                        group_name, QItemSelectionModel.Select))
+                action_select_none = menu.addAction(
+                    QIcon.fromTheme("edit-clear"),
+                    UITexts.CONTEXT_MENU_SELECT_NONE)
+                action_select_none.triggered.connect(
+                    lambda: self._select_group_thumbnails(
+                        group_name, QItemSelectionModel.Deselect))
+                action_invert_selection = menu.addAction(
+                    QIcon.fromTheme("edit-select-invert"),
+                    UITexts.CONTEXT_MENU_INVERT_SELECTION)
+                action_invert_selection.triggered.connect(
+                    lambda: self._select_group_thumbnails(
+                        group_name, QItemSelectionModel.Toggle))
                 menu.exec(self.thumbnail_view.mapToGlobal(pos))
                 return
         menu.setStyleSheet("QMenu { border: 1px solid #555; }")
@@ -7494,6 +7525,25 @@ class MainWindow(QMainWindow):
                 to_select.select(index, index)
         selection_model.clearSelection()
         selection_model.select(to_select, QItemSelectionModel.Select)
+
+    def _select_group_thumbnails(self, group_name, command):
+        """Applies a selection command only to thumbnails in one group."""
+        if not self.thumbnail_view.isVisible():
+            return
+
+        selection = QItemSelection()
+        for row in range(self.proxy_model.rowCount()):
+            index = self.proxy_model.index(row, 0)
+            if self.proxy_model.data(index, ITEM_TYPE_ROLE) != 'thumbnail':
+                continue
+            image_group = self._get_group_info(
+                self.proxy_model.data(index, PATH_ROLE),
+                self.proxy_model.data(index, MTIME_ROLE),
+                self.proxy_model.data(index, RATING_ROLE))[1]
+            if image_group == group_name:
+                selection.select(index, index)
+        if not selection.isEmpty():
+            self.thumbnail_view.selectionModel().select(selection, command)
 
     def update_load_all_button_state(self):
         """Updates the text and tooltip of the 'load all' button based on its state."""

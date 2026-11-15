@@ -428,6 +428,12 @@ to apply it to the file.
 ### 5.2. Group Header Context Menu (Right-click on a group header)
 
 * **Collapse/Expand Group**: Toggles the visibility of images within that group.
+* **Select All**: Selects all images in the group without changing the selection
+  in other groups.
+* **Select None**: Deselects images in the group without changing the selection
+  in other groups.
+* **Invert Selection**: Inverts the selection of images in the group without
+  changing the selection in other groups.
 
 ## 6. Main Menu Options
 
