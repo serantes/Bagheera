@@ -3071,15 +3071,31 @@ class ImageViewer(QWidget):
                 path, initial_tags=tags, initial_rating=rating, parent=self)
             dlg.exec()
 
+    def _open_current_image_in_viewer(self):
+        """Opens the current image in a separate viewer window."""
+        if self.main_win and self.controller.get_current_path():
+            self.main_win.open_viewer_for_paths(
+                self.controller.image_list, self.controller.index)
+
     def _create_viewer_context_menu(self):
         """Builds and returns the general viewer context menu."""
         menu = QMenu(self)
 
+        view_action = {
+            "text": UITexts.CONTEXT_MENU_VIEW,
+            "slot": self._open_current_image_in_viewer,
+            "icon": "image-x-generic",
+            "enabled": bool(
+                self.main_win and self.controller
+                and self.controller.get_current_path()),
+        }
         menu_structure = []
         if self.slideshow_manager.is_running():
             is_fwd = self.slideshow_manager.is_forward()
             is_rev = self.slideshow_manager.is_reverse()
             menu_structure = [
+                view_action,
+                "separator",
                 {"text": UITexts.VIEWER_MENU_STOP_SLIDESHOW if is_fwd
                  else UITexts.VIEWER_MENU_START_SLIDESHOW, "action": "slideshow",
                  "icon": "media-playback-stop" if is_fwd else "media-playback-start"},
@@ -3109,6 +3125,8 @@ class ImageViewer(QWidget):
             ]
 
             menu_structure = [
+                view_action,
+                "separator",
                 {"text": UITexts.CONTEXT_MENU_OPEN, "icon": "document-open",
                  "dynamic_submenu": self._populate_open_with_menu},
                 {"text": UITexts.CONTEXT_MENU_OPEN_SEARCH_LOCATION,
@@ -3209,19 +3227,6 @@ class ImageViewer(QWidget):
                 {"text": UITexts.VIEWER_MENU_CROP,
                  "action": "toggle_crop", "icon": "transform-crop", "checkable": True,
                  "checked": self.crop_mode},
-                "separator",
-                {"text": UITexts.VIEWER_MENU_COMPARE, "icon": "view-grid", "submenu": [
-                    {"text": UITexts.VIEWER_MENU_COMPARE_1,
-                     "action": "compare_1", "icon": "view-restore"},
-                    {"text": UITexts.VIEWER_MENU_COMPARE_2,
-                     "action": "compare_2", "icon": "view-split-left-right"},
-                    {"text": UITexts.VIEWER_MENU_COMPARE_4,
-                     "action": "compare_4", "icon": "view-grid"},
-                    "separator",
-                    {"text": UITexts.VIEWER_MENU_LINK_PANES,
-                     "action": "link_panes", "icon": "object-link",
-                     "checkable": True, "checked": self.panes_linked}
-                ]},
                 "separator",
             ]
 

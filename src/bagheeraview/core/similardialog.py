@@ -346,6 +346,12 @@ class SimilarImagesDialog(QDialog):
 
         menu = QMenu(self)
 
+        action_view = menu.addAction(
+            QIcon.fromTheme("image-x-generic"), UITexts.CONTEXT_MENU_VIEW)
+        action_view.triggered.connect(
+            lambda: self.main_win.open_viewer_for_path(path))
+        menu.addSeparator()
+
         # 1. Open Submenu
         open_menu = menu.addMenu(QIcon.fromTheme("document-open"), UITexts.CONTEXT_MENU_OPEN)
         self.main_win.populate_open_with_submenu(open_menu, path)

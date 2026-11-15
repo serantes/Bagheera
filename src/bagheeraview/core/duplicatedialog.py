@@ -1430,6 +1430,12 @@ class DuplicateManagerDialog(QDialog):
 
         menu = QMenu(self)
 
+        action_view = menu.addAction(
+            QIcon.fromTheme("image-x-generic"), UITexts.CONTEXT_MENU_VIEW)
+        action_view.triggered.connect(
+            lambda: self.main_win.open_viewer_for_path(path))
+        menu.addSeparator()
+
         # Open with...
         open_menu = menu.addMenu(
             QIcon.fromTheme("document-open"), UITexts.CONTEXT_MENU_OPEN)

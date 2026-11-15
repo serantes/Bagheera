@@ -9,7 +9,7 @@ import os
 from unittest.mock import MagicMock
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QApplication, QWidget
 from PySide6.QtTest import QTest
 
@@ -234,6 +234,68 @@ def test_overlay_buttons_have_hotkey_tooltips(dialog):
     """Overlay action buttons advertise their associated hotkey."""
     assert "S" in dialog.btn_overlay_swap.toolTip()
     assert "Z" in dialog.btn_overlay_reset.toolTip()
+
+
+def test_pane_context_menu_starts_with_view(dialog, monkeypatch):
+    """View opens the image currently displayed in the pane."""
+    from unittest.mock import Mock
+    from bagheeraview.core import duplicatedialog as duplicate_dialog_module
+
+    class FakeAction:
+        def __init__(self, text="", separator=False):
+            self._text = text
+            self._separator = separator
+            self.triggered = Mock()
+
+        def text(self):
+            return self._text
+
+        def isSeparator(self):
+            return self._separator
+
+        def trigger(self):
+            for callback in self.triggered.connect.call_args_list:
+                callback.args[0]()
+
+    class FakeMenu:
+        instances = []
+
+        def __init__(self, *_args):
+            self._actions = []
+
+        def addAction(self, *args):
+            action = FakeAction(str(args[-1]))
+            self._actions.append(action)
+            return action
+
+        def addMenu(self, *args):
+            action = FakeAction(str(args[-1]))
+            self._actions.append(action)
+            return FakeMenu()
+
+        def addSeparator(self):
+            self._actions.append(FakeAction(separator=True))
+
+        def actions(self):
+            return self._actions
+
+        def exec(self, *_args):
+            self.instances.append(self)
+
+    FakeMenu.instances.clear()
+    monkeypatch.setattr(
+        duplicate_dialog_module, "QMenu", FakeMenu)
+    dialog.main_win.open_viewer_for_path = Mock()
+    dialog.main_win.populate_open_with_submenu = Mock()
+
+    dialog.left_pane.customContextMenuRequested.emit(QPoint(1, 1))
+
+    actions = FakeMenu.instances[0].actions()
+    assert actions[0].text() == constants.UITexts.CONTEXT_MENU_VIEW
+    assert actions[1].isSeparator()
+    actions[0].trigger()
+    dialog.main_win.open_viewer_for_path.assert_called_once_with(
+        dialog.left_pane.controller.get_current_path())
 
 
 def test_dialog_hotkeys_work_with_focus_on_non_image_child(dialog, monkeypatch):

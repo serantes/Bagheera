@@ -5737,17 +5737,38 @@ class MainWindow(QMainWindow):
         if not paths:
             return
 
-        viewer = ImageViewer(self.cache, paths, 0, None, 0, self)
+        viewer = self.open_viewer_for_paths(paths)
+        if viewer and len(paths) > 1:
+            viewer.set_comparison_mode(len(paths))
+        return viewer
+
+    def open_viewer_for_paths(self, paths, current_index=0):
+        """Opens a navigable viewer for paths at the selected index."""
+        if not paths or not 0 <= current_index < len(paths):
+            return
+
+        viewer = ImageViewer(
+            self.cache, paths, current_index, None, 0, self)
         self._setup_viewer_sync(viewer)
         self.viewers.append(viewer)
         viewer.destroyed.connect(
             lambda obj=viewer: self.viewers.remove(obj)
             if obj in self.viewers else None)
-
-        if len(paths) > 1:
-            viewer.set_comparison_mode(len(paths))
         viewer.show()
         return viewer
+
+    def open_viewer_for_path(self, path):
+        """Opens a navigable viewer for a visible path, or just that path."""
+        if not path:
+            return
+
+        paths = self.get_visible_image_paths()
+        try:
+            current_index = paths.index(path)
+        except ValueError:
+            paths = [path]
+            current_index = 0
+        return self.open_viewer_for_paths(paths, current_index)
 
     def load_full_history(self):
         """Loads the persistent browsing/search history from its JSON file."""
