@@ -6,7 +6,7 @@ import tempfile
 import uuid
 from typing import List
 
-from PySide6.QtCore import QEventLoop, QObject, QTimer, Signal
+from PySide6.QtCore import QEventLoop, QTimer, Signal
 from PySide6.QtDBus import (
     QDBusConnection, QDBusInterface, QDBusMessage, QDBusVirtualObject
 )
