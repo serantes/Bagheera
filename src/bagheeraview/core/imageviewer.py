@@ -35,7 +35,7 @@ from .constants import (
     ICON_THEME_VIEWER_FALLBACK, KSCREEN_DOCTOR_MARGIN, KWINOUTPUTCONFIG_PATH,
     VIEWER_AUTO_RESIZE_WINDOW_DEFAULT, VIEWER_FORM_MARGIN, VIEWER_LABEL,
     VIEWER_WHEEL_SPEED_DEFAULT, XATTR_NAME, ZOOM_DESKTOP_RATIO, UITexts,
-    AVAILABLE_FACE_ENGINES, AVAILABLE_PET_ENGINES
+    AVAILABLE_FACE_ENGINES, AVAILABLE_PET_ENGINES, HAVE_IMAGEHASH
 )
 from .imagecontroller import ImageController
 from .widgets import FaceNameInputWidget, TagSelectorDialog
@@ -2572,50 +2572,56 @@ class ImageViewer(QWidget):
         """Shows a context menu for the crop selection."""
         menu = QMenu(self)
         save_action = menu.addAction(UITexts.VIEWER_MENU_SAVE_CROP)
+        similar_action = None
+        if HAVE_IMAGEHASH and self.main_win:
+            similar_action = menu.addAction(
+                QIcon.fromTheme("edit-find"), UITexts.MENU_FIND_SIMILAR)
         cancel_action = menu.addAction(UITexts.CLOSE)
 
         res = menu.exec(global_pos)
         if res == save_action:
             self.save_cropped_image()
+        elif similar_action is not None and res == similar_action:
+            cropped = self._cropped_image()
+            path = (self.active_pane.controller.get_current_path()
+                    if self.active_pane else None)
+            if cropped is None or not path:
+                QMessageBox.warning(self, UITexts.ERROR,
+                                    UITexts.SIMILAR_SEARCH_INVALID_SELECTION)
+                return
+            self.main_win.find_similar_images(path, query_image=cropped)
         elif res == cancel_action:
             if self.active_pane:
                 self.active_pane.canvas.crop_rect = QRect()
                 self.active_pane.canvas.update()
 
-    def save_cropped_image(self):
-        """Saves the area currently selected in crop mode as a new image."""
+    def _cropped_image(self):
+        """Returns the selected area in original image coordinates."""
         if not self.active_pane or not self.active_pane.crop_mode \
            or self.active_pane.canvas.crop_rect.isNull():
-            return
+            return None
 
-        # Get normalized coordinates from the canvas rect
         nx, ny, nw, nh = self.active_pane.canvas.map_to_source(
             self.active_pane.canvas.crop_rect)
-
-        # Use original pixmap to extract high-quality crop
         orig = self.active_pane.controller.pixmap_original
         if orig.isNull():
-            return
+            return None
 
         W, H = orig.width(), orig.height()
-
-        # Convert normalized center/size back to top-left pixel coordinates
-        # nx, ny are center coordinates
         x = int((nx - nw/2) * W)
         y = int((ny - nh/2) * H)
         w = int(nw * W)
         h = int(nh * H)
+        rect = QRect(x, y, w, h).intersected(QRect(0, 0, W, H))
+        if rect.isEmpty():
+            return None
+        return orig.copy(rect).toImage()
 
-        # Validate boundaries
-        x = max(0, x)
-        y = max(0, y)
-        w = min(w, W - x)
-        h = min(h, H - y)
-
-        if w <= 0 or h <= 0:
+    def save_cropped_image(self):
+        """Saves the area currently selected in crop mode as a new image."""
+        cropped = self._cropped_image()
+        if cropped is None:
             return
-
-        cropped = orig.copy(x, y, w, h)
 
         default_dir = os.path.dirname(self.controller.get_current_path())
         file_name, _ = QFileDialog.getSaveFileName(

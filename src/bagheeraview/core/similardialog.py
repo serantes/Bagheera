@@ -45,7 +45,7 @@ class SimilarImagesDialog(QDialog):
     # application-wide shortcut controller must not intercept those keys.
     handles_own_shortcuts = True
 
-    def __init__(self, target_path, main_win):
+    def __init__(self, target_path, main_win, query_image=None):
         """
         Initializes the SimilarImagesDialog.
 
@@ -53,9 +53,11 @@ class SimilarImagesDialog(QDialog):
             target_path (str): Path of the image against which the similarity
                 is computed.
             main_win (MainWindow): Reference to the main application window.
+            query_image (QImage, optional): Selected region used as the query.
         """
         super().__init__(main_win)
         self.target_path = os.path.abspath(os.path.normpath(target_path))
+        self.query_image = query_image
         self.main_win = main_win
         self.worker = None
         self.results = []
@@ -181,6 +183,7 @@ class SimilarImagesDialog(QDialog):
         if self.worker and self.worker.isRunning():
             return
 
+        self._search_failed = False
         self.table.setRowCount(0)
         self.results = []
         self.btn_search.setEnabled(False)
@@ -198,10 +201,11 @@ class SimilarImagesDialog(QDialog):
         self.worker = FAISSSimilarSearchWorker(
             self.target_path,
             self.threshold_spin.value(), whitelist, blacklist,
-            visible_paths=visible_paths)
+            visible_paths=visible_paths, query_image=self.query_image)
 
         self.worker.progress_update.connect(self.on_progress)
         self.worker.results_found.connect(self.on_results_found)
+        self.worker.error.connect(self.on_search_error)
         self.worker.finished.connect(self.on_finished)
         self.worker.start()
 
@@ -257,9 +261,16 @@ class SimilarImagesDialog(QDialog):
     def on_finished(self):
         """Restores the dialog controls after the search worker finishes."""
         self.progress_bar.hide()
-        self.status_lbl.setText("")
-        self.status_lbl.hide()
+        if not self._search_failed:
+            self.status_lbl.setText("")
+            self.status_lbl.hide()
         self.btn_search.setEnabled(True)
+
+    def on_search_error(self, message):
+        """Shows a failed search instead of an empty results list."""
+        self._search_failed = True
+        self.status_lbl.setText(UITexts.SIMILAR_SEARCH_ERROR.format(message))
+        self.status_lbl.show()
 
     def _on_cell_changed(self, row, col, prev_row, prev_col):
         """

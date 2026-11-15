@@ -18,6 +18,7 @@ import numpy as np
 import faiss
 import PIL.Image
 from PySide6.QtCore import QThread, Signal
+from PySide6.QtGui import QImage
 from .constants import APP_DATA_DIR, IMAGE_EXTENSIONS, DUPLICATE_AI_TOPK_DEFAULT
 
 logger = logging.getLogger(__name__)
@@ -187,12 +188,13 @@ def _refresh_embeddings(conn, disk_images, progress_callback=None,
     conn.commit()
 
 
-def _embed_single_image(path):
+def _embed_single_image(path, query_image=None):
     """
     Computes the MediaPipe embedding of a single image.
 
     Args:
         path (str): Absolute path of the image.
+        query_image (QImage, optional): In-memory image to embed instead.
 
     Returns:
         numpy.ndarray | None: The embedding vector, or None when the model
@@ -207,9 +209,16 @@ def _embed_single_image(path):
         options = vision.ImageEmbedderOptions(base_options=base_options,
                                               l2_normalize=True)
         with vision.ImageEmbedder.create_from_options(options) as embedder:
-            with PIL.Image.open(path) as pil_img:
-                rgb_img = pil_img.convert('RGB')
-                image_np = np.array(rgb_img)
+            if query_image is None:
+                with PIL.Image.open(path) as pil_img:
+                    rgb_img = pil_img.convert('RGB')
+                    image_np = np.array(rgb_img)
+            else:
+                rgb_img = query_image.convertToFormat(QImage.Format_RGB888)
+                rows = np.frombuffer(rgb_img.constBits(), dtype=np.uint8).reshape(
+                    rgb_img.height(), rgb_img.bytesPerLine())
+                image_np = rows[:, :rgb_img.width() * 3].reshape(
+                    rgb_img.height(), rgb_img.width(), 3).copy()
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB,
                                 data=image_np)
             emb_res = embedder.embed(mp_image)
@@ -403,10 +412,11 @@ class FAISSSimilarSearchWorker(QThread):
     """
     progress_update = Signal(int, int, str)
     results_found = Signal(list)  # List of (path, similarity)
+    error = Signal(str)
     finished = Signal()
 
     def __init__(self, target_path, threshold, whitelist_str, blacklist_str,
-                 visible_paths=None):
+                 visible_paths=None, query_image=None):
         """
         Initializes the FAISSSimilarSearchWorker.
 
@@ -420,9 +430,11 @@ class FAISSSimilarSearchWorker(QThread):
             visible_paths (list, optional): When provided, only these paths are
                 searched instead of walking the whitelist/blacklist folders.
                 The original display order of the thumbnails is preserved.
+            query_image (QImage, optional): Selection to embed without caching.
         """
         super().__init__()
         self.target_path = os.path.abspath(os.path.normpath(target_path))
+        self.query_image = query_image
         self.threshold = threshold
         self._is_running = True
 
@@ -594,7 +606,12 @@ class FAISSSimilarSearchWorker(QThread):
                         if path == self.target_path:
                             target_emb = emb
 
-            if target_emb is None and os.path.exists(self.target_path):
+            if self.query_image is not None:
+                target_emb = _embed_single_image(
+                    self.target_path, self.query_image)
+                if target_emb is None:
+                    raise ValueError("Could not calculate selection embedding")
+            elif target_emb is None and os.path.exists(self.target_path):
                 # Calculate query target embedding if not already cached.
                 # The connection is not safe to share across threads, so the
                 # helper reopens the cache on its own; the query vector is
@@ -627,7 +644,7 @@ class FAISSSimilarSearchWorker(QThread):
                     if idx < 0 or idx >= len(paths_list):
                         continue
                     matched_path = paths_list[idx]
-                    if matched_path == self.target_path:
+                    if self.query_image is None and matched_path == self.target_path:
                         continue
 
                     # Convert cosine similarity (-1 to 1) to percentage (0 to 100)
@@ -640,6 +657,7 @@ class FAISSSimilarSearchWorker(QThread):
 
         except Exception as e:
             logger.error(f"FAISSSimilarSearchWorker error: {e}", exc_info=True)
+            self.error.emit(str(e))
         finally:
             if conn:
                 conn.close()

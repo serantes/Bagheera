@@ -367,6 +367,8 @@ Bagheera can detect and tag specific areas within your images.
 * **Crop Mode**: Enter cropping mode to select a region of the image. Use Shift +
   mouse to maintain selection aspect ratio.
 * **Save Cropped Image**: Saves the selected cropped region as a new image.
+* **Find similar images**: In the selection's context menu, searches using only
+  the selected region. Its search vector is calculated each time and is not saved.
 
 ### 4.8. File Operations
 

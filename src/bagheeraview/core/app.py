@@ -7702,11 +7702,11 @@ class MainWindow(QMainWindow):
             self.btn_cancel_duplicates.hide()
             self.status_counter_lbl.hide()
 
-    def find_similar_images(self, path):
+    def find_similar_images(self, path, query_image=None):
         """Opens the similar images search dialog for the given path."""
         if not HAVE_IMAGEHASH:
             return
-        dialog = SimilarImagesDialog(path, self)
+        dialog = SimilarImagesDialog(path, self, query_image=query_image)
         dialog.show()
 
 

@@ -248,6 +248,7 @@ Permite identificar y marcar áreas de interés dentro de la fotografía.
 * **Volteado horizontal / vertical**: Invierte la imagen en su eje horizontal o vertical.
 * **Modo recorte**: Permite seleccionar una zona para recortar la imagen. Mantén pulsada la tecla `Mayús` mientras arrastras con el ratón para conservar la relación de aspecto.
 * **Guardar recorte**: Guarda el área seleccionada como una nueva imagen independiente.
+* **Buscar imágenes similares**: En el menú contextual de la selección, busca utilizando solo el área seleccionada. Su vector de búsqueda se calcula cada vez y no se guarda.
 
 ### 4.8. Operaciones con archivos
 
