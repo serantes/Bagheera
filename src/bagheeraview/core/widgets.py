@@ -1793,6 +1793,9 @@ class BookmarksWidget(QWidget):
         self.table.setHorizontalHeaderLabels(UITexts.BOOKMARKS_TABLE_HEADER)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setColumnWidth(0, 250)
+        self.table.horizontalHeader().sectionResized.connect(
+            self._enforce_comment_width)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -1852,9 +1855,14 @@ class BookmarksWidget(QWidget):
 
     def resizeEvent(self, event):
         width = self.table.viewport().width()
-        for col, fraction in enumerate((0.30, 0.25, 0.15, 0.15)):
+        self.table.setColumnWidth(0, max(250, int(width * 0.30)))
+        for col, fraction in enumerate((0.25, 0.15, 0.15), start=1):
             self.table.setColumnWidth(col, int(width * fraction))
         super().resizeEvent(event)
+
+    def _enforce_comment_width(self, column, old_width, new_width):
+        if column == 0 and new_width < 250:
+            self.table.setColumnWidth(column, 250)
 
     def refresh_list(self):
         self.table.setRowCount(0)

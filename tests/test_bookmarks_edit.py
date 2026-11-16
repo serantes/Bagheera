@@ -68,6 +68,27 @@ def test_edit_bookmark_updates_comment_and_query(
     }]
 
 
+def test_comment_column_minimum_width(bookmarks_fixture, qapp):
+    widget, _path = bookmarks_fixture
+    widget.resize(500, 300)
+    widget.show()
+    qapp.processEvents()
+    assert widget.table.columnWidth(0) >= 250
+
+    widget.table.setColumnWidth(0, 80)
+    assert widget.table.columnWidth(0) == 250
+    widget.table.setColumnWidth(1, 80)
+    assert widget.table.columnWidth(1) == 80
+
+    widget.resize(1200, 300)
+    qapp.processEvents()
+    assert widget.table.columnWidth(0) > 250
+    widget.resize(500, 300)
+    qapp.processEvents()
+    assert widget.table.columnWidth(0) == 250
+    widget.close()
+
+
 def test_edit_bookmark_cancel_keeps_values(bookmarks_fixture, monkeypatch):
     bookmarks_widget, _bookmarks_path = bookmarks_fixture
     monkeypatch.setattr(QDialog, "exec", lambda _dialog: QDialog.Rejected)
