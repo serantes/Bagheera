@@ -1,7 +1,11 @@
 import os
+import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
+from PIL import Image
 from PySide6.QtWidgets import QApplication
 
 from bagheeraview.core.duplicatecache import (
@@ -138,6 +142,22 @@ def test_pending_legacy_value_parses(tmp_path):
         cache.lmdb_close()
 
 
+def test_legacy_ai_scan_is_rechecked_but_hash_cache_remains_valid(tmp_path):
+    cache = _make_cache(tmp_path)
+    try:
+        with cache._lmdb_env.begin(write=True) as txn:
+            txn.put(b"__scan_completed_threshold__", b"90|80",
+                    db=cache._pending_db)
+        assert cache.is_pending_scan_completed(90)
+        assert not cache.is_pending_scan_completed(90, 80)
+
+        cache.set_pending_scan_metadata(90, 80)
+        assert cache.is_pending_scan_completed(90, 80)
+        assert not cache.is_pending_scan_completed(90, 85)
+    finally:
+        cache.lmdb_close()
+
+
 def test_detector_ai_phase_merges_pairs(tmp_path):
     """The AI phase upgrades an existing hash pair and adds new AI pairs."""
     file1, file2, file3 = _make_files(tmp_path,
@@ -180,6 +200,156 @@ def test_detector_ai_phase_merges_pairs(tmp_path):
         assert len(results_to_save_ai) == 2
     finally:
         cache.lmdb_close()
+
+
+def test_faiss_pair_search_generates_missing_and_stale_vectors(
+        tmp_path, monkeypatch):
+    from bagheeraview.core import faiss_worker
+
+    paths = [tmp_path / f"{i}.png" for i in range(3)]
+    for path in paths:
+        Image.new("RGB", (4, 4), "red").save(path)
+    monkeypatch.setattr(faiss_worker, "DB_PATH", str(tmp_path / "vectors.db"))
+    monkeypatch.setattr(faiss_worker, "_download_model_if_needed", lambda: None)
+    vector = np.ones(1024, dtype=np.float32)
+    conn = faiss_worker._open_embeddings_db()
+    conn.executemany("INSERT INTO embeddings VALUES (?, ?, ?)", [
+        (str(paths[0]), paths[0].stat().st_mtime, vector.tobytes()),
+        (str(paths[1]), paths[1].stat().st_mtime - 20, vector.tobytes()),
+    ])
+    conn.commit()
+    conn.close()
+    embedded = []
+
+    class Embedder:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+        def embed(self, image):
+            embedded.append(image)
+            return SimpleNamespace(
+                embeddings=[SimpleNamespace(embedding=vector)])
+
+    vision = SimpleNamespace(
+        ImageEmbedderOptions=lambda **kwargs: kwargs,
+        ImageEmbedder=SimpleNamespace(
+            create_from_options=lambda _options: Embedder()))
+    python = SimpleNamespace(
+        BaseOptions=lambda **kwargs: kwargs, vision=vision)
+    mp = SimpleNamespace(
+        ImageFormat=SimpleNamespace(SRGB="srgb"),
+        Image=lambda **kwargs: kwargs["data"], tasks=SimpleNamespace(python=python))
+    monkeypatch.setitem(sys.modules, "mediapipe", mp)
+    monkeypatch.setitem(sys.modules, "mediapipe.tasks", mp.tasks)
+    monkeypatch.setitem(sys.modules, "mediapipe.tasks.python", python)
+
+    vectors_progress = []
+    search_progress = []
+    searcher = faiss_worker.FaissPairSearcher(
+        [str(p) for p in paths], 90,
+        progress_callback=lambda current, total, msg:
+            vectors_progress.append((current, total)),
+        search_progress_callback=lambda current, total:
+            search_progress.append((current, total)))
+    assert len(searcher.run()) == 3
+    assert len(embedded) == 2
+    assert vectors_progress == [(1, 2), (2, 2)]
+    assert search_progress == [(0, 3), (3, 3)]
+
+    vectors_progress.clear()
+    search_progress.clear()
+    assert len(searcher.run()) == 3
+    assert len(embedded) == 2
+    assert vectors_progress == []
+    assert search_progress == [(0, 3), (3, 3)]
+
+
+def test_faiss_pair_search_reports_multiple_batches(tmp_path, monkeypatch):
+    from bagheeraview.core import faiss_worker
+
+    paths = _make_files(tmp_path, [f"{i}.png" for i in range(130)])
+    monkeypatch.setattr(faiss_worker, "DB_PATH", str(tmp_path / "vectors.db"))
+    conn = faiss_worker._open_embeddings_db()
+    vector = np.ones(1024, dtype=np.float32).tobytes()
+    conn.executemany("INSERT INTO embeddings VALUES (?, ?, ?)", [
+        (path, os.path.getmtime(path), vector) for path in paths])
+    conn.commit()
+    conn.close()
+
+    class Index:
+        def search(self, batch, k):
+            return (np.zeros((len(batch), k)), np.full((len(batch), k), -1))
+
+    monkeypatch.setattr(faiss_worker, "_build_faiss_index", lambda _vectors: Index())
+    progress = []
+    searcher = faiss_worker.FaissPairSearcher(
+        paths, 90, search_progress_callback=lambda current, total:
+            progress.append((current, total)))
+
+    assert searcher.run() == []
+    assert progress == [(0, 130), (128, 130), (130, 130)]
+
+
+@pytest.mark.parametrize("ai_enabled", [False, True])
+@pytest.mark.parametrize("cached_hashes", [False, True])
+def test_detector_progress_reserves_ai_phase(
+        tmp_path, monkeypatch, ai_enabled, cached_hashes):
+    from bagheeraview.core import faiss_worker
+
+    paths = _make_files(tmp_path, [f"{i}.png" for i in range(10)])
+    if not cached_hashes:
+        for path in paths:
+            Image.new("RGB", (4, 4), "red").save(path)
+    cache = MagicMock()
+    cache.get_all_exceptions_set.return_value = set()
+    cache.get_hash_info_for_path.side_effect = (
+        lambda path, *_args: ("0" * 16 if cached_hashes else None, None, path))
+    cache.get_all_pending_duplicates.return_value = []
+    cache.is_pending_scan_completed.return_value = False
+    cache.persistent_bktree_query.return_value = []
+    cache.add_hashes_batch.side_effect = lambda entries, progress_callback: [
+        progress_callback(index, len(entries), entry[0])
+        for index, entry in enumerate(entries, 1)]
+
+    class Pool:
+        def maxThreadCount(self):
+            return 2
+
+        def start(self, worker):
+            worker.run()
+
+    class Searcher:
+        def __init__(self, *_args, progress_callback,
+                     search_progress_callback, **_kwargs):
+            self.vectors = progress_callback
+            self.search = search_progress_callback
+
+        def run(self):
+            self.vectors(1, 2, "ignored")
+            self.vectors(2, 2, "ignored")
+            self.search(0, 4)
+            self.search(2, 4)
+            self.search(4, 4)
+            return []
+
+    monkeypatch.setattr(faiss_worker, "FaissPairSearcher", Searcher)
+    detector = DuplicateDetector(
+        paths, cache, SimpleNamespace(get_pool=Pool), ai_enabled=ai_enabled)
+    detector.ai_available = True
+    updates = []
+    detector.progress_update.connect(lambda *args: updates.append(args))
+    detector.run()
+
+    values = [current for current, _total, _message in updates]
+    assert values == sorted(values)
+    assert all(total == len(paths) * (3 if ai_enabled else 2)
+               for _current, total, _message in updates)
+    if ai_enabled:
+        assert [22, 25, 25, 27, 30] == values[-8:-3]
+    assert values[-1] == (30 if ai_enabled else 20)
 
 
 def test_pending_passes_thresholds(tmp_path):

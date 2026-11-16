@@ -282,7 +282,8 @@ class FaissPairSearcher:
     """
 
     def __init__(self, paths, threshold, top_k=DUPLICATE_AI_TOPK_DEFAULT,
-                 progress_callback=None, is_running_callback=None):
+                 progress_callback=None, is_running_callback=None,
+                 search_progress_callback=None):
         """
         Initializes the pair searcher.
 
@@ -294,6 +295,8 @@ class FaissPairSearcher:
                 ``(processed, total, message)`` while images are processed.
             is_running_callback (callable, optional): Polled to allow the
                 caller to abort the search; must return True to keep going.
+            search_progress_callback (callable, optional): Called with
+                ``(processed, total)`` during the all-pairs search.
         """
         self.paths = [os.path.abspath(os.path.normpath(p)) for p in paths
                       if os.path.isfile(p)]
@@ -301,6 +304,7 @@ class FaissPairSearcher:
         self.top_k = max(1, int(top_k))
         self._progress_callback = progress_callback
         self._is_running_callback = is_running_callback
+        self._search_progress_callback = search_progress_callback
 
     def _is_running(self):
         """Returns True when the caller did not request an abort."""
@@ -327,14 +331,10 @@ class FaissPairSearcher:
 
         conn = _open_embeddings_db()
         try:
-            # Reuse already-cached vectors when possible: _refresh_embeddings
-            # only reads the disk for paths without a cache entry, avoiding a
-            # second embedder run on a warmed cache.
             _refresh_embeddings(
                 conn, self.paths,
                 progress_callback=self._progress_callback,
-                is_running_callback=self._is_running,
-                existing_embeddings={path: None for path in self.paths})
+                is_running_callback=self._is_running)
 
             # Load exactly the embeddings of the requested paths. The query
             # is chunked to stay below SQLite's variable-number limit.
@@ -366,12 +366,14 @@ class FaissPairSearcher:
 
         n = len(paths_list)
         k = min(self.top_k + 1, n)
+        if self._search_progress_callback is not None:
+            self._search_progress_callback(0, n)
         if hasattr(faiss, 'GpuIndex') and isinstance(index, faiss.GpuIndex) and k > _GPU_MAX_K:
             logger.info(f"Requested k={k} exceeds GPU constraints; "
                         f"capping k at {_GPU_MAX_K} for CUDA execution.")
             k = _GPU_MAX_K
 
-        batch_size = 512
+        batch_size = 128
         for start in range(0, n, batch_size):
             if not self._is_running():
                 break
@@ -391,6 +393,8 @@ class FaissPairSearcher:
                     if key not in pairs or pairs[key][2] < sim_pct:
                         pairs[key] = (paths_list[key[0]], paths_list[key[1]],
                                       sim_pct)
+            if self._search_progress_callback is not None:
+                self._search_progress_callback(min(start + batch_size, n), n)
 
         results = sorted(pairs.values(),
                          key=lambda item: item[2], reverse=True)

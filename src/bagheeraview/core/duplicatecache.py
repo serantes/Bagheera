@@ -41,6 +41,9 @@ from .constants import (
 
 logger = logging.getLogger(__name__)
 
+# Earlier AI scans could omit missing or stale embeddings.
+_AI_SCAN_VERSION = "2"
+
 # Result structure for duplicate detection.
 # ``similarity`` always holds the perceptual hash percentage. When a pair is
 # found only by the FAISS/MediaPipe pipeline it is ``None`` and the cosine
@@ -421,6 +424,8 @@ class DuplicateCache(QObject):
             return False
         ai_str = str(ai_threshold) if ai_threshold is not None else ""
         meta_str = f"{threshold}|{ai_str}"
+        if ai_threshold is not None:
+            meta_str += f"|{_AI_SCAN_VERSION}"
         with QMutexLocker(self._db_lock):
             with self._lmdb_env.begin(write=True) as txn:
                 txn.put(b"__scan_completed_threshold__",
@@ -458,7 +463,9 @@ class DuplicateCache(QObject):
                         if saved_thresh != int(threshold):
                             return False
                         if ai_threshold is not None:
-                            return saved_ai == int(ai_threshold)
+                            return (saved_ai == int(ai_threshold)
+                                    and len(parts) > 2
+                                    and parts[2] == _AI_SCAN_VERSION)
                         # Caller requested a hash-only scan: any AI value is
                         # compatible as long as the hash threshold matches.
                         return True
@@ -1496,13 +1503,21 @@ class DuplicateDetector(QThread):
 
         total = len(self.paths_to_scan)
 
-        def log_progress_cb(current, total_saved, msg):
-            # AI embedding generation occupies the last third of the bar.
-            progress = (2 * total) + int((current / total_saved)
-                                         * total) if total_saved else 2 * total
+        def embedding_progress_cb(current, total_saved, _msg):
+            progress = 2 * total + (current * total // (2 * total_saved)
+                                    if total_saved else 0)
             self.progress_update.emit(
                 min(progress, self._progress_total), self._progress_total,
-                msg)
+                UITexts.DUPLICATE_MSG_AI_EMBEDDING.format(
+                    current=current, total=total_saved))
+
+        def search_progress_cb(current, total_saved):
+            progress = 2 * total + total // 2 + (
+                current * (total - total // 2) // total_saved
+                if total_saved else 0)
+            self.progress_update.emit(
+                min(progress, self._progress_total), self._progress_total,
+                UITexts.DUPLICATE_MSG_AI_SEARCH)
 
         self.progress_update.emit(
             2 * total, self._progress_total,
@@ -1512,8 +1527,9 @@ class DuplicateDetector(QThread):
         searcher = FaissPairSearcher(
             self.paths_to_scan, self.ai_threshold,
             top_k=DUPLICATE_AI_TOPK_DEFAULT,
-            progress_callback=log_progress_cb,
-            is_running_callback=lambda: self._is_running)
+            progress_callback=embedding_progress_cb,
+            is_running_callback=lambda: self._is_running,
+            search_progress_callback=search_progress_cb)
         pairs = searcher.run()
 
         if not self._is_running:
@@ -1682,10 +1698,10 @@ class DuplicateDetector(QThread):
             new_hashes = {}
             sem = QSemaphore(0)
 
-            # Phase 1 part B: Parallel hashing for new/changed files (10% to 50% range)
+            # Phase 1 part B: Parallel hashing for new/changed files.
             num_to_hash = len(paths_to_hash_parallel)
             base_progress = int(0.2 * total_files)
-            remaining_progress_span = total_files - base_progress
+            remaining_progress_span = int(0.8 * total_files) - base_progress
             processed_hashing = 0
 
             for i in range(0, num_to_hash, batch_size):
@@ -1723,7 +1739,7 @@ class DuplicateDetector(QThread):
 
             if hashes_to_batch:
                 # total_batch = len(hashes_to_batch)
-                base_batch_progress = int(0.4 * self._progress_total)
+                base_batch_progress = int(0.8 * total_files)
                 span_batch_progress = total_files - base_batch_progress
 
                 def batch_progress_cb(current, total, current_path):
@@ -1755,7 +1771,7 @@ class DuplicateDetector(QThread):
                 if not self._is_running:
                     break
 
-                # Progress update during pending duplicate loading (50% to 60% range)
+                # Progress update during pending duplicate loading.
                 current_time = time_module.perf_counter()
                 if (current_time - last_ui_update_time > 0.03 or
                         idx == 0 or idx == total_pending - 1):
@@ -1842,7 +1858,7 @@ class DuplicateDetector(QThread):
         results_to_save = []
         results_to_save_ai = []
         start_p2_progress = total_files + int(0.2 * total_files)
-        span_p2_progress = max(1, self._progress_total - start_p2_progress)
+        span_p2_progress = max(0, 2 * total_files - start_p2_progress)
 
         if total_queries > 0 and self._is_running:
             last_ui_update_time = 0  # Force immediate UI update on start of Phase 2

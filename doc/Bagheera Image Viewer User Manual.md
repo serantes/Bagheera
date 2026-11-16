@@ -85,7 +85,8 @@ activity:
 * **Status Label**: Displays messages like "Ready", "Loading...", "Done", or
   error messages.
 * **Progress Bar**: Shows the progress of ongoing operations like scanning or
-  duplicate detection.
+  duplicate detection, including AI vector generation and similarity search
+  when enabled. Cached vectors are reused without regenerating them.
 * **File System Watcher Indicator**: A small icon (e.g., folder-open) indicates
   if the file system watcher is actively monitoring directories.
 * **Filtered Count**: Shows how many images are currently visible after applying
