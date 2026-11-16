@@ -229,11 +229,15 @@ Save and manage your frequently used search queries.
 
 * **Search Bar**: Filters your list of bookmarked queries.
 * **Bookmarks Table**: Lists your saved queries with a comment, the query itself,
-  and an optional keyboard shortcut.
+  an optional keyboard shortcut, grouping and sort order.
 * **Load Button**: Executes the selected bookmarked query.
 * **Add Button**: Adds the current search bar content as a new bookmark. You'll
-  be prompted for a comment.
-* **Rename Button**: Edits the comment for the selected bookmark.
+  be prompted for a comment; the current grouping and sort order are saved.
+* **Overwrite Button**: Replaces the selected bookmark's query, grouping and
+  sort order with the current settings.
+* **Edit Button**: Edits the comment, query, grouping and sort order. Set either
+  option to **Keep current** to leave that setting unchanged when the bookmark
+  is loaded. Existing bookmarks without these options behave the same way.
 * **Shortcut Button**: Assigns a global keyboard shortcut to the selected
   bookmarked query.
 * **Delete Button**: Removes the selected bookmark.
@@ -470,6 +474,9 @@ points icon or similar) in the top bar.
 
 ### 6.2.1. Duplicate Manager dialog
 
+Long filenames are shortened in the middle when needed; hover over a filename
+label to see the complete name. The same applies to the similar-image preview.
+
 When a duplicate pair is open for resolution, the dialog presents two tabs:
 
 * **Side by Side**: displays both images with synchronized zoom and scroll when
@@ -529,6 +536,8 @@ various aspects of Bagheera's behavior.
 * **Scan Full On Start**: Automatically scan all images in the folder on startup.
 * **Generation Threads**: Maximum number of simultaneous threads to generate
   thumbnails.
+* **Scan hidden directories / files**: Include directories or files whose names
+  begin with a dot when enabled.
 * **File search engine**: Engine to use for finding files. 'Bagheera' uses the
   BagheeraSearch library. 'Baloo' uses the 'baloosearch' command.
 
@@ -604,7 +613,10 @@ Configure settings related to face, pet, body, object, and landmark detection.
 * **Confirm before deleting duplicates**: Show a confirmation dialog before
   moving a duplicate image to the trash.
 * **Whitelist (folders to include)**: Comma-separated paths of folders to scan
-  when using 'Detect all'.
+  when using 'Detect all' or searching for similar images. The scanner's hidden
+  directory and file settings apply within these folders. A folder explicitly
+  listed in the whitelist is scanned even if it is hidden; hidden directories
+  below it and hidden files still follow their respective settings.
 * **Blacklist (folders to exclude)**: Comma-separated paths of folders to ignore
   during 'Detect all' scans.
 * **Delete button sends to trash by default**: If checked, pressing the Delete

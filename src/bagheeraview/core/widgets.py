@@ -33,7 +33,7 @@ from PySide6.QtGui import (
     QPalette, QAction, QKeySequence
 )
 from PySide6.QtCore import (
-    Signal, QSortFilterProxyModel, Slot, QStringListModel, Qt, QTimer,
+    Signal, QSortFilterProxyModel, Slot, QStringListModel, Qt, QTimer, QEvent,
     QModelIndex
 )
 
@@ -54,6 +54,39 @@ from .tag_information_editor import TagInformationEditor
 
 
 logger = logging.getLogger(__name__)
+
+
+class MiddleElidedLabel(QLabel):
+    """A label that keeps its full text while fitting its available width."""
+
+    def __init__(self, text="", parent=None):
+        super().__init__(parent)
+        self._full_text = ""
+        self.setTextFormat(Qt.PlainText)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.setText(text)
+
+    def setText(self, text):
+        self._full_text = text
+        self._update_elision()
+
+    def text(self):
+        return self._full_text
+
+    def _update_elision(self):
+        width = max(0, self.contentsRect().width() - 2 * self.margin())
+        text = self.fontMetrics().elidedText(self._full_text, Qt.ElideMiddle, width)
+        super().setText(text)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_elision()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if (event.type() in (QEvent.FontChange, QEvent.StyleChange)
+                and hasattr(self, "_full_text")):
+            self._update_elision()
 
 
 def _renamed_tag_value(tag, old_tag, new_tag):
@@ -1756,7 +1789,7 @@ class BookmarksWidget(QWidget):
         layout.addWidget(self.search_bar)
 
         self.table = QTableWidget()
-        self.table.setColumnCount(3)
+        self.table.setColumnCount(5)
         self.table.setHorizontalHeaderLabels(UITexts.BOOKMARKS_TABLE_HEADER)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -1819,8 +1852,8 @@ class BookmarksWidget(QWidget):
 
     def resizeEvent(self, event):
         width = self.table.viewport().width()
-        self.table.setColumnWidth(0, int(width * 0.60))
-        self.table.setColumnWidth(2, int(width * 0.15))
+        for col, fraction in enumerate((0.30, 0.25, 0.15, 0.15)):
+            self.table.setColumnWidth(col, int(width * fraction))
         super().resizeEvent(event)
 
     def refresh_list(self):
@@ -1846,6 +1879,32 @@ class BookmarksWidget(QWidget):
             self.table.setItem(i, 0, comment_item)
             self.table.setItem(i, 1, query_item)
             self.table.setItem(i, 2, QTableWidgetItem(shortcut))
+            self._set_option_item(i, 3, bookmark.get("group"),
+                                  self.main_win.view_mode_combo)
+            self._set_option_item(i, 4, bookmark.get("sort"),
+                                  self.main_win.sort_combo)
+
+    def _set_option_item(self, row, column, value, combo):
+        index = combo.findData(value) if value is not None else -1
+        if value is not None and index < 0:
+            logger.warning("Unknown bookmark option: %r", value)
+        text = combo.itemText(index) if index >= 0 else str(value or "")
+        item = QTableWidgetItem(text)
+        item.setData(Qt.UserRole, value)
+        item.setToolTip(text)
+        self.table.setItem(row, column, item)
+
+    def _bookmark_at(self, row):
+        bookmark = {
+            "comment": self.table.item(row, 0).text(),
+            "query": self.table.item(row, 1).text(),
+            "shortcut": self.table.item(row, 2).text(),
+        }
+        for column, key in ((3, "group"), (4, "sort")):
+            value = self.table.item(row, column).data(Qt.UserRole)
+            if value is not None and value != "":
+                bookmark[key] = value
+        return bookmark
 
     def filter_bookmarks(self, text):
         search_text = text.lower()
@@ -1857,27 +1916,39 @@ class BookmarksWidget(QWidget):
     def save_bookmarks(self):
         bookmarks = []
         for i in range(self.table.rowCount()):
-            item_comment = self.table.item(i, 0)
-            item_query = self.table.item(i, 1)
-            item_shortcut = self.table.item(i, 2)
-            comment = item_comment.text() if item_comment else ""
-            query = item_query.text() if item_query else ""
-            shortcut = item_shortcut.text() if item_shortcut else ""
-            bookmarks.append(
-                {'query': query, 'comment': comment, 'shortcut': shortcut})
+            bookmarks.append(self._bookmark_at(i))
 
         try:
             with open(BOOKMARKS_PATH, 'w', encoding='utf-8') as f:
                 json.dump(bookmarks, f, indent=4)
             self.bookmarks_changed.emit()
         except OSError:
-            pass
+            logger.exception("Could not save bookmarks to %s", BOOKMARKS_PATH)
+
+    def run_bookmark(self, bookmark):
+        query = bookmark.get("query", "")
+        if not query.startswith("layout:/"):
+            self._apply_bookmark_options(bookmark)
+        self.main_win.process_term(query)
+        if query.startswith("layout:/"):
+            self._apply_bookmark_options(bookmark)
+
+    def _apply_bookmark_options(self, bookmark):
+        for key, combo in (("group", self.main_win.view_mode_combo),
+                           ("sort", self.main_win.sort_combo)):
+            value = bookmark.get(key)
+            if value is None or value == "":
+                continue
+            index = combo.findData(value)
+            if index < 0:
+                logger.warning("Unknown bookmark %s: %r", key, value)
+                continue
+            combo.setCurrentIndex(index)
 
     def load_selected(self):
         row = self.table.currentRow()
         if row >= 0:
-            query = self.table.item(row, 1).text()
-            self.main_win.process_term(query)
+            self.run_bookmark(self._bookmark_at(row))
 
     def add_bookmark(self):
         query = self.main_win.search_input.currentText().strip()
@@ -1902,6 +1973,10 @@ class BookmarksWidget(QWidget):
         self.table.setItem(row, 0, comment_item)
         self.table.setItem(row, 1, query_item)
         self.table.setItem(row, 2, QTableWidgetItem(""))
+        self._set_option_item(row, 3, self.main_win.view_mode_combo.currentData(),
+                              self.main_win.view_mode_combo)
+        self._set_option_item(row, 4, self.main_win.sort_combo.currentData(),
+                              self.main_win.sort_combo)
         self.table.setCurrentCell(row, 0)
         self.save_bookmarks()
 
@@ -1928,6 +2003,10 @@ class BookmarksWidget(QWidget):
         query_item = self.table.item(row, 1)
         query_item.setText(query)
         query_item.setToolTip(query)
+        self._set_option_item(row, 3, self.main_win.view_mode_combo.currentData(),
+                              self.main_win.view_mode_combo)
+        self._set_option_item(row, 4, self.main_win.sort_combo.currentData(),
+                              self.main_win.sort_combo)
         self.save_bookmarks()
 
     def edit_bookmark(self):
@@ -1949,6 +2028,23 @@ class BookmarksWidget(QWidget):
         form.addRow(UITexts.BOOKMARK_COMMENT_LABEL, comment_edit)
         form.addRow(UITexts.BOOKMARK_QUERY_LABEL, query_edit)
 
+        option_edits = []
+        for column, label, source in (
+                (3, UITexts.BOOKMARK_GROUP_LABEL, self.main_win.view_mode_combo),
+                (4, UITexts.BOOKMARK_SORT_LABEL, self.main_win.sort_combo)):
+            combo = QComboBox(dialog)
+            combo.addItem(UITexts.BOOKMARK_UNCHANGED, None)
+            for index in range(source.count()):
+                combo.addItem(source.itemText(index), source.itemData(index))
+            value = self.table.item(row, column).data(Qt.UserRole)
+            index = combo.findData(value)
+            if index < 0:
+                combo.addItem(str(value), value)
+                index = combo.count() - 1
+            combo.setCurrentIndex(index)
+            form.addRow(label, combo)
+            option_edits.append((column, combo, source))
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
         buttons.accepted.connect(dialog.accept)
@@ -1964,6 +2060,8 @@ class BookmarksWidget(QWidget):
         comment_item.setToolTip(new_comment)
         query_item.setText(new_query)
         query_item.setToolTip(new_query)
+        for column, combo, source in option_edits:
+            self._set_option_item(row, column, combo.currentData(), source)
         if shortcut_item:
             shortcut_item.setToolTip(shortcut_item.text())
         self.save_bookmarks()

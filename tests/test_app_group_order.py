@@ -84,6 +84,28 @@ def test_date_group_sort_key_uses_full_timestamp_then_name():
 
 
 @pytest.mark.parametrize(
+    ("mode", "items", "candidate", "expected"),
+    [
+        ("name_asc", [("/b.jpg", None, 1, [], 0, 1, 1)],
+         ("/a.jpg", None, 2, [], 0, 2, 1), 0),
+        ("name_desc", [("/b.jpg", None, 1, [], 0, 1, 1)],
+         ("/a.jpg", None, 2, [], 0, 2, 1), 1),
+        ("date_asc", [("/b.jpg", None, 1, [], 0, 1, 1)],
+         ("/a.jpg", None, 2, [], 0, 2, 1), 1),
+        ("date_desc", [("/b.jpg", None, 1, [], 0, 1, 1)],
+         ("/a.jpg", None, 2, [], 0, 2, 1), 0),
+    ],
+)
+def test_incremental_sort_uses_language_independent_mode(
+        mode, items, candidate, expected):
+    window = SimpleNamespace(
+        sort_combo=SimpleNamespace(currentData=lambda: mode),
+        found_items_data=items)
+
+    assert MainWindow._find_sorted_index_in_data(window, candidate) == expected
+
+
+@pytest.mark.parametrize(
     ("language", "expected_name"),
     [
         ("en", "May"),

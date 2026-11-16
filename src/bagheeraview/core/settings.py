@@ -43,6 +43,7 @@ from .constants import (
     HAVE_FAISS_LIBS,
     DUPLICATE_CACHE_PATH, DUPLICATE_PENDING_DB_NAME
 )
+from .utils import filter_hidden_entries
 
 
 class DuplicateFileCounter(QThread):
@@ -50,11 +51,14 @@ class DuplicateFileCounter(QThread):
     count_updated = Signal(int)
     finished = Signal(int)
 
-    def __init__(self, whitelist, blacklist, extensions):
+    def __init__(self, whitelist, blacklist, extensions,
+                 scan_hidden_dirs=False, scan_hidden_files=False):
         super().__init__()
         self.whitelist = whitelist
         self.blacklist = blacklist
         self.extensions = extensions
+        self.scan_hidden_dirs = scan_hidden_dirs
+        self.scan_hidden_files = scan_hidden_files
         self._abort = False
 
     def stop(self):
@@ -71,6 +75,8 @@ class DuplicateFileCounter(QThread):
             for root, dirs, files in os.walk(root_path):
                 if self._abort:
                     break
+                filter_hidden_entries(
+                    dirs, files, self.scan_hidden_dirs, self.scan_hidden_files)
                 abs_root = os.path.abspath(root)
                 dirs[:] = [d for d in dirs
                            if os.path.join(abs_root, d) not in self.blacklist]
@@ -640,6 +646,10 @@ class SettingsDialog(QDialog):
             lambda *args: self.count_update_timer.start())
         self.duplicate_blacklist_list.model().rowsRemoved.connect(
             lambda *args: self.count_update_timer.start())
+        self.scan_hidden_dirs_checkbox.toggled.connect(
+            lambda checked: self.count_update_timer.start())
+        self.scan_hidden_files_checkbox.toggled.connect(
+            lambda checked: self.count_update_timer.start())
 
         self.default_delete_to_trash_checkbox = QCheckBox(
             UITexts.SETTINGS_DEFAULT_DELETE_TO_TRASH_LABEL)
@@ -1938,7 +1948,9 @@ class SettingsDialog(QDialog):
 
         self.duplicate_scan_progress.show()
         self.counter_thread = DuplicateFileCounter(
-            whitelist, blacklist, IMAGE_EXTENSIONS)
+            whitelist, blacklist, IMAGE_EXTENSIONS,
+            self.scan_hidden_dirs_checkbox.isChecked(),
+            self.scan_hidden_files_checkbox.isChecked())
         self.counter_thread.count_updated.connect(self._on_counter_updated)
         self.counter_thread.finished.connect(self._on_counter_finished)
         self.counter_thread.start()

@@ -29,6 +29,7 @@ from .constants import (
 from .faiss_worker import FAISSSimilarSearchWorker
 from .imageviewer import ImagePane, rating_menu_label
 from .propertiesdialog import PropertiesDialog
+from .widgets import MiddleElidedLabel
 
 
 class SimilarImagesDialog(QDialog):
@@ -106,11 +107,12 @@ class SimilarImagesDialog(QDialog):
         self.progress_bar = QProgressBar()
         self.progress_bar.hide()
         left_layout.addWidget(self.progress_bar)
-        self.status_lbl = QLabel()
+        self.status_lbl = MiddleElidedLabel()
         left_layout.addWidget(self.status_lbl)
 
         # Results Table (Similarity % and Name)
         self.table = QTableWidget()
+        self.table.setTextElideMode(Qt.ElideMiddle)
         self.table.setColumnCount(2)
         self.table.setHorizontalHeaderLabels(["%", UITexts.CONTEXT_MENU_OPEN])
         self.table.horizontalHeader().setSectionResizeMode(
@@ -153,11 +155,11 @@ class SimilarImagesDialog(QDialog):
 
         widget.info_lbl = info_lbl
         widget.pane = pane
-        widget.filename_lbl = QLabel()
+        widget.filename_lbl = MiddleElidedLabel()
         widget.filename_lbl.setAlignment(Qt.AlignCenter)
         widget.filename_lbl.setStyleSheet("font-size: 11px; font-weight: bold;")
         v_layout.addWidget(widget.filename_lbl)
-        widget.dir_lbl = QLabel()
+        widget.dir_lbl = MiddleElidedLabel()
         widget.dir_lbl.setAlignment(Qt.AlignCenter)
         widget.dir_lbl.setStyleSheet("font-size: 9px; color: #888;")
         v_layout.addWidget(widget.dir_lbl)
@@ -301,6 +303,7 @@ class SimilarImagesDialog(QDialog):
                 self.preview_pane.controller.load_image()
                 self.right_pane_widget.info_lbl.setText(UITexts.FILE_NOT_FOUND)
                 self.right_pane_widget.filename_lbl.setText("N/A")
+                self.right_pane_widget.filename_lbl.setToolTip("")
                 self.right_pane_widget.dir_lbl.setText("N/A")
                 self._update_tags_label()
                 return
@@ -317,6 +320,7 @@ class SimilarImagesDialog(QDialog):
                 self.right_pane_widget.info_lbl.setText(f"{size_str} - N/A")
 
             self.right_pane_widget.filename_lbl.setText(os.path.basename(path))
+            self.right_pane_widget.filename_lbl.setToolTip(os.path.basename(path))
             self.right_pane_widget.dir_lbl.setText(os.path.dirname(path))
             self._update_tags_label()
 
@@ -592,6 +596,7 @@ class SimilarImagesDialog(QDialog):
             self.preview_pane.controller.load_image()
             self.right_pane_widget.info_lbl.setText("")
             self.right_pane_widget.filename_lbl.setText("")
+            self.right_pane_widget.filename_lbl.setToolTip("")
             self.right_pane_widget.dir_lbl.setText("")
             self._update_tags_label()
 

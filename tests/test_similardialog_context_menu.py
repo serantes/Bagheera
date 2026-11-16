@@ -1,7 +1,8 @@
 from unittest.mock import Mock
 
 from PySide6.QtCore import QEvent
-from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtWidgets import QApplication, QLabel, QWidget
+from PySide6.QtGui import QImage
 
 from bagheeraview.core import similardialog as similar_dialog_module
 from bagheeraview.core.constants import UITexts
@@ -93,6 +94,40 @@ def test_similar_image_context_menu_starts_with_view(tmp_path, monkeypatch):
     actions[0].trigger()
     main_window.open_viewer_for_path.assert_called_once_with(str(image_path))
 
+    dialog.preview_pane.cleanup()
+    dialog.close()
+    dialog.deleteLater()
+    main_window.deleteLater()
+    app.sendPostedEvents(None, QEvent.DeferredDelete)
+    app.processEvents()
+
+
+def test_preview_long_filename_is_elided_and_tooltip_cleared(tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    image_path = tmp_path / ("begin_" + "long_name_" * 18 + "end.png")
+    image = QImage(10, 10, QImage.Format_RGB32)
+    image.fill(0)
+    assert image.save(str(image_path))
+    main_window = FakeMainWindow()
+    monkeypatch.setattr(
+        similar_dialog_module.SimilarImagesDialog, "start_search",
+        lambda _self: None)
+    dialog = similar_dialog_module.SimilarImagesDialog(str(image_path), main_window)
+    dialog.resize(1000, 700)
+    dialog.show()
+    app.processEvents()
+    width = dialog.width()
+
+    dialog._update_preview(str(image_path))
+    app.processEvents()
+    label = dialog.right_pane_widget.filename_lbl
+    assert dialog.width() == width
+    assert label.toolTip() == image_path.name
+    assert "…" in QLabel.text(label)
+    assert QLabel.text(label).endswith("end.png")
+
+    dialog._update_preview(str(tmp_path / "missing.png"))
+    assert label.toolTip() == ""
     dialog.preview_pane.cleanup()
     dialog.close()
     dialog.deleteLater()

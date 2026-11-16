@@ -9,7 +9,6 @@ zooming and scrolling.
 Classes:
     DuplicateManagerDialog: A dialog to review and manage duplicate image pairs.
 """
-import html
 import os
 import subprocess
 from datetime import datetime
@@ -32,6 +31,7 @@ from .constants import (
 )
 from .duplicatecache import duplicate_sort_key
 from .propertiesdialog import PropertiesDialog
+from .widgets import MiddleElidedLabel
 
 # Role used to store the numeric sort key of a row's primary column.
 # SORT_KEY_ROLE = Qt.UserRole + 1 keeps the original index in Qt.UserRole.
@@ -149,6 +149,7 @@ class DuplicateManagerDialog(QDialog):
         left_layout.addLayout(header_layout)
 
         self.table_widget = QTableWidget()
+        self.table_widget.setTextElideMode(Qt.ElideMiddle)
         if self.review_mode:
             columns = 3
             self.table_widget.setColumnCount(columns)
@@ -756,12 +757,12 @@ class DuplicateManagerDialog(QDialog):
         res_lbl.setStyleSheet("font-size: 11px; font-weight: bold; color: #aaa;")
         v_layout.addWidget(res_lbl)
 
-        filename_lbl = QLabel()
+        filename_lbl = MiddleElidedLabel()
         filename_lbl.setAlignment(Qt.AlignCenter)
         filename_lbl.setStyleSheet("font-size: 11px; font-weight: bold;")
         v_layout.addWidget(filename_lbl)
 
-        dir_lbl = QLabel()
+        dir_lbl = MiddleElidedLabel()
         dir_lbl.setAlignment(Qt.AlignCenter)
         dir_lbl.setStyleSheet("font-size: 9px; color: #888;")
         v_layout.addWidget(dir_lbl)
@@ -840,16 +841,18 @@ class DuplicateManagerDialog(QDialog):
         self.overlay_canvas = OverlayCanvas()
         self.overlay_canvas.setToolTip(UITexts.DUPLICATE_OVERLAY_MOUSE_HINT)
 
-        self.overlay_legend_lbl = QLabel()
+        legend_layout = QHBoxLayout()
+        self.overlay_legend_lbl = MiddleElidedLabel()
         self.overlay_legend_lbl.setAlignment(Qt.AlignCenter)
-        self.overlay_legend_lbl.setTextFormat(Qt.RichText)
-        self.overlay_legend_lbl.setStyleSheet(
-            "font-size: 10px; color: #888;")
+        self.overlay_bottom_legend_lbl = MiddleElidedLabel()
+        self.overlay_bottom_legend_lbl.setAlignment(Qt.AlignCenter)
+        legend_layout.addWidget(self.overlay_legend_lbl)
+        legend_layout.addWidget(self.overlay_bottom_legend_lbl)
 
         page_layout.addWidget(controls_bar)
         page_layout.addWidget(self.overlay_tabs)
         page_layout.addWidget(self.overlay_canvas, 1)
-        page_layout.addWidget(self.overlay_legend_lbl)
+        page_layout.addLayout(legend_layout)
 
         # Connections
         self.overlay_tabs.currentChanged.connect(self._on_overlay_tab_changed)
@@ -1054,12 +1057,14 @@ class DuplicateManagerDialog(QDialog):
         marker = "▶ " if is_toggle else ""
 
         self.overlay_legend_lbl.setText(
-            f"<span style='{top_style}'>{marker}"
-            f"{html.escape(UITexts.DUPLICATE_OVERLAY_TOP_LEGEND.format(name=top_name))}"
-            f"</span>&nbsp;&nbsp;"
-            f"<span style='{bottom_style}'>{marker}"
-            f"{html.escape(UITexts.DUPLICATE_OVERLAY_BOTTOM_LEGEND.format(name=bottom_name))}"
-            f"</span>")
+            marker + UITexts.DUPLICATE_OVERLAY_TOP_LEGEND.format(name=top_name))
+        self.overlay_legend_lbl.setStyleSheet(f"font-size: 10px; {top_style}")
+        self.overlay_legend_lbl.setToolTip(top_name)
+        self.overlay_bottom_legend_lbl.setText(
+            marker + UITexts.DUPLICATE_OVERLAY_BOTTOM_LEGEND.format(name=bottom_name))
+        self.overlay_bottom_legend_lbl.setStyleSheet(
+            f"font-size: 10px; {bottom_style}")
+        self.overlay_bottom_legend_lbl.setToolTip(bottom_name)
 
     def _populate_list(self):
         """Fills the table widget with the list of duplicate results."""
@@ -1382,6 +1387,7 @@ class DuplicateManagerDialog(QDialog):
             pane.controller.update_list([], 0)  # Clear pane
             pane.controller.load_image()
             filename_lbl.setText("N/A")
+            filename_lbl.setToolTip("")
             dir_lbl.setText("N/A")
             return True
 
@@ -1410,6 +1416,7 @@ class DuplicateManagerDialog(QDialog):
             res_lbl.setText("N/A")
 
         filename_lbl.setText(filename_text)
+        filename_lbl.setToolTip(filename_text)
         filename_lbl.setStyleSheet(
             f"font-size: 11px; font-weight: bold; color: {filename_color};")
         dir_lbl.setText(dir_text)

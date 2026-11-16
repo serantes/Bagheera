@@ -18,6 +18,14 @@ SS_PATH = "/org/freedesktop/ScreenSaver"
 SS_IFACE = "org.freedesktop.ScreenSaver"
 
 
+def filter_hidden_entries(dirs, files, scan_hidden_dirs, scan_hidden_files):
+    """Filter entries below a scan root, leaving the root itself explicit."""
+    if not scan_hidden_dirs:
+        dirs[:] = [name for name in dirs if not name.startswith(".")]
+    if not scan_hidden_files:
+        files[:] = [name for name in files if not name.startswith(".")]
+
+
 class PowerManager:
     _inhibit_counter = 0
     _inhibit_cookie = None

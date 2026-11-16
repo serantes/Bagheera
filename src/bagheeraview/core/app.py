@@ -89,7 +89,7 @@ from .imageviewer import ImageViewer
 from .propertiesdialog import PropertiesDialog
 from .geomapwidget import GeoMapWidget
 from .widgets import (
-    CircularProgressBar,
+    CircularProgressBar, MiddleElidedLabel,
     TagEditWidget, LayoutsWidget, LayoutSelectionDialog, HistoryWidget,
     RatingWidget, CommentWidget, BookmarksWidget, TagSelectorDialog
 )
@@ -98,6 +98,7 @@ from .metadatamanager import (
 )
 from .filesystemwatcher import FileSystemWatcher
 from .section_scrubber import SectionScrubber, build_sections
+from .utils import filter_hidden_entries
 
 
 def _parse_resolution_value(value):
@@ -511,7 +512,7 @@ class AppShortcutController(QObject):
                                     (int(seq[0].key()),
                                      Qt.KeyboardModifiers(
                                          seq[0].keyboardModifiers()))
-                                ] = bookmark.get('query')
+                                ] = bookmark
             except (json.JSONDecodeError, OSError):
                 pass
         self._refresh_native_shortcuts()
@@ -532,7 +533,7 @@ class AppShortcutController(QObject):
         # Bookmarks
         if key_tuple in self._bookmark_shortcuts:
             return f"{UITexts.BOOKMARKS_TAB}: {
-                self._bookmark_shortcuts[key_tuple]}"
+                self._bookmark_shortcuts[key_tuple].get('query', '')}"
 
         return None
 
@@ -637,7 +638,8 @@ class AppShortcutController(QObject):
             return
 
         if (key, mods) in self._bookmark_shortcuts:
-            self.main_win.process_term(self._bookmark_shortcuts[(key, mods)])
+            self.main_win.bookmarks_tab.run_bookmark(
+                self._bookmark_shortcuts[(key, mods)])
             return
 
         shortcut = self._shortcuts.get((key, mods))
@@ -1673,8 +1675,8 @@ class MainWindow(QMainWindow):
         self.status_counter_lbl.hide()
         bot.addWidget(self.status_counter_lbl)
 
-        self.status_lbl = QLabel(UITexts.READY)
-        bot.addWidget(self.status_lbl)
+        self.status_lbl = MiddleElidedLabel(UITexts.READY)
+        bot.addWidget(self.status_lbl, 1)
 
         self.fs_watcher_status_lbl = QLabel()
         self.fs_watcher_status_lbl.setToolTip(UITexts.FS_WATCHER_TOOLTIP)
@@ -1686,24 +1688,30 @@ class MainWindow(QMainWindow):
         self.hide_progress_timer.setSingleShot(True)
         self.hide_progress_timer.timeout.connect(self.progress_bar.hide)
 
-        bot.addStretch()
-
         self.filtered_count_lbl = QLabel(UITexts.FILTERED_ZERO)
         bot.addWidget(self.filtered_count_lbl)
 
         self.view_mode_combo = QComboBox()
-        self.view_mode_combo.addItems([
-            UITexts.VIEW_MODE_FLAT, UITexts.VIEW_MODE_FOLDER, UITexts.VIEW_MODE_DAY,
-            UITexts.VIEW_MODE_WEEK, UITexts.VIEW_MODE_MONTH, UITexts.VIEW_MODE_YEAR,
-            UITexts.VIEW_MODE_RATING
-        ])
+        for text, value in [
+                (UITexts.VIEW_MODE_FLAT, "flat"),
+                (UITexts.VIEW_MODE_FOLDER, "folder"),
+                (UITexts.VIEW_MODE_DAY, "day"),
+                (UITexts.VIEW_MODE_WEEK, "week"),
+                (UITexts.VIEW_MODE_MONTH, "month"),
+                (UITexts.VIEW_MODE_YEAR, "year"),
+                (UITexts.VIEW_MODE_RATING, "rating")]:
+            self.view_mode_combo.addItem(text, value)
         self.view_mode_combo.setFocusPolicy(Qt.NoFocus)
         self.view_mode_combo.currentIndexChanged.connect(self.on_view_mode_changed)
         bot.addWidget(self.view_mode_combo)
 
         self.sort_combo = QComboBox()
-        self.sort_combo.addItems([UITexts.SORT_NAME_ASC, UITexts.SORT_NAME_DESC,
-                                  UITexts.SORT_DATE_ASC, UITexts.SORT_DATE_DESC])
+        for text, value in [
+                (UITexts.SORT_NAME_ASC, "name_asc"),
+                (UITexts.SORT_NAME_DESC, "name_desc"),
+                (UITexts.SORT_DATE_ASC, "date_asc"),
+                (UITexts.SORT_DATE_DESC, "date_desc")]:
+            self.sort_combo.addItem(text, value)
         self.sort_combo.setFocusPolicy(Qt.NoFocus)
         self.sort_combo.currentIndexChanged.connect(self.on_sort_changed)
         bot.addWidget(self.sort_combo)
@@ -2672,6 +2680,10 @@ class MainWindow(QMainWindow):
 
         all_paths = []
         blacklist_set = set(blacklist)
+        scan_hidden_dirs = APP_CONFIG.get(
+            "scan_hidden_dirs", SCANNER_SETTINGS_DEFAULTS["scan_hidden_dirs"])
+        scan_hidden_files = APP_CONFIG.get(
+            "scan_hidden_files", SCANNER_SETTINGS_DEFAULTS["scan_hidden_files"])
 
         for root_path in whitelist:
             if not os.path.exists(root_path):
@@ -2679,6 +2691,8 @@ class MainWindow(QMainWindow):
 
             for root, dirs, files in os.walk(root_path):
                 abs_root = os.path.abspath(root)
+                filter_hidden_entries(
+                    dirs, files, scan_hidden_dirs, scan_hidden_files)
                 # Prune dirs to stop walking into blacklisted paths
                 dirs[:] = [d for d in dirs
                            if os.path.join(abs_root, d) not in blacklist_set]
@@ -4496,9 +4510,9 @@ class MainWindow(QMainWindow):
 
     def _find_sorted_index_in_data(self, new_item_data):
         """Finds the correct index to insert an item to keep found_items_data sorted."""
-        mode = self.sort_combo.currentText()
-        rev = "↓" in mode
-        sort_by_name = "Name" in mode
+        mode = self.sort_combo.currentData()
+        rev = mode.endswith("_desc")
+        sort_by_name = mode.startswith("name_")
 
         def get_key(item):
             # item structure: (path, qi, mtime, tags, rating, inode, dev)
@@ -4584,9 +4598,9 @@ class MainWindow(QMainWindow):
             # Preserve selection
             selected_paths = self.get_selected_paths()
 
-            mode = self.sort_combo.currentText()
-            rev = "↓" in mode
-            sort_by_name = "Name" in mode
+            mode = self.sort_combo.currentData()
+            rev = mode.endswith("_desc")
+            sort_by_name = mode.startswith("name_")
 
             # 2. Sort the collected data. Python's sort is stable, so we apply sorts
             # from least specific to most specific.

@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtWidgets import QApplication, QLabel, QWidget
 from PySide6.QtTest import QTest
 
 from bagheeraview.core.duplicatedialog import DuplicateManagerDialog
@@ -152,6 +152,33 @@ def test_overlay_controls_and_swap(dialog):
         dialog.left_pane.controller.get_current_path())
     dialog._update_overlay_legend()
     assert path_before in dialog.overlay_legend_lbl.text()
+
+
+def test_long_filenames_do_not_expand_dialog_and_have_tooltips(dialog, tmp_path):
+    a = tmp_path / ("first_" + "long_name_" * 16 + "end.png")
+    b = tmp_path / ("second_" + "long_name_" * 16 + "end.png")
+    _write_png(a, "#ff0000")
+    _write_png(b, "#0000ff")
+    dialog.show()
+    QApplication.processEvents()
+    width = dialog.width()
+    dialog.duplicates[0] = _FakeDuplicate(str(a), str(b), 92.0)
+    dialog._load_pair(0)
+    QApplication.processEvents()
+
+    assert dialog.width() == width
+    for pane in (dialog.left_pane_widget, dialog.right_pane_widget):
+        label = pane.filename_lbl
+        assert label.toolTip() == os.path.basename(pane.pane.controller.get_current_path())
+        assert "…" in QLabel.text(label)
+        assert QLabel.text(label).endswith("end.png")
+
+    dialog.main_tabs.setCurrentIndex(1)
+    QApplication.processEvents()
+    assert dialog.width() == width
+    for label in (dialog.overlay_legend_lbl, dialog.overlay_bottom_legend_lbl):
+        assert label.toolTip() in (a.name, b.name)
+        assert "…" in QLabel.text(label)
 
 
 def test_i18n_keys_parity():

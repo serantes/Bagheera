@@ -19,7 +19,9 @@ import faiss
 import PIL.Image
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtGui import QImage
-from .constants import APP_DATA_DIR, IMAGE_EXTENSIONS, DUPLICATE_AI_TOPK_DEFAULT
+from .constants import (APP_CONFIG, APP_DATA_DIR, IMAGE_EXTENSIONS,
+                        DUPLICATE_AI_TOPK_DEFAULT, SCANNER_SETTINGS_DEFAULTS)
+from .utils import filter_hidden_entries
 
 logger = logging.getLogger(__name__)
 
@@ -437,6 +439,10 @@ class FAISSSimilarSearchWorker(QThread):
         self.query_image = query_image
         self.threshold = threshold
         self._is_running = True
+        self.scan_hidden_dirs = APP_CONFIG.get(
+            "scan_hidden_dirs", SCANNER_SETTINGS_DEFAULTS["scan_hidden_dirs"])
+        self.scan_hidden_files = APP_CONFIG.get(
+            "scan_hidden_files", SCANNER_SETTINGS_DEFAULTS["scan_hidden_files"])
 
         self.whitelist = [os.path.abspath(os.path.expanduser(p.strip()))
                           for p in whitelist_str.split(',') if p.strip()]
@@ -512,11 +518,15 @@ class FAISSSimilarSearchWorker(QThread):
         for root_path in self.whitelist:
             if not os.path.isdir(root_path):
                 if os.path.isfile(root_path) and os.path.splitext(root_path)[1].lower() in IMAGE_EXTENSIONS:
+                    if not self.scan_hidden_files and os.path.basename(root_path).startswith("."):
+                        continue
                     if not self._is_allowed(root_path):
                         continue
                     images.append(os.path.abspath(root_path))
                 continue
             for root, dirs, files in os.walk(root_path):
+                filter_hidden_entries(
+                    dirs, files, self.scan_hidden_dirs, self.scan_hidden_files)
                 # Prune blacklisted subdirectories in-place
                 dirs[:] = [d for d in dirs if self._is_allowed(os.path.join(root, d))]
 
