@@ -476,7 +476,11 @@ class BagheeraSearcher:
                 query_options["directory"] = folder["path"]
                 files = self._execute_query(query_options)
                 if options.get("type") and options["type"].lower() != "folder":
-                    files = [item for item in files if not S_ISDIR(stat_path(item["path"]).st_mode)]
+                    try:
+                        files = [item for item in files if not S_ISDIR(stat_path(item["path"]).st_mode)]
+                    except FileNotFoundError:
+                        # Baloo might have removed this file, skip this item.
+                        None
                 for item in filter_results(files, having):
                     file_id = int(item["id"], 16)
                     items.setdefault(file_id, item)
