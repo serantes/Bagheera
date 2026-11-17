@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 from PySide6.QtCore import Qt
@@ -63,6 +64,68 @@ def test_navigation_scanner_honors_show_hidden_dirs_alias(
     scanner._scan_navigation_directory()
 
     assert results == [[str(hidden)]]
+
+
+@pytest.mark.parametrize("scan_hidden_files", [False, True])
+def test_recursive_scan_filters_hidden_files_and_directories(
+        tmp_path, monkeypatch, scan_hidden_files):
+    root = tmp_path / "photos"
+    visible_dir = root / "visible"
+    hidden_dir = root / ".hidden"
+    visible_dir.mkdir(parents=True)
+    hidden_dir.mkdir()
+    visible_image = root / "image.jpg"
+    hidden_image = root / ".hidden.jpg"
+    nested_image = visible_dir / "nested.jpg"
+    hidden_nested_image = hidden_dir / "nested.jpg"
+    for path in (visible_image, hidden_image, nested_image,
+                 hidden_nested_image):
+        path.touch()
+
+    monkeypatch.setitem(APP_CONFIG, "scan_hidden_dirs", False)
+    monkeypatch.setitem(APP_CONFIG, "scan_hidden_files", scan_hidden_files)
+    cache = SimpleNamespace(
+        get_directory_cache=lambda _path: (0, []),
+        set_directory_cache=Mock(),
+    )
+    scanner = ImageScanner(cache, [str(root)], scan_max_level=1)
+
+    scanner._scan_directory(root, 0)
+
+    expected_files = {str(visible_image), str(nested_image)}
+    if scan_hidden_files:
+        expected_files.add(str(hidden_image))
+    assert set(scanner.all_files) == expected_files
+    root_cache_call = next(
+        call for call in cache.set_directory_cache.call_args_list
+        if call.args[0] == str(root))
+    cached_files = root_cache_call.args[2]
+    assert set(cached_files) == {str(visible_image), str(hidden_image)}
+
+
+@pytest.mark.parametrize("scan_hidden_files", [False, True])
+def test_recursive_scan_filters_hidden_files_loaded_from_cache(
+        tmp_path, monkeypatch, scan_hidden_files):
+    root = tmp_path / "photos"
+    root.mkdir()
+    visible_image = root / "image.jpg"
+    hidden_image = root / ".hidden.jpg"
+    visible_image.touch()
+    hidden_image.touch()
+    cached_files = [str(visible_image), str(hidden_image)]
+    cache = SimpleNamespace(
+        get_directory_cache=lambda _path: (root.stat().st_mtime, cached_files),
+        set_directory_cache=Mock(),
+    )
+    monkeypatch.setitem(APP_CONFIG, "scan_hidden_files", scan_hidden_files)
+    scanner = ImageScanner(cache, [str(root)], scan_max_level=0)
+
+    scanner._scan_directory(root, 0)
+
+    expected_files = [str(visible_image)]
+    if scan_hidden_files:
+        expected_files.append(str(hidden_image))
+    assert set(scanner.all_files) == set(expected_files)
 
 
 def test_directories_ignore_filters_in_flat_and_are_hidden_when_grouped(app):

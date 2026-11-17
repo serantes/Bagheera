@@ -2077,7 +2077,9 @@ class ImageScanner(QThread):
             # mtime > 0 means there is a cache entry (even if empty of images)
             if cached_mtime > 0 and abs(cached_mtime - dir_stat.st_mtime) < 0.001:
                 for p in cached_files:
-                    if p and p not in self._seen_files:
+                    if (p and (self._scan_hidden_files
+                               or not Path(p).name.startswith("."))
+                            and p not in self._seen_files):
                         self.all_files.append(p)
                         self._seen_files.add(p)
 
@@ -2103,12 +2105,17 @@ class ImageScanner(QThread):
                     return
                 if item.is_file() and item.suffix.lower() in IMAGE_EXTENSIONS:
                     p = os.path.abspath(str(item))
-                    if p not in self._seen_files:
+                    if (self._scan_hidden_files
+                            or not item.name.startswith(".")) \
+                            and p not in self._seen_files:
                         self.all_files.append(p)
                         self._seen_files.add(p)
-                        files_in_dir.append(p)
                         self._update_viewers()
-                elif item.is_dir():
+                    # Keep hidden images cached so changing this option can
+                    # reuse the directory listing without hiding them forever.
+                    files_in_dir.append(p)
+                elif item.is_dir() and (
+                        self._scan_hidden_dirs or not item.name.startswith(".")):
                     self._scan_directory(item, current_depth + 1)
 
             # Cache findings for this directory
