@@ -1468,10 +1468,14 @@ class ImagePane(QWidget):
         if self.viewer.active_pane == self:
             self.viewer.sync_filmstrip_selection(index)
 
-    def load_and_fit_image(self, restore_config=None):
+    def load_and_fit_image(self, restore_config=None, resize_win=False):
         """Loads image using shared logic, adapted for Pane."""
         # reuse logic from ImageViewer (now moved/adapted)
-        self.viewer.load_and_fit_image_for_pane(self, restore_config)
+        if resize_win:
+            self.viewer.load_and_fit_image_for_pane(
+                self, restore_config, resize_win=True)
+        else:
+            self.viewer.load_and_fit_image_for_pane(self, restore_config)
 
     def update_view(self, resize_win=False):
         """Updates this pane's view."""
@@ -2240,7 +2244,8 @@ class ImageViewer(QWidget):
             self._desktop_height = screen_geo.height()
             return self._desktop_width, self._desktop_height
 
-    def load_and_fit_image_for_pane(self, pane, restore_config=None):
+    def load_and_fit_image_for_pane(self, pane, restore_config=None,
+                                    resize_win=False):
         """
         Logic for loading image into a specific pane.
         """
@@ -2338,17 +2343,19 @@ class ImageViewer(QWidget):
         else:
             # Image was reused and no restore config; just refresh the view to ensure
             # metadata/faces are up to date without resetting zoom/pan.
-            self.update_view(resize_win=False)
+            self.update_view(
+                resize_win=resize_win and not self.isFullScreen())
 
         # Defer sync to ensure layout and scroll area are ready, fixing navigation sync
         if pane == self.active_pane and pane.controller:
             QTimer.singleShot(
                 0, lambda: self.sync_filmstrip_selection(pane.controller.index))
 
-    def load_and_fit_image(self, restore_config=None):
+    def load_and_fit_image(self, restore_config=None, resize_win=False):
         """Proxy method for active pane."""
         if self.active_pane:
-            self.active_pane.load_and_fit_image(restore_config)
+            self.active_pane.load_and_fit_image(
+                restore_config, resize_win=resize_win)
 
     @Slot(list)
     def update_image_list(self, new_list):

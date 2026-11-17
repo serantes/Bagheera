@@ -116,3 +116,35 @@ def test_auto_resize_includes_visible_controls_before_viewer_is_shown(
         canvas.height() + viewer.status_bar_container.sizeHint().height()
         + viewer.filmstrip.height() + imageviewer.VIEWER_FORM_MARGIN,
     )
+
+
+def test_reused_image_can_resize_window_after_filter_replacement(
+        qapp, monkeypatch):
+    viewer = QWidget()
+    viewer.active_pane = None
+    viewer.panes = []
+    viewer.isFullScreen = lambda: False
+    viewer.reset_inactivity_timer = lambda: None
+    updates = []
+    viewer.update_view = lambda resize_win=False: updates.append(resize_win)
+    viewer.sync_filmstrip_selection = lambda _index: None
+    monkeypatch.setattr(QTimer, "singleShot", lambda *_args: None)
+
+    pane = SimpleNamespace(
+        controller=SimpleNamespace(
+            load_image=lambda: (True, False),
+            get_current_path=lambda: "replacement.png",
+            index=1,
+        ),
+        movie=None,
+        canvas=SimpleNamespace(setPixmap=lambda _pixmap: None),
+        update_view=lambda resize_win=False: updates.append(resize_win),
+        reset_inactivity_timer=lambda: None,
+    )
+    viewer.active_pane = pane
+    viewer.panes = [pane]
+
+    imageviewer.ImageViewer.load_and_fit_image_for_pane(
+        viewer, pane, resize_win=True)
+
+    assert updates == [True]
