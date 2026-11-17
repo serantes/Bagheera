@@ -26,7 +26,7 @@ from .metadatamanager import XattrManager, load_common_metadata
 
 logger = logging.getLogger(__name__)
 
-MIN_REGION_SIZE_PIXELS = 126
+MIN_REGION_SIZE_PIXELS = 80
 
 _face_recognition_module = None
 _mediapipe_module = None
