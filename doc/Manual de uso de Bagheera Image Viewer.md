@@ -392,7 +392,7 @@ filtrar el árbol de **TODAS LAS ETIQUETAS**:
 Configuración para la detección de rostros, mascotas, cuerpos u objetos:
 
 * **Etiquetas de [Tipo de Región]**: Etiquetas asignadas por defecto al detectar una región (por ejemplo, `Person` para rostros).
-* **Motor de detección**: Librería utilizada para procesar la imagen (por ejemplo, MediaPipe para detección facial).
+* **Motor de detección**: Librería utilizada para procesar la imagen. MediaPipe se prefiere para rostros cuando está disponible; los candidatos de menos de 40 píxeles por lado se descartan para reducir falsos positivos. También puedes cambiar el motor aquí.
 * **Color del cuadro**: Color del marco con el que se resaltan las regiones detectadas.
 * **Historial de nombres**: Número de nombres recientes guardados en el autocompletado.
 * **Usar último nombre por defecto**: Rellena el cuadro de nombre automáticamente con la última etiqueta utilizada.

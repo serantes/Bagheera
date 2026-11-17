@@ -19,6 +19,11 @@ developed and planned tools are:
 - **Image Similarity Search:** Powered by FAISS for fast feature vector matching.
 - **Person Identification:** Facial detection and recognition using deep learning
   embeddings.
+- **Batch Regions:** The main menu's Regions section detects faces or pets in
+  displayed images or in the duplicate scanner's whitelist (excluding its
+  blacklist). Faces use the usual recognition and unknown-person settings;
+  an optional forced tag overrides recognition. Pets require a forced tag.
+  Cancellation stops after the current image's detection.
 - **Geolocation:** OpenStreetMap map tab for viewing, assigning, and copying
   image GPS locations. Search by decimal or DMS coordinates, complete Google
   Plus Code, or place name using Nominatim. A map click outside edit mode

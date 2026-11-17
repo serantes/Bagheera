@@ -333,10 +333,10 @@ MEDIAPIPE_OBJECT_MODEL_URL = (
 # Ordered list of available detection engines. The first one found will be the default.
 # MediaPipe is generally preferred for its performance.
 AVAILABLE_FACE_ENGINES = []
-if HAVE_FACE_RECOGNITION:
-    AVAILABLE_FACE_ENGINES.append("face_recognition")
 if HAVE_MEDIAPIPE:
     AVAILABLE_FACE_ENGINES.append("mediapipe")
+if HAVE_FACE_RECOGNITION:
+    AVAILABLE_FACE_ENGINES.append("face_recognition")
 
 AVAILABLE_PET_ENGINES = []
 if HAVE_MEDIAPIPE:
@@ -668,6 +668,18 @@ _UI_TEXTS = {
         "RENAME_TAG_TITLE": "Rename Tag",
         "RENAME_TAG_LABEL": "Tag path:",
         "RENAME_TAG_ITEMS_COUNT": "Number of elements with this tag: {}",
+        "BATCH_REGIONS_TITLE": "Regions",
+        "BATCH_REGION_LABEL": "Region:",
+        "BATCH_FACES": "Faces",
+        "BATCH_PETS": "Pets",
+        "BATCH_DISPLAYED_ONLY": "Search only in displayed images",
+        "BATCH_ITEMS_COUNT": "Number of images to search: {}",
+        "BATCH_FORCE_TAG": "Forced tag:",
+        "BATCH_PET_TAG_REQUIRED": "A forced tag is required for pets.",
+        "BATCH_NO_ENGINE": "No usable detection engine or model is available for this region type.",
+        "BATCH_WRITE_ERROR": "Could not save regions for {}.",
+        "BATCH_EXIV2_REQUIRED": "The exiv2 library is required to save regions.",
+        "BATCH_NO_IMAGES": "There are no images to search.",
         "RENAME_TAG_PERSON_CONFIRM_TEXT": "This partial rename will update {} "
         "person recognition record(s) for '{}' to '{}'. Records outside the "
         "selected files are also affected, which may affect person recognition. "
@@ -1490,6 +1502,18 @@ _UI_TEXTS = {
         "RENAME_TAG_TITLE": "Renombrar Etiqueta",
         "RENAME_TAG_LABEL": "Ruta del tag:",
         "RENAME_TAG_ITEMS_COUNT": "Nº de elementos con este tag: {}",
+        "BATCH_REGIONS_TITLE": "Regiones",
+        "BATCH_REGION_LABEL": "Región:",
+        "BATCH_FACES": "Caras",
+        "BATCH_PETS": "Mascotas",
+        "BATCH_DISPLAYED_ONLY": "Buscar solo en las imágenes mostradas",
+        "BATCH_ITEMS_COUNT": "Número de imágenes en las que buscar: {}",
+        "BATCH_FORCE_TAG": "Etiqueta forzada:",
+        "BATCH_PET_TAG_REQUIRED": "Es obligatorio indicar una etiqueta para las mascotas.",
+        "BATCH_NO_ENGINE": "No hay un motor o modelo de detección disponible para este tipo de región.",
+        "BATCH_WRITE_ERROR": "No se pudieron guardar las regiones de {}.",
+        "BATCH_EXIV2_REQUIRED": "Se necesita la biblioteca exiv2 para guardar regiones.",
+        "BATCH_NO_IMAGES": "No hay imágenes en las que buscar.",
         "RENAME_TAG_PERSON_CONFIRM_TEXT": "Este renombrado parcial actualizará "
         "{} registro(s) de reconocimiento de personas de '{}' a '{}'. También "
         "afectará a registros fuera de los archivos seleccionados y puede "
@@ -2323,6 +2347,18 @@ _UI_TEXTS = {
         "RENAME_TAG_TITLE": "Renomear Etiqueta",
         "RENAME_TAG_LABEL": "Ruta do tag:",
         "RENAME_TAG_ITEMS_COUNT": "Nº de elementos con este tag: {}",
+        "BATCH_REGIONS_TITLE": "Rexións",
+        "BATCH_REGION_LABEL": "Rexión:",
+        "BATCH_FACES": "Caras",
+        "BATCH_PETS": "Mascotas",
+        "BATCH_DISPLAYED_ONLY": "Buscar só nas imaxes mostradas",
+        "BATCH_ITEMS_COUNT": "Número de imaxes nas que buscar: {}",
+        "BATCH_FORCE_TAG": "Etiqueta forzada:",
+        "BATCH_PET_TAG_REQUIRED": "É obrigatorio indicar unha etiqueta para as mascotas.",
+        "BATCH_NO_ENGINE": "Non hai un motor ou modelo de detección dispoñible para este tipo de rexión.",
+        "BATCH_WRITE_ERROR": "Non se puideron gardar as rexións de {}.",
+        "BATCH_EXIV2_REQUIRED": "Precísase a biblioteca exiv2 para gardar rexións.",
+        "BATCH_NO_IMAGES": "Non hai imaxes nas que buscar.",
         "RENAME_TAG_PERSON_CONFIRM_TEXT": "Este cambio parcial actualizará "
         "{} rexistro(s) de recoñecemento de persoas de '{}' a '{}'. Tamén "
         "afectará a rexistros fóra dos arquivos seleccionados e pode afectar "

@@ -86,6 +86,7 @@ else:
 from .imagescanner import (CacheCleaner, ImageScanner, ThumbnailCache,
                            ThumbnailGenerator, ThreadPoolManager)
 from .imageviewer import ImageViewer
+from .batchregions import BatchRegionsDialog
 from .propertiesdialog import PropertiesDialog
 from .geomapwidget import GeoMapWidget
 from .widgets import (
@@ -2550,6 +2551,11 @@ class MainWindow(QMainWindow):
 
         menu.addSeparator()
 
+        regions_menu = menu.addMenu(
+            QIcon.fromTheme("edit-image-face-recognize"), UITexts.BATCH_REGIONS_TITLE)
+        regions_action = regions_menu.addAction(UITexts.BATCH_REGIONS_TITLE)
+        regions_action.triggered.connect(self.show_batch_regions)
+
         duplicates_menu = menu.addMenu(
             QIcon.fromTheme("edit-find-replace"), UITexts.MENU_DUPLICATES)
         duplicates_menu.setEnabled(HAVE_IMAGEHASH)
@@ -2641,6 +2647,9 @@ class MainWindow(QMainWindow):
         about_action.triggered.connect(self.show_about_dialog)
 
         menu.exec(self.menu_btn.mapToGlobal(QPoint(0, self.menu_btn.height())))
+
+    def show_batch_regions(self):
+        BatchRegionsDialog(self).exec()
 
     def detect_all_duplicates(self, force_full=False):
         """Gathers files from whitelist (respecting blacklist) and runs detector."""

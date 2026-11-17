@@ -36,7 +36,7 @@ class XmpManager:
     """
 
     @staticmethod
-    def load_regions(path):
+    def load_regions(path, strict=False):
         """
         Loads regions data from a file's XMP metadata (MWG Regions).
 
@@ -47,11 +47,14 @@ class XmpManager:
 
         Args:
             path (str): The path to the image file.
+            strict (bool): Raise on read errors instead of returning an empty list.
 
         Returns:
             list: A list of dictionaries, where each dictionary represents a region.
                   Returns an empty list if exiv2 is not available or on error.
         """
+        if strict and (not exiv2 or not path or not os.path.exists(path)):
+            raise IOError(f"Cannot read regions from {path}: exiv2 or image unavailable")
         if not exiv2 or not path or not os.path.exists(path):
             return []
 
@@ -92,7 +95,11 @@ class XmpManager:
             for idx, data in sorted(regions_list.items()):
                 if 'x' in data and 'y' in data and 'w' in data and 'h' in data:
                     regions.append(data)
+                elif strict:
+                    raise ValueError(f"Incomplete XMP region {idx} in {path}")
         except Exception as e:
+            if strict:
+                raise
             print(f"Error loading regions from XMP: {e}")
         return regions
 

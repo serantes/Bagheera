@@ -26,6 +26,8 @@ from .metadatamanager import XattrManager, load_common_metadata
 
 logger = logging.getLogger(__name__)
 
+MIN_FACE_SIZE_PIXELS = 40
+
 _face_recognition_module = None
 _mediapipe_module = None
 _mp_python = None
@@ -529,42 +531,51 @@ class ImageController(QObject):
         }
         return self._clamp_and_validate_region(new_region)
 
-    def _detect_faces_face_recognition(self, path):
+    def _detect_faces_face_recognition(self, path, strict=False):
         """Detects faces using the 'face_recognition' library."""
         try:
             face_recognition = _get_face_recognition()
         except Exception as e:
             logger.error(f"Failed to import face_recognition: {e}")
+            if strict:
+                raise
             return []
 
         new_faces = []
         try:
             image = face_recognition.load_image_file(path)
-            face_locations = face_recognition.face_locations(image)
+            face_locations = face_recognition.face_locations(
+                image, number_of_times_to_upsample=0)
             h, w, _ = image.shape
             for (top, right, bottom, left) in face_locations:
                 box_w = right - left
                 box_h = bottom - top
-                validated_face = self._create_region_from_pixels(
+                validated_face = self._create_face_region_from_pixels(
                     left, top, box_w, box_h, w, h, 'Face'
                 )
                 if validated_face:
                     new_faces.append(validated_face)
         except Exception as e:
+            if strict:
+                raise
             print(f"Error during face_recognition detection: {e}")
         return new_faces
 
-    def _detect_faces_mediapipe(self, path):
+    def _detect_faces_mediapipe(self, path, strict=False):
         """Detects faces using the 'mediapipe' library with the new Tasks API."""
         try:
             mp, python, vision = _get_mediapipe()
         except Exception as e:
             logger.error(f"Failed to import mediapipe: {e}")
+            if strict:
+                raise
             return []
 
         new_faces = []
 
         if not os.path.exists(MEDIAPIPE_FACE_MODEL_PATH):
+            if strict:
+                raise FileNotFoundError(MEDIAPIPE_FACE_MODEL_PATH)
             print(f"MediaPipe model not found at: {MEDIAPIPE_FACE_MODEL_PATH}")
             print("Please download 'blaze_face_short_range.tflite' and place it there.")
             print(f"URL: {MEDIAPIPE_FACE_MODEL_URL}")
@@ -574,7 +585,7 @@ class ImageController(QObject):
             base_options = python.BaseOptions(
                 model_asset_path=MEDIAPIPE_FACE_MODEL_PATH)
             options = vision.FaceDetectorOptions(base_options=base_options,
-                                                 min_detection_confidence=0.5)
+                                                 min_detection_confidence=0.7)
 
             # Silence MediaPipe warnings (stderr) during initialization
             stderr_fd = 2
@@ -595,7 +606,7 @@ class ImageController(QObject):
                 img_h, img_w = mp_image.height, mp_image.width
                 for detection in detection_result.detections:
                     bbox = detection.bounding_box  # This is in pixels
-                    validated_face = self._create_region_from_pixels(
+                    validated_face = self._create_face_region_from_pixels(
                         bbox.origin_x, bbox.origin_y, bbox.width, bbox.height,
                         img_w, img_h, 'Face'
                     )
@@ -603,10 +614,19 @@ class ImageController(QObject):
                         new_faces.append(validated_face)
 
         except Exception as e:
+            if strict:
+                raise
             print(f"Error during MediaPipe detection: {e}")
         return new_faces
 
-    def _detect_objects_mediapipe(self, path, allowlist, max_results, region_type):
+    def _create_face_region_from_pixels(self, x, y, w, h, img_w, img_h,
+                                        region_type):
+        if w < MIN_FACE_SIZE_PIXELS or h < MIN_FACE_SIZE_PIXELS:
+            return None
+        return self._create_region_from_pixels(
+            x, y, w, h, img_w, img_h, region_type)
+
+    def _detect_objects_mediapipe(self, path, allowlist, max_results, region_type, strict=False):
         """
         Generic method to detect objects using MediaPipe ObjectDetector.
 
@@ -620,11 +640,15 @@ class ImageController(QObject):
             mp, python, vision = _get_mediapipe()
         except Exception as e:
             logger.error(f"Failed to import mediapipe: {e}")
+            if strict:
+                raise
             return []
 
         new_regions = []
 
         if not os.path.exists(MEDIAPIPE_OBJECT_MODEL_PATH):
+            if strict:
+                raise FileNotFoundError(MEDIAPIPE_OBJECT_MODEL_PATH)
             print(f"MediaPipe model not found at: {MEDIAPIPE_OBJECT_MODEL_PATH}")
             print("Please download 'efficientdet_lite0.tflite' and place it there.")
             print(f"URL: {MEDIAPIPE_OBJECT_MODEL_URL}")
@@ -666,18 +690,22 @@ class ImageController(QObject):
                         new_regions.append(validated_region)
 
         except Exception as e:
+            if strict:
+                raise
             print(f"Error during MediaPipe {region_type} detection: {e}")
         return new_regions
 
-    def _detect_pets_mediapipe(self, path):
+    def _detect_pets_mediapipe(self, path, strict=False):
         """Detects pets using the 'mediapipe' library object detection."""
+        if strict:
+            return self._detect_objects_mediapipe(path, ["cat", "dog"], 5, "Pet", strict=True)
         return self._detect_objects_mediapipe(path, ["cat", "dog"], 5, "Pet")
 
     def _detect_bodies_mediapipe(self, path):
         """Detects bodies using the 'mediapipe' library object detection."""
         return self._detect_objects_mediapipe(path, ["person"], 10, "Body")
 
-    def detect_faces(self):
+    def detect_faces(self, strict=False):
         """
         Detects faces using a configured or available detection engine.
 
@@ -704,18 +732,32 @@ class ImageController(QObject):
                 engines_to_try.append(engine)
 
         all_faces = []
+        errors = []
         for engine in engines_to_try:
             if engine == "mediapipe":
-                all_faces = self._detect_faces_mediapipe(path)
+                detector = self._detect_faces_mediapipe
             elif engine == "face_recognition":
-                all_faces = self._detect_faces_face_recognition(path)
+                detector = self._detect_faces_face_recognition
+            else:
+                continue
 
+            if strict:
+                try:
+                    all_faces = detector(path, strict=True)
+                except Exception as error:
+                    logger.warning("Face detector %s failed: %s", engine, error)
+                    errors.append(error)
+                    continue
+            else:
+                all_faces = detector(path)
             if all_faces:
                 break  # Stop after the first successful detection.
 
+        if strict and not all_faces and errors:
+            raise RuntimeError(f"Face detection failed: {errors[-1]}") from errors[-1]
         return all_faces
 
-    def detect_pets(self):
+    def detect_pets(self, strict=False):
         """
         Detects pets using a configured or available detection engine.
         """
@@ -730,8 +772,10 @@ class ImageController(QObject):
         engine = APP_CONFIG.get("pet_detection_engine", "mediapipe")
 
         if engine == "mediapipe":
-            return self._detect_pets_mediapipe(path)
+            return self._detect_pets_mediapipe(path, strict=True) if strict else self._detect_pets_mediapipe(path)
 
+        if strict:
+            raise ValueError(f"Unsupported pet detection engine: {engine}")
         return []
 
     def detect_bodies(self):
