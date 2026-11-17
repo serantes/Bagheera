@@ -1083,6 +1083,8 @@ class FaceCanvas(QLabel):
                     suggested = history[0] if history and APP_CONFIG.get(
                         setting_key, False) else ""
 
+                    if QApplication.platformName().startswith("wayland"):
+                        self.image_panel.viewer._awaiting_face_dialog_activation = True
                     full_tag, updated_history, ok = FaceNameDialog.get_name(
                         self.image_panel, history, current_name=suggested,
                         main_win=self.image_panel.main_win, region_type=region_type)
@@ -1612,6 +1614,8 @@ class ImageViewer(QWidget):
 
         self._first_load = first_load
         self._is_persistent = persistent
+        self._awaiting_face_dialog_activation = False
+        self._resize_after_face_dialog_activation = False
         self.crop_mode = False
         self._wheel_scroll_accumulator = 0
         self.filmstrip_loader = None
@@ -1915,6 +1919,19 @@ class ImageViewer(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.update_highlight()
+
+    def event(self, event):
+        result = super().event(event)
+        if (event.type() == QEvent.WindowActivate
+                and getattr(self, "_awaiting_face_dialog_activation", False)):
+            self._awaiting_face_dialog_activation = False
+            if self._resize_after_face_dialog_activation:
+                self._resize_after_face_dialog_activation = False
+                if not self.isFullScreen():
+                    # Wayland can restore the old size while reactivating the viewer.
+                    QTimer.singleShot(
+                        0, self, lambda: self.update_view(resize_win=True))
+        return result
 
     def reset_inactivity_timer(self):
         """Resets the inactivity timer and restores controls visibility."""

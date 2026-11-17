@@ -1,52 +1,126 @@
 from types import SimpleNamespace
 
+from PySide6.QtCore import QPoint, QRect, QTimer, Qt
+from PySide6.QtGui import QPixmap
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication
+
 from bagheeraview.core import app as app_module
+from bagheeraview.core import imageviewer
 from bagheeraview.core.app import MainWindow
 from bagheeraview.core.constants import UITexts
 
 
-def test_filter_replacement_resizes_viewer(monkeypatch):
-    class Viewer:
-        _is_persistent = False
+def test_filter_replacement_resizes_viewer(monkeypatch, tmp_path):
+    qapp = QApplication.instance() or QApplication([])
 
-        def __init__(self):
-            self.controller = SimpleNamespace(
-                image_list=["/photos/old.jpg"],
-                index=0,
-                get_current_path=lambda: self.controller.image_list[
-                    self.controller.index],
-                update_list=self._update_list,
-            )
-            self.resize_requests = []
+    class Screen:
+        def availableGeometry(self):
+            return QRect(0, 0, 800, 600)
 
-        def _update_list(self, paths, index=None, *_args):
-            self.controller.image_list = paths
-            if index is not None:
-                self.controller.index = index
+    screen = Screen()
+    monkeypatch.setattr(imageviewer.ImageViewer, "inhibit_screensaver", lambda _: None)
+    monkeypatch.setattr(imageviewer.ImageViewer, "uninhibit_screensaver", lambda _: None)
+    monkeypatch.setitem(imageviewer.APP_CONFIG, "viewer_auto_resize_window", True)
 
-        def isVisible(self):
-            return True
+    old_path = tmp_path / "old.png"
+    new_path = tmp_path / "new.png"
+    assert QPixmap(100, 75).save(str(old_path))
+    assert QPixmap(4000, 3000).save(str(new_path))
 
-        def populate_filmstrip(self):
-            pass
+    viewer = imageviewer.ImageViewer(
+        None, [str(old_path), str(new_path)], 0, first_load=False)
+    viewer.screen = lambda: screen
+    viewer.resize(200, 150)
+    viewer.show()
+    qapp.processEvents()
+    initial_size = viewer.size()
 
-        def load_and_fit_image(self, resize_win=False):
-            self.resize_requests.append(resize_win)
-
-        def sync_filmstrip_selection(self, _index):
-            pass
-
-    viewer = Viewer()
     window = SimpleNamespace(
         viewers=[viewer],
-        _known_paths={"/photos/old.jpg", "/photos/new.jpg"},
+        _known_paths={str(old_path), str(new_path)},
         found_items_data=[],
     )
-    monkeypatch.setattr(app_module, "ImageViewer", Viewer)
 
-    MainWindow.update_viewers_filter(window, ["/photos/new.jpg"])
+    MainWindow.update_viewers_filter(window, [str(new_path)])
+    qapp.processEvents()
 
-    assert viewer.resize_requests == [True]
+    assert viewer.controller.get_current_path() == str(new_path)
+    assert viewer.size().width() > initial_size.width()
+    assert viewer.size().height() > initial_size.height()
+    viewer.close()
+
+
+def test_filter_replacement_after_naming_face(monkeypatch, tmp_path):
+    qapp = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(imageviewer.ImageViewer, "inhibit_screensaver", lambda _: None)
+    monkeypatch.setattr(imageviewer.ImageViewer, "uninhibit_screensaver", lambda _: None)
+    monkeypatch.setattr(imageviewer.ImageViewer, "_update_person_recognition_for_face",
+                        lambda *_args: None)
+    monkeypatch.setitem(imageviewer.APP_CONFIG, "viewer_auto_resize_window", True)
+
+    old_path = tmp_path / "old.png"
+    new_path = tmp_path / "new.png"
+    assert QPixmap(300, 200).save(str(old_path))
+    assert QPixmap(4000, 3000).save(str(new_path))
+    viewer = imageviewer.ImageViewer(
+        None, [str(old_path), str(new_path)], 0, first_load=False)
+    viewer.show()
+    QTest.qWait(200)
+    initial_size = viewer.size()
+    window = SimpleNamespace(
+        viewers=[viewer],
+        _known_paths={str(old_path), str(new_path)},
+        found_items_data=[],
+        filmstrip_position="bottom",
+        is_wayland=False,
+        isVisible=lambda: True,
+        face_names_history=[],
+        tag_edit_widget=SimpleNamespace(available_tags=["Person/Test"]),
+    )
+    window.update_metadata_for_path = lambda *_args: (
+        MainWindow.update_viewers_filter(window, [str(new_path)]))
+    viewer.main_win = window
+    viewer.active_pane.main_win = window
+    viewer.controller.show_regions = True
+    monkeypatch.setattr(viewer.controller, "save_regions", lambda: None)
+
+    dialogs = []
+
+    def accept_name():
+        dialog = qapp.activeModalWidget()
+        dialogs.append(dialog)
+        if isinstance(dialog, imageviewer.FaceNameDialog):
+            dialog.name_input.name_to_tags_map["Test"] = ["Person/Test"]
+            dialog.name_input.name_combo.setEditText("Test")
+            QTest.keyClick(dialog.name_input.name_combo.lineEdit(), Qt.Key_Return)
+
+    QTimer.singleShot(100, accept_name)
+    timeout = QTimer()
+    timeout.setSingleShot(True)
+    timeout.timeout.connect(
+        lambda: qapp.activeModalWidget().reject()
+        if qapp.activeModalWidget() else None)
+    timeout.start(1500)
+    canvas = viewer.canvas
+    canvas.drawing = True
+    canvas.drawing_button = Qt.LeftButton
+    canvas.current_rect = QRect(20, 20, 80, 80)
+    QTest.mouseRelease(canvas, Qt.LeftButton, pos=QPoint(100, 100))
+    timeout.stop()
+    QTest.qWait(500)
+
+    try:
+        assert len(dialogs) == 1
+        assert isinstance(dialogs[0], imageviewer.FaceNameDialog)
+        assert viewer.controller.get_current_path() == str(new_path)
+        assert viewer.size().width() > initial_size.width()
+        assert viewer.size().height() > initial_size.height()
+        assert viewer.scroll_area.viewport().width() >= viewer.canvas.width()
+        assert viewer.scroll_area.viewport().height() >= viewer.canvas.height()
+    finally:
+        viewer.close()
+        qapp.processEvents()
 
 
 def test_filter_counts_only_visible_and_total_images():

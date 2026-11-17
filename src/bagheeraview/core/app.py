@@ -5675,6 +5675,8 @@ class MainWindow(QMainWindow):
 
             # Reload image if it changed, otherwise just sync selection
             if not w._is_persistent and w.controller.get_current_path() != current_path:
+                if w._awaiting_face_dialog_activation:
+                    w._resize_after_face_dialog_activation = True
                 w.load_and_fit_image(resize_win=True)
             else:
                 w.sync_filmstrip_selection(w.controller.index)
