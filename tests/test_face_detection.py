@@ -44,7 +44,7 @@ def test_load_mp_image_pil_conversion(tmp_path):
 
 def test_detect_faces_mediapipe_webp(qapp, tmp_path):
     img_path = str(tmp_path / "test.webp")
-    img = Image.new("RGB", (100, 100), color=(0, 255, 0))
+    img = Image.new("RGB", (200, 200), color=(0, 255, 0))
     img.save(img_path, format="WEBP")
 
     controller = ImageController([], -1)
@@ -58,8 +58,8 @@ def test_detect_faces_mediapipe_webp(qapp, tmp_path):
         mock_detection = MagicMock()
         mock_detection.bounding_box.origin_x = 10
         mock_detection.bounding_box.origin_y = 10
-        mock_detection.bounding_box.width = 40
-        mock_detection.bounding_box.height = 40
+        mock_detection.bounding_box.width = 126
+        mock_detection.bounding_box.height = 126
 
         mock_result = MagicMock()
         mock_result.detections = [mock_detection]
@@ -67,8 +67,8 @@ def test_detect_faces_mediapipe_webp(qapp, tmp_path):
         mock_vision.FaceDetector.create_from_options.return_value = mock_detector
 
         mock_mp_image = MagicMock()
-        mock_mp_image.width = 100
-        mock_mp_image.height = 100
+        mock_mp_image.width = 200
+        mock_mp_image.height = 200
         mock_mp.Image.return_value = mock_mp_image
 
         with patch("bagheeraview.core.imagecontroller._get_mediapipe", return_value=(mock_mp, mock_python, mock_vision)), \
@@ -78,8 +78,8 @@ def test_detect_faces_mediapipe_webp(qapp, tmp_path):
             faces = controller._detect_faces_mediapipe(img_path)
             assert len(faces) == 1
             assert faces[0]["type"] == "Face"
-            assert faces[0]["w"] == 0.4
-            assert faces[0]["h"] == 0.4
+            assert faces[0]["w"] == 0.63
+            assert faces[0]["h"] == 0.63
     finally:
         controller.cleanup()
 
@@ -112,6 +112,21 @@ def test_detect_faces_mediapipe_filters_tiny_regions(qapp, tmp_path):
             assert controller._detect_faces_mediapipe(img_path) == []
             options = mock_vision.FaceDetectorOptions.call_args.kwargs
             assert options["min_detection_confidence"] == 0.7
+    finally:
+        controller.cleanup()
+
+
+def test_minimum_region_size_applies_to_all_automatic_region_types(
+        qapp):
+    controller = ImageController([], -1)
+    try:
+        for region_type in ("Face", "Pet", "Body"):
+            assert controller._create_region_from_pixels(
+                10, 10, 125, 126, 200, 200, region_type) is None
+            assert controller._create_region_from_pixels(
+                10, 10, 126, 125, 200, 200, region_type) is None
+            assert controller._create_region_from_pixels(
+                10, 10, 126, 126, 200, 200, region_type) is not None
     finally:
         controller.cleanup()
 

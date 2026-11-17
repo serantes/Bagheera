@@ -791,3 +791,33 @@ class PersonRecognitionDB:
                 logger.info("Removed %d person recognition record(s) from %s",
                             len(deleted_ids), path)
             return len(deleted_ids)
+
+    def remove_face_for_region(self, path, region):
+        """Remove recognition data associated with a Face region.
+
+        Prefer the record stored for this exact image and region. If none is
+        found, identify the region again and remove the matched record only
+        when its person name matches the region's assigned name.
+        """
+        if (not path or not isinstance(region, dict)
+                or region.get("type", "Face") != "Face"):
+            return False
+
+        if self.remove_face_by_source(path, region):
+            return True
+
+        encoding = extract_face_encoding(path, region)
+        if not encoding:
+            return False
+
+        assigned_name = region.get("name")
+        matched_name, face_id = self.identify_person(encoding)
+        if not assigned_name or not matched_name or not face_id:
+            return False
+        assigned_name = str(assigned_name)
+        if (matched_name != assigned_name
+                and ("/" in assigned_name
+                     or matched_name.rsplit("/", 1)[-1] != assigned_name)):
+            return False
+
+        return self.remove_face(face_id)

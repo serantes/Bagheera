@@ -669,6 +669,7 @@ _UI_TEXTS = {
         "RENAME_TAG_LABEL": "Tag path:",
         "RENAME_TAG_ITEMS_COUNT": "Number of elements with this tag: {}",
         "BATCH_REGIONS_TITLE": "Regions",
+        "BATCH_REGIONS_SCAN_TITLE": "Scan for persons && pets",
         "BATCH_REGION_LABEL": "Region:",
         "BATCH_FACES": "Faces",
         "BATCH_PETS": "Pets",
@@ -756,6 +757,11 @@ _UI_TEXTS = {
         "ADD_LANDMARK_LABEL": "Name:",
         "NEXT_AREA": "Next region: {}",
         "DELETE_AREA_TITLE": "Delete region",
+        "REMOVE_PERSON_RECOGNITION_DATA": "Delete person recognition data",
+        "PERSON_RECOGNITION_TITLE": "Person recognition",
+        "PERSON_RECOGNITION_DATA_REMOVED": "Person recognition data deleted.",
+        "PERSON_RECOGNITION_DATA_NOT_FOUND":
+        "No person recognition data was found for this region.",
         "CREATE_TAG_TITLE": "Create Tag",
         "CREATE_TAG_TEXT": "The tag for '{}' does not exist. Do you want to create a "
         "new one?",
@@ -1503,6 +1509,7 @@ _UI_TEXTS = {
         "RENAME_TAG_LABEL": "Ruta del tag:",
         "RENAME_TAG_ITEMS_COUNT": "Nº de elementos con este tag: {}",
         "BATCH_REGIONS_TITLE": "Regiones",
+        "BATCH_REGIONS_SCAN_TITLE": "Buscar personas y mascotas",
         "BATCH_REGION_LABEL": "Región:",
         "BATCH_FACES": "Caras",
         "BATCH_PETS": "Mascotas",
@@ -1592,6 +1599,13 @@ _UI_TEXTS = {
         "ADD_LANDMARK_LABEL": "Nombre:",
         "NEXT_AREA": "Próxima región: {}",
         "DELETE_AREA_TITLE": "Eliminar región",
+        "REMOVE_PERSON_RECOGNITION_DATA":
+        "Eliminar datos de reconocimiento de personas",
+        "PERSON_RECOGNITION_TITLE": "Reconocimiento de personas",
+        "PERSON_RECOGNITION_DATA_REMOVED":
+        "Se eliminaron los datos de reconocimiento de personas.",
+        "PERSON_RECOGNITION_DATA_NOT_FOUND":
+        "No se encontraron datos de reconocimiento de personas para esta región.",
         "CREATE_TAG_TITLE": "Crear Etiqueta",
         "CREATE_TAG_TEXT": "La etiqueta para '{}' no existe. ¿Deseas crear una nueva?",
         "NEW_PERSON_TAG_TITLE": "Nueva Etiqueta de Persona",
@@ -2348,6 +2362,7 @@ _UI_TEXTS = {
         "RENAME_TAG_LABEL": "Ruta do tag:",
         "RENAME_TAG_ITEMS_COUNT": "Nº de elementos con este tag: {}",
         "BATCH_REGIONS_TITLE": "Rexións",
+        "BATCH_REGIONS_SCAN_TITLE": "Buscar persoas e mascotas",
         "BATCH_REGION_LABEL": "Rexión:",
         "BATCH_FACES": "Caras",
         "BATCH_PETS": "Mascotas",
@@ -2437,6 +2452,13 @@ _UI_TEXTS = {
         "ADD_LANDMARK_LABEL": "Nome:",
         "NEXT_AREA": "Próxima rexión: {}",
         "DELETE_AREA_TITLE": "Eliminar rexión",
+        "REMOVE_PERSON_RECOGNITION_DATA":
+        "Eliminar datos de recoñecemento de persoas",
+        "PERSON_RECOGNITION_TITLE": "Recoñecemento de persoas",
+        "PERSON_RECOGNITION_DATA_REMOVED":
+        "Elimináronse os datos de recoñecemento de persoas.",
+        "PERSON_RECOGNITION_DATA_NOT_FOUND":
+        "Non se atoparon datos de recoñecemento de persoas para esta rexión.",
         "CREATE_TAG_TITLE": "Crear Etiqueta",
         "CREATE_TAG_TEXT": "A etiqueta para '{}' non existe. Desexas crear unha nova?",
         "NEW_PERSON_TAG_TITLE": "Nova Etiqueta de Persoa",

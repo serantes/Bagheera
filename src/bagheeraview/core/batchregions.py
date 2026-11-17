@@ -170,11 +170,25 @@ class BatchRegionsDialog(QDialog):
         if self.cancelled or self.position >= len(self.paths):
             self.finish()
             return
+        path = self.paths[self.position]
+        try:
+            existing = XmpManager.load_regions(path, strict=True)
+        except Exception as error:
+            logger.exception("Could not check existing regions for %s", path)
+            QMessageBox.critical(self, UITexts.ERROR, f"{path}\n{error}")
+            self.finish()
+            return
+        if any(region.get("type", "Face") == self.region_type
+               for region in existing):
+            self.position += 1
+            self.progress_bar.setValue(self.position)
+            QTimer.singleShot(0, self.next_image)
+            return
         self.controller.image_list = [self.paths[self.position]]
         self.controller.index = 0
         self.worker = RegionDetectionThread(
             self.controller, self.region_type,
-            self.recognition_enabled and not self.forced_tag, self)
+            self.recognition_enabled, self)
         self.worker.finished.connect(self.detection_finished)
         self.worker.finished.connect(self.worker.deleteLater)
         self.worker.start()
@@ -203,6 +217,9 @@ class BatchRegionsDialog(QDialog):
         if not detected:
             return
         existing = XmpManager.load_regions(path, strict=True)
+        if any(region.get("type", "Face") == self.region_type
+               for region in existing):
+            return
         metadata = load_common_metadata(path)
         self.controller._current_tags = metadata.tags
         self.controller._current_rating = metadata.rating
@@ -211,14 +228,22 @@ class BatchRegionsDialog(QDialog):
         rec_db = None
         for index, region in enumerate(detected):
             if any(_regions_iou(region, other) > FACE_REGION_IOU_THRESHOLD
-                   for other in existing + additions):
+                   for other in additions):
                 continue
             encoding = encodings[index] if index < len(encodings) else None
             tag = self.forced_tag
-            if not tag and self.recognition_enabled and encoding:
+            if (self.region_type == "Face" and self.recognition_enabled
+                    and encoding):
                 if rec_db is None:
                     rec_db = PersonRecognitionDB.get_instance()
-                tag, _ = rec_db.identify_person(encoding)
+                matched_tag, _ = rec_db.identify_person(encoding)
+                if self.forced_tag:
+                    matched_name = matched_tag.rsplit("/", 1)[-1] if matched_tag else ""
+                    forced_name = self.forced_tag.rsplit("/", 1)[-1]
+                    if matched_name != forced_name:
+                        manual_faces.append((region, encoding, self.forced_tag))
+                else:
+                    tag = matched_tag
             if not tag and self.recognition_enabled and APP_CONFIG.get(
                     "unrecognized_person_action", "ask") == "assign_tag":
                 tag = APP_CONFIG.get("unrecognized_person_tag", "Unrecognized")

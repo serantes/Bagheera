@@ -28,6 +28,7 @@ from .constants import (
 )
 from .faiss_worker import FAISSSimilarSearchWorker
 from .imageviewer import ImagePane, rating_menu_label
+from .personrecognition import PersonRecognitionDB
 from .propertiesdialog import PropertiesDialog
 from .widgets import MiddleElidedLabel
 
@@ -529,6 +530,10 @@ class SimilarImagesDialog(QDialog):
                                        UITexts.DELETE_AREA_TITLE)
         action_rename = menu.addAction(QIcon.fromTheme("edit-rename"),
                                        UITexts.RENAME_REGION_TITLE)
+        action_remove_recognition = None
+        if clicked_face.get("type", "Face") == "Face":
+            action_remove_recognition = menu.addAction(
+                UITexts.REMOVE_PERSON_RECOGNITION_DATA)
         res = menu.exec(global_pos)
 
         if res == action_delete:
@@ -542,6 +547,14 @@ class SimilarImagesDialog(QDialog):
             canvas.update()
         elif res == action_rename:
             self.rename_face(clicked_face)
+        elif res == action_remove_recognition:
+            path = controller.get_current_path()
+            removed = bool(path) and PersonRecognitionDB.get_instance(
+            ).remove_face_for_region(path, clicked_face)
+            message = (UITexts.PERSON_RECOGNITION_DATA_REMOVED if removed else
+                       UITexts.PERSON_RECOGNITION_DATA_NOT_FOUND)
+            QMessageBox.information(
+                self, UITexts.PERSON_RECOGNITION_TITLE, message)
         return True
 
     def _handle_permanent_delete(self, path):

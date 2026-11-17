@@ -26,7 +26,7 @@ from .metadatamanager import XattrManager, load_common_metadata
 
 logger = logging.getLogger(__name__)
 
-MIN_FACE_SIZE_PIXELS = 40
+MIN_REGION_SIZE_PIXELS = 126
 
 _face_recognition_module = None
 _mediapipe_module = None
@@ -515,6 +515,9 @@ class ImageController(QObject):
         Returns:
             dict: Validated normalized region or None.
         """
+        if w < MIN_REGION_SIZE_PIXELS or h < MIN_REGION_SIZE_PIXELS:
+            return None
+
         if img_w <= 0 or img_h <= 0:
             return None
 
@@ -621,8 +624,6 @@ class ImageController(QObject):
 
     def _create_face_region_from_pixels(self, x, y, w, h, img_w, img_h,
                                         region_type):
-        if w < MIN_FACE_SIZE_PIXELS or h < MIN_FACE_SIZE_PIXELS:
-            return None
         return self._create_region_from_pixels(
             x, y, w, h, img_w, img_h, region_type)
 

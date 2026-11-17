@@ -92,3 +92,39 @@ def test_open_viewer_for_paths_starts_at_requested_image(monkeypatch):
     assert main_window.viewers == [viewer]
     main_window._setup_viewer_sync.assert_called_once_with(viewer)
     viewer.show.assert_called_once_with()
+
+
+def test_face_context_menu_offers_person_recognition_removal(
+        monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    region = {"type": "Face"}
+    viewer = SimpleNamespace(
+        controller=SimpleNamespace(show_regions=True),
+        canvas=SimpleNamespace(mapFromGlobal=lambda pos: pos),
+        active_pane=SimpleNamespace(_get_clicked_face=lambda _pos: region),
+        remove_person_recognition_data=Mock(),
+        rename_face=Mock(),
+        remove_region=Mock(),
+    )
+    menu_actions = []
+
+    class FakeMenu:
+        def __init__(self, *_args):
+            pass
+
+        def addAction(self, text):
+            action = SimpleNamespace(text=text)
+            menu_actions.append(action)
+            return action
+
+        def exec(self, *_args):
+            return menu_actions[-1]
+
+    monkeypatch.setattr(imageviewer_module, "QMenu", FakeMenu)
+    event = Mock()
+    event.globalPos.return_value = object()
+
+    assert ImageViewer._show_face_context_menu(viewer, event) is True
+    assert menu_actions[-1].text == UITexts.REMOVE_PERSON_RECOGNITION_DATA
+    viewer.remove_person_recognition_data.assert_called_once_with(region)
+    app.processEvents()

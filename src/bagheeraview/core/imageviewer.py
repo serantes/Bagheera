@@ -2921,6 +2921,10 @@ class ImageViewer(QWidget):
         menu = QMenu(self)
         action_del = menu.addAction(UITexts.DELETE_AREA_TITLE)
         action_ren = menu.addAction(UITexts.RENAME_REGION_TITLE)
+        action_remove_recognition = None
+        if clicked_face.get("type", "Face") == "Face":
+            action_remove_recognition = menu.addAction(
+                UITexts.REMOVE_PERSON_RECOGNITION_DATA)
         res = menu.exec(event.globalPos())
 
         if res == action_del:
@@ -2935,6 +2939,8 @@ class ImageViewer(QWidget):
                 self.canvas.update()
         elif res == action_ren:
             self.rename_face(clicked_face)
+        elif res == action_remove_recognition:
+            self.remove_person_recognition_data(clicked_face)
         return True
 
     def remove_region(self, region_to_remove):
@@ -2962,6 +2968,14 @@ class ImageViewer(QWidget):
             "h": region_to_remove.get("h"),
         }
         rec_db.remove_face_by_source(current_path, source)
+
+    def remove_person_recognition_data(self, face_region):
+        current_path = self.controller.get_current_path()
+        removed = bool(current_path) and PersonRecognitionDB.get_instance(
+        ).remove_face_for_region(current_path, face_region)
+        message = (UITexts.PERSON_RECOGNITION_DATA_REMOVED if removed else
+                   UITexts.PERSON_RECOGNITION_DATA_NOT_FOUND)
+        QMessageBox.information(self, UITexts.PERSON_RECOGNITION_TITLE, message)
 
     def rename_face(self, face_to_rename):
         """Opens a dialog to rename a specific face/area."""

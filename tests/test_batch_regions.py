@@ -77,18 +77,93 @@ def prepare_save(dialog, monkeypatch, existing):
     return writes, tags
 
 
-def test_forced_face_overrides_recognition_and_preserves_existing(window, monkeypatch):
+def test_forced_face_is_saved_for_recognition_and_preserves_existing(
+        window, monkeypatch):
     dialog = batchregions.BatchRegionsDialog(window)
-    existing = [dict(face(), name="Existing")]
+    existing = [dict(face(), name="Cat", type="Pet")]
     writes, tags = prepare_save(dialog, monkeypatch, existing)
     dialog.region_type = "Face"
     dialog.forced_tag = "People/Forced"
     dialog.recognition_enabled = True
+    stored = []
+    identified = []
+    db = SimpleNamespace(
+        identify_person=lambda encoding: identified.append(encoding) or (
+            "People/Existing", "face-1"),
+        add_face=lambda *args, **kwargs: stored.append((args, kwargs)))
     monkeypatch.setattr(batchregions.PersonRecognitionDB, "get_instance",
-                        lambda: pytest.fail("forced tags must not use recognition"))
-    dialog.save_detections("/a.jpg", [face(), face(0.8)], [])
-    assert writes[0][1] == [existing[0], dict(face(0.8), name="Forced")]
+                        lambda: db)
+    dialog.save_detections("/a.jpg", [face()], [[2]])
+    assert writes[0][1] == [existing[0], dict(face(), name="Forced")]
     assert tags == [("People/Forced", True)]
+    assert identified == [[2]]
+    assert len(stored) == 1
+    assert stored[0][0][1] == [2]
+    assert stored[0][0][2] == "People/Forced"
+    assert stored[0][1]["source"] == {
+        "path": "/a.jpg", "x": 0.3, "y": 0.3, "w": 0.2, "h": 0.2}
+
+
+@pytest.mark.parametrize("region_type", ["Face", "Pet"])
+def test_existing_region_of_scanned_type_skips_image(
+        window, monkeypatch, region_type):
+    dialog = batchregions.BatchRegionsDialog(window)
+    existing = [dict(face(), name="Existing", type=region_type)]
+    writes, tags = prepare_save(dialog, monkeypatch, existing)
+    dialog.region_type = region_type
+    dialog.forced_tag = "People/Forced"
+    dialog.recognition_enabled = True
+    monkeypatch.setattr(
+        batchregions.PersonRecognitionDB, "get_instance",
+        lambda: pytest.fail("skipped images must not identify faces"))
+
+    detected = [dict(face(), type=region_type)]
+    dialog.save_detections("/a.jpg", detected, [[1]] if region_type == "Face" else [])
+
+    assert writes == []
+    assert tags == []
+
+
+@pytest.mark.parametrize("region_type", ["Face", "Pet"])
+def test_batch_advances_without_detecting_existing_region_type(
+        window, monkeypatch, region_type):
+    dialog = batchregions.BatchRegionsDialog(window)
+    dialog.paths = ["/a.jpg"]
+    dialog.position = 0
+    dialog.region_type = region_type
+    monkeypatch.setattr(
+        batchregions.XmpManager, "load_regions",
+        lambda _path, strict=False: [dict(face(), type=region_type)])
+    scheduled = []
+    monkeypatch.setattr(batchregions.QTimer, "singleShot",
+                        lambda _delay, callback: scheduled.append(callback))
+
+    dialog.next_image()
+
+    assert dialog.position == 1
+    assert dialog.progress_bar.value() == 1
+    assert dialog.worker is None
+    assert len(scheduled) == 1
+
+
+def test_forced_face_with_matching_region_name_is_not_relearned(
+        window, monkeypatch):
+    dialog = batchregions.BatchRegionsDialog(window)
+    writes, _tags = prepare_save(dialog, monkeypatch, [])
+    dialog.region_type = "Face"
+    dialog.forced_tag = "People/Alice"
+    dialog.recognition_enabled = True
+    stored = []
+    db = SimpleNamespace(
+        identify_person=lambda _encoding: ("Family/Alice", "face-1"),
+        add_face=lambda *args, **kwargs: stored.append((args, kwargs)))
+    monkeypatch.setattr(batchregions.PersonRecognitionDB, "get_instance",
+                        lambda: db)
+
+    dialog.save_detections("/a.jpg", [face()], [[1]])
+
+    assert writes[0][1][0]["name"] == "Alice"
+    assert stored == []
 
 
 def test_face_recognition_and_unknown_setting(window, monkeypatch):
@@ -123,20 +198,26 @@ def test_save_failure_does_not_apply_tags(window, monkeypatch):
 def test_batch_runs_detection_and_completes(window, monkeypatch):
     dialog = batchregions.BatchRegionsDialog(window)
     dialog.tag_edit.setText("People/Forced")
+    monkeypatch.setitem(batchregions.APP_CONFIG, "person_recognition_enabled", True)
     monkeypatch.setattr(batchregions, "AVAILABLE_FACE_ENGINES", ["face_recognition"])
     monkeypatch.setattr(batchregions.xmpmanager, "exiv2", object())
+    monkeypatch.setattr(batchregions.XmpManager, "load_regions",
+                        lambda _path, strict=False: [])
     monkeypatch.setattr(batchregions.ImageController, "detect_faces",
                         lambda self, strict=False: [face()])
+    monkeypatch.setattr(batchregions, "extract_face_encoding",
+                        lambda _path, _region: [42])
     saved = []
     monkeypatch.setattr(dialog, "save_detections",
-                        lambda path, regions, encodings: saved.append(path))
+                        lambda path, regions, encodings: saved.append(
+                            (path, encodings)))
     dialog.start()
     for _ in range(200):
         if not dialog.running:
             break
         QTest.qWait(10)
     assert not dialog.running
-    assert saved == ["/a.jpg", "/b.jpg"]
+    assert saved == [("/a.jpg", [[42]]), ("/b.jpg", [[42]])]
     assert dialog.progress_bar.value() == 2
     assert dialog.result() == QDialog.Accepted
 
@@ -167,6 +248,8 @@ def test_cancel_waits_for_current_detection_without_saving(window, monkeypatch):
     dialog.tag_edit.setText("People/Forced")
     monkeypatch.setattr(batchregions, "AVAILABLE_FACE_ENGINES", ["face_recognition"])
     monkeypatch.setattr(batchregions.xmpmanager, "exiv2", object())
+    monkeypatch.setattr(batchregions.XmpManager, "load_regions",
+                        lambda _path, strict=False: [])
     started, release = Event(), Event()
 
     def detect(_self, strict=False):

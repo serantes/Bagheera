@@ -122,6 +122,76 @@ def test_remove_face_by_source(temp_db_dir):
     assert tag_after is None
 
 
+def test_remove_face_for_region_prefers_exact_source(temp_db_dir, monkeypatch):
+    db = PersonRecognitionDB(db_path=temp_db_dir)
+    path = os.path.join(temp_db_dir, "face_a.png")
+    region = {
+        "x": 0.5, "y": 0.5, "w": 0.4, "h": 0.4,
+        "name": "Carlos", "type": "Face",
+    }
+    db.add_face("id_1", [0.2 * i for i in range(128)], "Carlos",
+                source={"path": path, **region})
+    monkeypatch.setattr(
+        "bagheeraview.core.personrecognition.extract_face_encoding",
+        lambda *_args: pytest.fail("exact source removal must not re-identify"))
+
+    assert db.remove_face_for_region(path, region) is True
+    assert db.count() == 0
+
+
+def test_remove_face_for_region_falls_back_to_matching_name(
+        temp_db_dir, monkeypatch):
+    db = PersonRecognitionDB(db_path=temp_db_dir)
+    encoding = [0.2 * i for i in range(128)]
+    db.add_face("id_1", encoding, "People/Carlos",
+                source={"path": "/another/image.jpg", "x": 0.5, "y": 0.5,
+                        "w": 0.4, "h": 0.4})
+    monkeypatch.setattr(
+        "bagheeraview.core.personrecognition.extract_face_encoding",
+        lambda *_args: encoding)
+    region = {
+        "x": 0.5, "y": 0.5, "w": 0.4, "h": 0.4,
+        "name": "Carlos", "type": "Face",
+    }
+
+    assert db.remove_face_for_region("/current/image.jpg", region) is True
+    assert db.count() == 0
+
+
+def test_remove_face_for_region_keeps_nonmatching_identification(
+        temp_db_dir, monkeypatch):
+    db = PersonRecognitionDB(db_path=temp_db_dir)
+    encoding = [0.2 * i for i in range(128)]
+    db.add_face("id_1", encoding, "People/Carlos")
+    monkeypatch.setattr(
+        "bagheeraview.core.personrecognition.extract_face_encoding",
+        lambda *_args: encoding)
+    region = {
+        "x": 0.5, "y": 0.5, "w": 0.4, "h": 0.4,
+        "name": "Alberto", "type": "Face",
+    }
+
+    assert db.remove_face_for_region("/current/image.jpg", region) is False
+    assert db.count() == 1
+
+
+def test_remove_face_for_region_requires_full_path_match_when_available(
+        temp_db_dir, monkeypatch):
+    db = PersonRecognitionDB(db_path=temp_db_dir)
+    encoding = [0.2 * i for i in range(128)]
+    db.add_face("id_1", encoding, "People/Carlos")
+    monkeypatch.setattr(
+        "bagheeraview.core.personrecognition.extract_face_encoding",
+        lambda *_args: encoding)
+    region = {
+        "x": 0.5, "y": 0.5, "w": 0.4, "h": 0.4,
+        "name": "Family/Carlos", "type": "Face",
+    }
+
+    assert db.remove_face_for_region("/current/image.jpg", region) is False
+    assert db.count() == 1
+
+
 def test_add_face_keeps_similar_distinct_person(temp_db_dir):
     """A similar (non-identical) encoding tagged with a different name must
     not delete the previously stored person."""

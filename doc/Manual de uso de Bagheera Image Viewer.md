@@ -237,10 +237,12 @@ Panel flotante con miniaturas situadas en el borde inferior, superior o lateral 
 Permite identificar y marcar áreas de interés dentro de la fotografía.
 
 * **Detectar rostros y mascotas**: Analiza la imagen y detecta caras o animales automáticamente.
+* **Escaneo por lotes de regiones**: Omite las imágenes que ya contienen una región del tipo seleccionado (rostro o mascota).
 * **Añadir región manualmente**: Permite delimitar y etiquetar áreas concretas (rostros, mascotas, cuerpos, objetos o puntos de interés).
 * **Mostrar / Ocultar regiones**: Muestra u oculta los rectángulos delimitadores de las regiones detectadas.
 * **Renombrar región**: Cambia la etiqueta asignada a una región.
 * **Eliminar región**: Borra una marca de región.
+* **Eliminar datos de reconocimiento de personas** (solo rostros): Elimina el registro asociado a la región. Si no está vinculado directamente, vuelve a identificar el rostro y solo lo elimina si coincide con el nombre asignado.
 
 ### 4.7. Edición y manipulación
 
@@ -392,7 +394,7 @@ filtrar el árbol de **TODAS LAS ETIQUETAS**:
 Configuración para la detección de rostros, mascotas, cuerpos u objetos:
 
 * **Etiquetas de [Tipo de Región]**: Etiquetas asignadas por defecto al detectar una región (por ejemplo, `Person` para rostros).
-* **Motor de detección**: Librería utilizada para procesar la imagen. MediaPipe se prefiere para rostros cuando está disponible; los candidatos de menos de 40 píxeles por lado se descartan para reducir falsos positivos. También puedes cambiar el motor aquí.
+* **Motor de detección**: Librería utilizada para procesar la imagen. MediaPipe se prefiere para rostros cuando está disponible; las regiones detectadas automáticamente (rostros, mascotas y cuerpos) con menos de 126 píxeles de ancho o alto se descartan para reducir falsos positivos. También puedes cambiar el motor aquí.
 * **Color del cuadro**: Color del marco con el que se resaltan las regiones detectadas.
 * **Historial de nombres**: Número de nombres recientes guardados en el autocompletado.
 * **Usar último nombre por defecto**: Rellena el cuadro de nombre automáticamente con la última etiqueta utilizada.
