@@ -237,7 +237,7 @@ Panel flotante con miniaturas situadas en el borde inferior, superior o lateral 
 Permite identificar y marcar áreas de interés dentro de la fotografía.
 
 * **Detectar rostros y mascotas**: Analiza la imagen y detecta caras o animales automáticamente.
-* **Escaneo por lotes de regiones**: Omite las imágenes que ya contienen una región del tipo seleccionado (rostro o mascota).
+* **Escaneo por lotes de regiones**: Con la opción de imágenes mostradas activada, al iniciarse toma una copia de esa lista; los cambios posteriores de vista no alteran el lote en curso. Omite las imágenes que ya contienen una región del tipo seleccionado (rostro o mascota).
 * **Añadir región manualmente**: Permite delimitar y etiquetar áreas concretas (rostros, mascotas, cuerpos, objetos o puntos de interés).
 * **Mostrar / Ocultar regiones**: Muestra u oculta los rectángulos delimitadores de las regiones detectadas.
 * **Renombrar región**: Cambia la etiqueta asignada a una región.

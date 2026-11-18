@@ -111,6 +111,8 @@ class BatchRegionsDialog(QDialog):
             self.tag_edit.setText(dialog.get_selected_tag())
 
     def update_paths(self):
+        if self.running:
+            return
         if self.displayed_check.isChecked():
             model = self.main_win.proxy_model
             paths = []
@@ -129,6 +131,8 @@ class BatchRegionsDialog(QDialog):
         self.progress_bar.setValue(0)
 
     def start(self):
+        if self.running:
+            return
         self.update_paths()
         if self.paths is None:
             QMessageBox.warning(self, UITexts.WARNING, UITexts.DUPLICATE_WHITELIST_EMPTY)

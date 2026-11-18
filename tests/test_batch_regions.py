@@ -261,6 +261,51 @@ def test_batch_runs_detection_and_completes(window, monkeypatch):
     dialog.close()
 
 
+def test_batch_snapshots_current_view_until_processing_finishes(window, monkeypatch):
+    rows = [("thumbnail", "/old.jpg")]
+    window.proxy_model = SimpleNamespace(
+        rowCount=lambda: len(rows), index=lambda row, _: row,
+        data=lambda row, role: rows[row][0] if role == ITEM_TYPE_ROLE
+        else rows[row][1] if role == PATH_ROLE else None,
+    )
+    dialog = batchregions.BatchRegionsDialog(window)
+    rows[:] = [("thumbnail", "/first.jpg"), ("thumbnail", "/second.jpg")]
+    dialog.tag_edit.setText("People/Forced")
+    monkeypatch.setitem(batchregions.APP_CONFIG, "person_recognition_enabled", False)
+    monkeypatch.setattr(batchregions, "AVAILABLE_FACE_ENGINES", ["face_recognition"])
+    monkeypatch.setattr(batchregions.xmpmanager, "exiv2", object())
+    monkeypatch.setattr(batchregions.XmpManager, "load_regions",
+                        lambda _path, strict=False: [])
+    started, release = Event(), Event()
+
+    def detect(_self, strict=False):
+        started.set()
+        release.wait(5)
+        return [face()]
+
+    monkeypatch.setattr(batchregions.ImageController, "detect_faces", detect)
+    saved = []
+    monkeypatch.setattr(dialog, "save_detections",
+                        lambda path, *_args: saved.append(path))
+    dialog.start()
+    try:
+        assert started.wait(2)
+        assert dialog.paths == ["/first.jpg", "/second.jpg"]
+        rows[:] = [("thumbnail", "/new.jpg")]
+        dialog.update_paths()
+        dialog.start()
+        assert dialog.paths == ["/first.jpg", "/second.jpg"]
+        assert dialog.progress_bar.maximum() == 2
+    finally:
+        release.set()
+        for _ in range(200):
+            if not dialog.running:
+                break
+            QTest.qWait(10)
+    assert not dialog.running
+    assert saved == ["/first.jpg", "/second.jpg"]
+
+
 def test_manual_face_name_is_recorded_for_recognition(window, monkeypatch):
     dialog = batchregions.BatchRegionsDialog(window)
     writes, tags = prepare_save(dialog, monkeypatch, [])
