@@ -2,18 +2,21 @@ from types import SimpleNamespace
 
 import pytest
 
-from PySide6.QtCore import QItemSelectionModel, QRect, Qt
+from PySide6.QtCore import (
+    QItemSelectionModel, QPersistentModelIndex, QRect, QSortFilterProxyModel, Qt
+)
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QAbstractItemView, QApplication
 
 from bagheeraview.core import app as app_module
+from bagheeraview.core import widgets
 from bagheeraview.core.app import (
     MainWindow, ThumbnailDelegate, ThumbnailListView
 )
 from bagheeraview.core.constants import (
     DIR_ROLE, GROUP_NAME_ROLE, ITEM_TYPE_ROLE, MTIME_ROLE, PATH_ROLE,
-    RATING_ROLE
+    RATING_ROLE, TAGS_ROLE
 )
 
 
@@ -218,6 +221,130 @@ def test_right_clicking_group_header_preserves_thumbnail_selection(qapp):
     qapp.processEvents()
 
     assert [index.row() for index in selection_model.selectedIndexes()] == [0, 1]
+
+
+@pytest.mark.parametrize("filtered", [False, True])
+def test_restore_selection_keeps_all_visible_thumbnails(qapp, filtered):
+    model = QStandardItemModel()
+    paths = ["/photos/a.jpg", "/photos/b.jpg", "/photos/c.jpg"]
+    indexes = {}
+    for path in paths:
+        item = QStandardItem(path)
+        item.setData("thumbnail", ITEM_TYPE_ROLE)
+        item.setData(path, PATH_ROLE)
+        model.appendRow(item)
+        indexes[path] = QPersistentModelIndex(item.index())
+
+    proxy = QSortFilterProxyModel()
+    proxy.setSourceModel(model)
+    if filtered:
+        proxy.setFilterRegularExpression(r"[ab]\.jpg$")
+    view = ThumbnailListView()
+    view.setModel(proxy)
+    view.setSelectionMode(QAbstractItemView.ExtendedSelection)
+    window = SimpleNamespace(
+        thumbnail_view=view,
+        proxy_model=proxy,
+        _path_to_model_index=indexes,
+    )
+
+    MainWindow.restore_selection(window, paths)
+
+    expected = paths[:2] if filtered else paths
+    assert {index.data(PATH_ROLE) for index in view.selectedIndexes()} == set(expected)
+    assert view.currentIndex().data(PATH_ROLE) == paths[0]
+
+
+def test_metadata_edits_preserve_selection_after_filter_refresh(
+        qapp, tmp_path, monkeypatch):
+    paths = [str(tmp_path / name) for name in ("a.jpg", "b.jpg", "c.jpg")]
+    model = QStandardItemModel()
+    indexes = {}
+    for path in paths:
+        item = QStandardItem(path)
+        item.setData("thumbnail", ITEM_TYPE_ROLE)
+        item.setData(path, PATH_ROLE)
+        item.setData([], TAGS_ROLE)
+        model.appendRow(item)
+        indexes[path] = QPersistentModelIndex(item.index())
+
+    proxy = QSortFilterProxyModel()
+    proxy.setSourceModel(model)
+    proxy.prepare_filter = lambda: None
+    proxy.add_to_cache = lambda path, tags: None
+    view = ThumbnailListView()
+    view.setModel(proxy)
+    view.setSelectionMode(QAbstractItemView.ExtendedSelection)
+    selection = view.selectionModel()
+    for row in (0, 1):
+        selection.select(proxy.index(row, 0), QItemSelectionModel.Select)
+
+    window = SimpleNamespace(
+        thumbnail_view=view,
+        thumbnail_model=model,
+        proxy_model=proxy,
+        _path_to_model_index=indexes,
+        tags_list=SimpleNamespace(rowCount=lambda: 0),
+        filter_mode_group=SimpleNamespace(
+            buttons=lambda: [SimpleNamespace(isChecked=lambda: True)]),
+        filter_name_input=SimpleNamespace(text=lambda: ""),
+        _extension_checkboxes={},
+        is_cleaning=False,
+        _suppress_updates=False,
+        _visible_paths_cache=None,
+        cache=SimpleNamespace(set_metadata=lambda *args: None),
+        _update_internal_data=lambda *args, **kwargs: None,
+        update_tag_list=lambda: None,
+        get_visible_image_paths=lambda: paths,
+        get_all_image_paths=lambda: paths,
+        filter_stats_lbl=SimpleNamespace(setText=lambda text: None),
+        filtered_count_lbl=SimpleNamespace(setText=lambda text: None),
+        update_viewers_filter=lambda visible_paths: None,
+    )
+    window.get_selected_paths = lambda: MainWindow.get_selected_paths(window)
+    window.restore_selection = lambda selected: MainWindow.restore_selection(
+        window, selected)
+    window.apply_filters = lambda: MainWindow.apply_filters(window)
+
+    MainWindow.on_tags_edited(window, {path: ["new-tag"] for path in paths[:2]})
+
+    assert set(window.get_selected_paths()) == set(paths[:2])
+    assert [model.item(row).data(TAGS_ROLE) for row in range(3)] == [
+        ["new-tag"], ["new-tag"], []]
+
+    attributes = {}
+    monkeypatch.setattr(
+        widgets.XattrManager, "get_attribute",
+        lambda path, name, default="": attributes.get((path, name), default))
+    monkeypatch.setattr(
+        widgets.XattrManager, "set_attribute",
+        lambda path, name, value: attributes.__setitem__((path, name), value))
+    monkeypatch.setattr(
+        app_module.os, "getxattr",
+        lambda path, name: attributes[(path, name)].encode())
+
+    rating = widgets.RatingWidget()
+    rating.set_files(window.get_selected_paths())
+    rating.on_star_clicked(2)
+    rating.rating_updated.connect(lambda: MainWindow.on_rating_edited(window))
+    rating.save_rating()
+    window.apply_filters()
+
+    assert set(window.get_selected_paths()) == set(paths[:2])
+    assert [model.item(row).data(RATING_ROLE) for row in range(3)] == [4, 4, None]
+    assert set(rating.file_paths) == set(paths[:2])
+
+    comment = widgets.CommentWidget()
+    comment.set_files(window.get_selected_paths())
+    comment.comment_edit.setPlainText("comment")
+    comment.save_comment()
+    window.apply_filters()
+
+    assert set(window.get_selected_paths()) == set(paths[:2])
+    assert {
+        path for path in paths
+        if attributes.get((path, widgets.XATTR_COMMENT_NAME)) == "comment"
+    } == set(paths[:2])
 
 
 def test_scrubber_sections_use_visible_group_headers_and_thumbnails():

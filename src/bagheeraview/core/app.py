@@ -3388,7 +3388,8 @@ class MainWindow(QMainWindow):
         if not selection.isEmpty():
             selection_model.select(selection, QItemSelectionModel.ClearAndSelect)
             if first_valid_index.isValid():
-                self.thumbnail_view.setCurrentIndex(first_valid_index)
+                selection_model.setCurrentIndex(
+                    first_valid_index, QItemSelectionModel.NoUpdate)
                 self.thumbnail_view.scrollTo(
                     first_valid_index, QAbstractItemView.EnsureVisible)
 
