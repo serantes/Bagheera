@@ -2,11 +2,13 @@ from types import SimpleNamespace
 from threading import Event
 
 import pytest
+from PySide6.QtCore import QTimer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QWidget
 
 from bagheeraview.core import batchregions
-from bagheeraview.core import imagecontroller
+from bagheeraview.core.app import MainWindow
+from bagheeraview.core import imagecontroller, widgets
 from bagheeraview.core import xmpmanager
 from bagheeraview.core.constants import ITEM_TYPE_ROLE, PATH_ROLE
 
@@ -29,6 +31,7 @@ def window(qapp):
     window._gather_files_for_duplicates = lambda: ["/all.jpg", "/other.jpg", "/all.jpg"]
     window.face_names_history = []
     window.viewers = []
+    window.batch_regions_dialog = None
     window.update_metadata_for_path = lambda *_args: None
     return window
 
@@ -48,6 +51,19 @@ def test_scope_count_uses_visible_thumbnails_or_duplicate_scanner(window):
     dialog.update_paths()
     assert dialog.paths is None
     assert dialog.count_label.text().endswith("0")
+
+
+def test_batch_regions_window_is_modeless_and_reused(window):
+    MainWindow.show_batch_regions(window)
+    dialog = window.batch_regions_dialog
+
+    assert dialog.isVisible()
+    assert not dialog.isModal()
+
+    MainWindow.show_batch_regions(window)
+    assert window.batch_regions_dialog is dialog
+
+    dialog.close()
 
 
 def test_pets_require_tag_and_missing_whitelist_warn(window, monkeypatch):
@@ -196,7 +212,8 @@ def test_save_failure_does_not_apply_tags(window, monkeypatch):
 
 
 def test_batch_runs_detection_and_completes(window, monkeypatch):
-    dialog = batchregions.BatchRegionsDialog(window)
+    MainWindow.show_batch_regions(window)
+    dialog = window.batch_regions_dialog
     dialog.tag_edit.setText("People/Forced")
     monkeypatch.setitem(batchregions.APP_CONFIG, "person_recognition_enabled", True)
     monkeypatch.setattr(batchregions, "AVAILABLE_FACE_ENGINES", ["face_recognition"])
@@ -220,6 +237,28 @@ def test_batch_runs_detection_and_completes(window, monkeypatch):
     assert saved == [("/a.jpg", [[42]]), ("/b.jpg", [[42]])]
     assert dialog.progress_bar.value() == 2
     assert dialog.result() == QDialog.Accepted
+
+    MainWindow.show_batch_regions(window)
+    assert window.batch_regions_dialog is dialog
+    assert dialog.tag_button.isEnabled()
+    monkeypatch.setattr(
+        widgets.TagSelectorWidget, "load_available_tags",
+        lambda self: setattr(self, "available_tags", ["People/Alice"]))
+    selected = []
+
+    def select_tag():
+        selector = QApplication.activeModalWidget()
+        if not isinstance(selector, widgets.TagSelectorDialog):
+            return
+        selector.selector_widget.line_edit.setText("People/Alice")
+        selected.append(selector.selector_widget.is_existing_tag())
+        selector.selector_widget.action_button.click()
+
+    QTimer.singleShot(0, select_tag)
+    dialog.tag_button.click()
+    assert selected == [True]
+    assert dialog.tag_edit.text() == "People/Alice"
+    dialog.close()
 
 
 def test_manual_face_name_is_recorded_for_recognition(window, monkeypatch):
@@ -275,6 +314,7 @@ def test_cancel_waits_for_current_detection_without_saving(window, monkeypatch):
     assert not dialog.running
     assert dialog.result() == QDialog.Rejected
     assert saved == []
+    assert dialog.tag_button.isEnabled()
 
 
 def test_strict_detection_surfaces_engine_error(qapp, monkeypatch):

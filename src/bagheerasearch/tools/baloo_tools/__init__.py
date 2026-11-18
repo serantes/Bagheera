@@ -43,6 +43,10 @@ def get_tags(file_id: int) -> dict:
     """Simplified interface for the library."""
     return _get_tools().get_tags(file_id)
 
+def list_tags() -> list:
+    """List all indexed Baloo tags."""
+    return _get_tools().list_tags()
+
 
 def get_xattr_terms(file_id: int) -> dict:
     """Simplified interface for the library."""

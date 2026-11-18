@@ -361,7 +361,7 @@ class BalooTools:
             try:
                 BalooTools._shared_env = lmdb.Environment(
                     self.baloo_db_path,
-                    subdir=False,
+                    subdir=os.path.isdir(self.baloo_db_path),
                     readonly=True,
                     lock=False,
                     max_dbs=20
@@ -377,6 +377,19 @@ class BalooTools:
         if name not in BalooTools._shared_dbs:
             BalooTools._shared_dbs[name] = self.env.open_db(name)
         return BalooTools._shared_dbs[name]
+
+    def list_tags(self) -> List[str]:
+        """List indexed tags using the shared Baloo environment."""
+        postingdb = self._open_db(b"postingdb")
+        tags = []
+        with self.env.begin() as txn:
+            cursor = txn.cursor(postingdb)
+            if cursor.set_range(b"TAG-"):
+                for key, _ in cursor:
+                    if not key.startswith(b"TAG-"):
+                        break
+                    tags.append(key[4:].decode("utf-8"))
+        return tags
 
     def _read_single_value(self, db_name: bytes, file_id: int):
         """

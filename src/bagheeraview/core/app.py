@@ -1536,6 +1536,8 @@ class MainWindow(QMainWindow):
         self.thread_pool_manager = thread_pool_manager
         self.full_history = []
         self.history = []
+        self._navigation_history = []
+        self._navigation_index = -1
         self.current_thumb_size = THUMBNAILS_DEFAULT_SIZE
         self.face_names_history = []
         self.pet_names_history = []
@@ -1553,6 +1555,7 @@ class MainWindow(QMainWindow):
         self.show_filmstrip = False
         self.filmstrip_position = 'bottom'  # bottom, left, top, right
         self.show_faces = False
+        self.batch_regions_dialog = None
         self.is_cleaning = False
         self._scan_all = False
         self._suppress_updates = False
@@ -1590,8 +1593,26 @@ class MainWindow(QMainWindow):
         self.loaded_global_shortcuts = None
         # Top bar with search and actions
         top = QHBoxLayout()
+        self.btn_search_previous = QPushButton()
+        self.btn_search_next = QPushButton()
+        self.btn_search_refresh = QPushButton()
+        for button, icon, fallback, tooltip, callback in (
+                (self.btn_search_previous, "go-previous", QStyle.SP_ArrowBack,
+                 UITexts.SEARCH_PREVIOUS, lambda: self._navigate_search(-1)),
+                (self.btn_search_next, "go-next", QStyle.SP_ArrowForward,
+                 UITexts.SEARCH_NEXT, lambda: self._navigate_search(1)),
+                (self.btn_search_refresh, "view-refresh", QStyle.SP_BrowserReload,
+                 UITexts.SEARCH_REFRESH, self.refresh_content)):
+            button.setIcon(QIcon.fromTheme(icon, self.style().standardIcon(fallback)))
+            button.setToolTip(tooltip)
+            button.setAccessibleName(tooltip)
+            button.setFocusPolicy(Qt.NoFocus)
+            button.clicked.connect(callback)
+            top.addWidget(button)
+        self._update_search_navigation_buttons()
         self.search_input = QComboBox()
         self.search_input.setEditable(True)
+        self.search_input.setInsertPolicy(QComboBox.NoInsert)
         self.search_input.lineEdit().returnPressed.connect(self.on_search_triggered)
         self.search_input.lineEdit().setClearButtonEnabled(True)
         self.search_input.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
@@ -2649,7 +2670,13 @@ class MainWindow(QMainWindow):
         menu.exec(self.menu_btn.mapToGlobal(QPoint(0, self.menu_btn.height())))
 
     def show_batch_regions(self):
-        BatchRegionsDialog(self).exec()
+        if self.batch_regions_dialog is None:
+            self.batch_regions_dialog = BatchRegionsDialog(self)
+        elif not self.batch_regions_dialog.isVisible():
+            self.batch_regions_dialog.update_paths()
+        self.batch_regions_dialog.show()
+        self.batch_regions_dialog.raise_()
+        self.batch_regions_dialog.activateWindow()
 
     def detect_all_duplicates(self, force_full=False):
         """Gathers files from whitelist (respecting blacklist) and runs detector."""
@@ -6021,24 +6048,25 @@ class MainWindow(QMainWindow):
 
     def refresh_content(self):
         """Refreshes the current view by re-running the last search or scan."""
-        if not self.history:
+        if self._navigation_index < 0:
             return
 
         current_selection = self.get_selected_paths()
-        term = self.history[0]
+        term = self._navigation_history[self._navigation_index]
         if term.startswith("file:/"):
             path = term[6:]
             if os.path.isfile(path):
+                self._show_search_term(term)
                 self.start_scan([os.path.dirname(path)], select_paths=current_selection)
                 return
-        self.process_term(term, select_paths=current_selection)
+        self.process_term(term, select_paths=current_selection, record_history=False)
 
     def hard_refresh_content(self):
         """Invalidates directory cache and re-scans content."""
-        if not self.history:
+        if self._navigation_index < 0:
             return
 
-        term = self.history[0]
+        term = self._navigation_history[self._navigation_index]
         path = term[6:] if term.startswith("file:/") else term
         # Don't invalidate for searches/layouts as they don't use directory cache
         if not term.startswith(("search:/", "layout:/")):
@@ -6050,21 +6078,60 @@ class MainWindow(QMainWindow):
         self._force_thumbnail_refresh = True
         self.refresh_content()
 
-    def process_term(self, term, select_paths=None):
+    def _update_search_navigation_buttons(self):
+        self.btn_search_previous.setEnabled(self._navigation_index > 0)
+        self.btn_search_next.setEnabled(
+            0 <= self._navigation_index < len(self._navigation_history) - 1)
+        self.btn_search_refresh.setEnabled(self._navigation_index >= 0)
+
+    def _record_search_navigation(self, term):
+        del self._navigation_history[self._navigation_index + 1:]
+        if not self._navigation_history or self._navigation_history[-1] != term:
+            self._navigation_history.append(term)
+        self._navigation_index = len(self._navigation_history) - 1
+        self._update_search_navigation_buttons()
+
+    def _navigate_search(self, direction):
+        index = self._navigation_index + direction
+        if not 0 <= index < len(self._navigation_history):
+            return
+        previous_index = self._navigation_index
+        self._navigation_index = index
+        self._update_search_navigation_buttons()
+        if not self.process_term(self._navigation_history[index], record_history=False):
+            self._navigation_index = previous_index
+            self._update_search_navigation_buttons()
+
+    def _show_search_term(self, term):
+        index = self.search_input.findData(term)
+        if index >= 0:
+            self.search_input.setCurrentIndex(index)
+            self.search_input.setEditText(self.search_input.itemText(index))
+        else:
+            text = term[8:] if term.startswith("search:/") else (
+                term[6:] if term.startswith("file:/") else term)
+            self.search_input.setCurrentIndex(-1)
+            self.search_input.setEditText(text)
+
+    def process_term(self, term, select_paths=None, record_history=True):
         """Processes a search term, file path, or layout directive."""
         if term.startswith("layout:/"):
             if not (self.is_xcb or self.is_wayland):
-                return
+                return False
             filename = _layout_path_from_term(term)
             if not os.path.isfile(filename):
                 QMessageBox.critical(
                     self,
                     UITexts.ERROR_LOADING_LAYOUT_TITLE.format(PROG_NAME),
                     UITexts.ERROR_LOADING_LAYOUT_TEXT.format(term[8:]))
-                return
+                return False
 
-        self.add_to_history(term)
-        self.update_search_input()
+        if record_history:
+            self.add_to_history(term)
+            self._record_search_navigation(term)
+            self.update_search_input()
+        else:
+            self._show_search_term(term)
 
         # Ensure loading UI is active (backup for history/bookmark calls)
         self.status_lbl.setText(UITexts.PREPARING_QUERY)
@@ -6106,6 +6173,7 @@ class MainWindow(QMainWindow):
                 self.start_scan(
                     [path], select_paths=select_paths,
                     allow_directory_navigation=not term.startswith("search:/"))
+        return True
 
     def update_search_input(self):
         """Updates the search input combo box with history items and icons."""
@@ -6126,7 +6194,7 @@ class MainWindow(QMainWindow):
             elif h.startswith("search:/"):
                 icon = QIcon.fromTheme("system-search")
 
-            self.search_input.addItem(icon, text)
+            self.search_input.addItem(icon, text, h)
 
     def on_search_triggered(self):
         """Callback for when a search is triggered from the input box."""
@@ -6487,6 +6555,7 @@ class MainWindow(QMainWindow):
 
         if os.path.isfile(full_path):
             self.add_to_history(f"file:/{full_path}")
+            self._record_search_navigation(f"file:/{full_path}")
             # Refresh combo box with history
             self.update_search_input()  # This is a disk read.
 

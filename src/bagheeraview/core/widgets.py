@@ -37,6 +37,8 @@ from PySide6.QtCore import (
     QModelIndex
 )
 
+from bagheerasearch.tools.baloo_tools import list_tags as list_baloo_tags
+
 from .metadatamanager import XattrManager
 from .xmpmanager import XmpManager
 try:
@@ -54,6 +56,16 @@ from .tag_information_editor import TagInformationEditor
 
 
 logger = logging.getLogger(__name__)
+
+def _load_available_baloo_tags(widget):
+    try:
+        tags = list_baloo_tags()
+    except (lmdb.Error, OSError, UnicodeError) as error:
+        logger.warning("Failed to load Baloo tags: %s", error)
+        return
+    if set(tags) != set(widget.available_tags):
+        widget._load_all = True
+    widget.available_tags = tags
 
 
 class MiddleElidedLabel(QLabel):
@@ -624,38 +636,7 @@ class TagEditWidget(QWidget):
 
     def load_available_tags(self):
         """Loads all known tags from the Baloo index database."""
-        db_path = os.path.expanduser("~/.local/share/baloo/index")
-        if not os.path.exists(db_path) or not os.access(db_path, os.R_OK):
-            self.available_tags = []
-            self._load_all = True
-            return
-        tags = []
-        success = False
-        try:
-            # Auto-detect if it's a directory or a file to set subdir correctly
-            is_dir = os.path.isdir(db_path)
-            # Connect to the LMDB environment for Baloo
-            with lmdb.open(db_path, subdir=is_dir, readonly=True,
-                           lock=False, max_dbs=20) as env:
-                postingdb = env.open_db(b'postingdb')
-                with env.begin() as txn:
-                    cursor = txn.cursor(postingdb)
-                    prefix = b'TAG-'
-                    # Iterate over keys starting with the tag prefix
-                    if cursor.set_range(prefix):
-                        for key, _ in cursor:
-                            if not key.startswith(prefix):
-                                break
-                            tags.append(key[4:].decode('utf-8'))
-                success = True
-        except Exception as e:
-            logger.debug(f"Failed to load Baloo tags from {db_path}: {e}")
-
-        if success:
-            # Use set comparison to reliably detect any content change in tags
-            if set(tags) != set(self.available_tags):
-                self._load_all = True
-            self.available_tags = tags
+        _load_available_baloo_tags(self)
 
     def _migrate_legacy_tag_information(self):
         template_path = os.path.join(APP_DATA_DIR, TAG_INFO_TEMPLATE)
@@ -2800,39 +2781,7 @@ class TagSelectorWidget(QWidget):
 
     def load_available_tags(self) -> None:
         """Load all known tags from the Baloo index database."""
-        db_path = os.path.expanduser("~/.local/share/baloo/index")
-        if not os.path.exists(db_path) or not os.access(db_path, os.R_OK):
-            self.available_tags = []
-            self._load_all = True
-            return
-
-        tags = []
-        success = False
-        try:
-            # Auto-detect if it's a directory or a file to set subdir correctly
-            is_dir = os.path.isdir(db_path)
-            # Connect to the LMDB environment for Baloo
-            with lmdb.open(db_path, subdir=is_dir, readonly=True,
-                           lock=False, max_dbs=20) as env:
-                postingdb = env.open_db(b'postingdb')
-                with env.begin() as txn:
-                    cursor = txn.cursor(postingdb)
-                    prefix = b'TAG-'
-                    # Iterate over keys starting with the tag prefix
-                    if cursor.set_range(prefix):
-                        for key, _ in cursor:
-                            if not key.startswith(prefix):
-                                break
-                            tags.append(key[4:].decode('utf-8'))
-                success = True
-        except Exception as e:
-            logger.debug(f"Failed to load Baloo tags from {db_path}: {e}")
-
-        if success:
-            # Use set comparison to reliably detect any content change in tags
-            if set(tags) != set(self.available_tags):
-                self._load_all = True
-            self.available_tags = tags
+        _load_available_baloo_tags(self)
 
     def _init_ui(self) -> None:
         """Initialize user interface components and layouts."""

@@ -56,6 +56,7 @@ class RegionDetectionThread(QThread):
 class BatchRegionsDialog(QDialog):
     def __init__(self, main_win, parent=None):
         super().__init__(parent or main_win)
+        self.setModal(False)
         self.main_win = main_win
         self.paths = []
         self.controller = None
@@ -312,14 +313,13 @@ class BatchRegionsDialog(QDialog):
         if self.controller:
             self.controller.cleanup()
             self.controller = None
+        for widget in (self.region_combo, self.displayed_check, self.tag_edit,
+                       self.tag_button, self.accept_button):
+            widget.setEnabled(True)
         if self.cancelled:
             super().reject()
         elif self.position >= len(self.paths):
             super().accept()
-        else:
-            for widget in (self.region_combo, self.displayed_check, self.tag_edit,
-                           self.tag_button, self.accept_button):
-                widget.setEnabled(True)
 
     def reject(self):
         if self.running:

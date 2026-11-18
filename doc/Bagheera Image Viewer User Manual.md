@@ -42,6 +42,11 @@ Located at the top of the window, the search bar allows you to:
 * **Enter File Paths**: Directly type a directory path to scan, or a file path to
   open it in the viewer.
 * **Browse Button**: Opens a file dialog to select an image to scan.
+* **Previous / Next**: Navigate searches, paths and layouts visited in the
+  current session. Consecutive repetitions are combined; starting a new
+  search after going back discards the forward navigation entries. Navigating
+  does not reorder the search bar history.
+* **Refresh**: Run the current search or scan again without changing history.
 
 With the Bagheera search engine, queries support `HAVING` and `SUBQUERY`
 clauses, including `AND`, `AND NOT`, `OR`, `OR NOT` and `OR EXCLUSIVE`
