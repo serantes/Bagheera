@@ -241,9 +241,13 @@ def test_detect_faces_mediapipe_filters_tiny_regions(qapp, tmp_path):
         small_detection.bounding_box.origin_y = 10
         small_detection.bounding_box.width = 39
         small_detection.bounding_box.height = 39
-        mock_detector.detect.return_value.detections = [small_detection]
+        mock_result = MagicMock()
+        mock_result.detections = [small_detection]
+        mock_detector.detect.return_value = mock_result
         mock_vision.FaceDetector.create_from_options.return_value = mock_detector
-        mock_mp_image = MagicMock(width=100, height=100)
+        mock_mp_image = MagicMock()
+        mock_mp_image.width = 100
+        mock_mp_image.height = 100
         mock_mp.Image.return_value = mock_mp_image
 
         with patch("bagheeraview.core.imagecontroller._get_mediapipe",
@@ -264,11 +268,11 @@ def test_minimum_region_size_applies_to_all_automatic_region_types(
     try:
         for region_type in ("Face", "Pet", "Body"):
             assert controller._create_region_from_pixels(
-                10, 10, 125, 126, 200, 200, region_type) is None
+                10, 10, 79, 80, 200, 200, region_type) is None
             assert controller._create_region_from_pixels(
-                10, 10, 126, 125, 200, 200, region_type) is None
+                10, 10, 80, 79, 200, 200, region_type) is None
             assert controller._create_region_from_pixels(
-                10, 10, 126, 126, 200, 200, region_type) is not None
+                10, 10, 80, 80, 200, 200, region_type) is not None
     finally:
         controller.cleanup()
 

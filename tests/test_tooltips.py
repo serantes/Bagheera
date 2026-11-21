@@ -2,7 +2,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
-from PySide6.QtWidgets import QApplication, QTableWidget
+from PySide6.QtWidgets import QApplication, QComboBox, QTableWidget
 
 from bagheeraview.core.app import MainWindow
 from bagheeraview.core import widgets
@@ -52,7 +52,11 @@ def test_bookmark_comment_and_query_cells_have_tooltips(qapp, tmp_path,
     }]), encoding="utf-8")
     monkeypatch.setattr(widgets, "BOOKMARKS_PATH", str(bookmarks_path))
 
-    bookmarks_widget = widgets.BookmarksWidget(SimpleNamespace())
+    main_window = SimpleNamespace(
+        view_mode_combo=QComboBox(),
+        sort_combo=QComboBox(),
+    )
+    bookmarks_widget = widgets.BookmarksWidget(main_window)
 
     assert bookmarks_widget.table.item(0, 0).toolTip() == "A long bookmark comment"
     assert bookmarks_widget.table.item(0, 1).toolTip() == (

@@ -153,6 +153,7 @@ class _LayoutMainWindow:
         self._layout_window_role = "bagheera-main"
         self.viewers = []
         self.cache = None
+        self._sidebar_content = {}
         self.search_input = SimpleNamespace(
             currentText=lambda: "",
             setEditText=lambda _text: None)
