@@ -6210,14 +6210,17 @@ class MainWindow(QMainWindow):
         self.thumbnail_generator = ThumbnailGenerator(
             self.cache, paths, size, self.thread_pool_manager,
             force_thumbnail_refresh=force_thumbnail_refresh)
-        self.thumbnail_generator.prioritize(self._priority_thumbnail_paths())
-        self.thumbnail_generator.generation_complete.connect(
+        generator = self.thumbnail_generator
+        generator.prioritize(self._priority_thumbnail_paths())
+        generator.generation_complete.connect(
             lambda: self.on_high_res_generation_finished()
-            if self._thumbnail_generation == generation else None)
-        self.thumbnail_generator.progress.connect(
+            if self._thumbnail_generation == generation and
+            generator.generated_count else None)
+        generator.progress.connect(
             lambda p, t: self.status_lbl.setText(
                 f"Generating {size}px thumbnails: {p}/{t}")
-            if self._thumbnail_generation == generation else None
+            if self._thumbnail_generation == generation and
+            generator.generated_count else None
         )
         self.thumbnail_generator.start()
         self._thumbnail_priority_timer.start()
@@ -7190,10 +7193,38 @@ class MainWindow(QMainWindow):
         if not path:
             return
 
+        generator = self.thumbnail_generator
+        running = generator and generator.isRunning()
+        if running:
+            self._thumbnail_generation += 1
+            generator.stop()
+
         QPixmapCache.clear()
         self.cache.invalidate_path(path)
-        self.rebuild_view()
-        self._queue_thumbnail_refresh(path)
+        for i, data in enumerate(self.found_items_data):
+            if data[0] == path:
+                self.found_items_data[i] = (data[0], None, *data[2:])
+                break
+        self._model_update_queue = deque(
+            (data[0], None, *data[2:]) if data[0] == path else data
+            for data in self._model_update_queue
+        )
+        persistent_index = self._path_to_model_index.get(path)
+        if persistent_index is not None and persistent_index.isValid():
+            item = self.thumbnail_model.itemFromIndex(QModelIndex(persistent_index))
+            if item:
+                item.setData(None, IMAGE_DATA_ROLE)
+        self.thumbnail_view.viewport().update()
+
+        if running:
+            size = self._get_tier_for_size(self.current_thumb_size)
+            self._start_thumbnail_generator(
+                self.get_all_image_paths(), size,
+                force_thumbnail_refresh=generator.force_thumbnail_refresh)
+            self.thumbnail_generator.prioritize(
+                [path] + self._priority_thumbnail_paths())
+        else:
+            self._queue_thumbnail_refresh(path)
 
     def get_app_info(self, desktop_file_id):
         """Gets the readable name and icon of an application from its .desktop file."""

@@ -341,7 +341,8 @@ abandoning classic folder-based navigation.
   instead.
 - **Bookmarks:** Frequently used searches can be saved and reused.
 - **Caching:** The thumbnail cache and image hashes are stored in highly
-  performant local LMDB databases.
+  performant local LMDB databases. Older PNG, WebP and RAW thumbnails are
+  regenerated as needed to apply their image orientation.
 - **Window Manager Support:** **X11** and **Wayland** are supported. Layouts
   can be saved on X11 or KDE Wayland, and restored on X11 or KDE Wayland
   (through KWin, which supplies the actual Wayland window-frame geometry).

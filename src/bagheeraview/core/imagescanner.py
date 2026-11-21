@@ -29,15 +29,17 @@ import subprocess
 import time
 import argparse
 import collections
+from io import BytesIO
 from pathlib import Path
 from contextlib import contextmanager
 import lmdb
+from PIL import Image
 from PySide6.QtCore import (
     QObject, QThread, Signal, QMutex, QReadWriteLock, QSize, QSemaphore,
     QWaitCondition, QByteArray, QBuffer, QIODevice, Qt, QTimer, QRunnable,
     QThreadPool, QFile, QUrl
 )
-from PySide6.QtGui import QImage, QImageReader, QImageIOHandler, QIcon
+from PySide6.QtGui import QImage, QImageReader, QImageIOHandler, QIcon, QTransform
 from PySide6.QtWidgets import QApplication
 
 from .constants import (
@@ -67,6 +69,9 @@ logger = logging.getLogger(__name__)
 ThumbnailResult = collections.namedtuple(
     'ThumbnailResult', ['image', 'mtime', 'tier'])
 EMPTY_THUMBNAIL = ThumbnailResult(None, 0, 0)
+THUMBNAIL_CACHE_HEADER = b"PTH\x01"
+LEGACY_THUMBNAIL_CACHE_HEADER = b"PTH\0"
+ORIENTATION_SENSITIVE_EXTENSIONS = RAW_IMAGE_EXTENSIONS | {".png", ".webp"}
 
 
 class SearchArgumentParser(argparse.ArgumentParser):
@@ -195,6 +200,7 @@ class ScannerWorker(QRunnable):
         self.semaphore = semaphore
         self.force_thumbnail_refresh = force_thumbnail_refresh
         self._is_cancelled = False
+        self.thumbnail_generated = False
         # Result will be (path, thumb, mtime, tags, rating, inode, dev) or None
         self.result = None
 
@@ -257,6 +263,7 @@ class ScannerWorker(QRunnable):
                             if self._is_cancelled:
                                 return
                             if new_thumb and not new_thumb.isNull():
+                                self.thumbnail_generated = True
                                 self.cache.set_thumbnail(
                                     self.path, new_thumb, curr_mtime, size,
                                     inode=curr_inode, device_id=curr_dev, block=True)
@@ -302,6 +309,39 @@ class ScannerWorker(QRunnable):
                 self.semaphore.release()
 
 
+def _apply_exif_orientation(image, orientation):
+    """Apply an EXIF orientation to pixels not transformed by the image reader."""
+    if orientation in (2, 5, 7):
+        image = image.transformed(QTransform().scale(-1, 1))
+    elif orientation == 4:
+        image = image.transformed(QTransform().scale(1, -1))
+    degrees = {3: 180, 5: 270, 6: 90, 7: 90, 8: 270}.get(orientation)
+    return image.transformed(QTransform().rotate(degrees)) if degrees else image
+
+
+def _pillow_orientation(source):
+    """Read an EXIF orientation without decoding the image pixels."""
+    try:
+        with Image.open(source) as image:
+            return _validated_orientation(image.getexif().get(274), source)
+    except (OSError, ValueError, SyntaxError) as exc:
+        logger.debug("Could not read image orientation from %s: %s", source, exc)
+        return None
+
+
+def _validated_orientation(value, source):
+    if value is None:
+        return None
+    try:
+        orientation = int(value)
+        if 1 <= orientation <= 8:
+            return orientation
+    except (TypeError, ValueError):
+        pass
+    logger.warning("Invalid EXIF orientation for %s: %r", source, value)
+    return None
+
+
 def _read_embedded_jpeg_thumbnail(path, size):
     """Return a scaled JPEG preview embedded in a RAW file, if available."""
     if exiv2 is None:
@@ -339,6 +379,14 @@ def _read_embedded_jpeg_thumbnail(path, size):
         if not preview_data:
             return None
 
+        preview_orientation = _pillow_orientation(BytesIO(bytes(preview_data)))
+        orientation = None
+        if preview_orientation is None:
+            exif = image.exifData()
+            datum = exif.findKey(exiv2.ExifKey("Exif.Image.Orientation"))
+            if datum != exif.end():
+                orientation = _validated_orientation(datum.toString(), path)
+
         buffer = QBuffer()
         buffer.setData(preview_data)
         if not buffer.open(QIODevice.ReadOnly):
@@ -346,6 +394,8 @@ def _read_embedded_jpeg_thumbnail(path, size):
         try:
             reader = QImageReader(buffer)
             reader.setAutoTransform(True)
+            if reader.transformation() != QImageIOHandler.TransformationNone:
+                orientation = None
             if reader.supportsOption(QImageIOHandler.ImageOption.ScaledSize):
                 original_size = reader.size()
                 if original_size.isValid() and (
@@ -360,6 +410,8 @@ def _read_embedded_jpeg_thumbnail(path, size):
 
         if image.isNull():
             return None
+        if orientation is not None:
+            image = _apply_exif_orientation(image, orientation)
         return image.scaled(
             size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
     except Exception as exc:
@@ -393,6 +445,11 @@ def generate_thumbnail(path, size, fd=None):
         else:
             reader = QImageReader(path)
 
+        orientation = None
+        if bytes(reader.format()).lower() in (b"png", b"webp") and \
+                reader.transformation() == QImageIOHandler.TransformationNone:
+            orientation = _pillow_orientation(path)
+
         # Optimization: Instruct the image decoder to scale while reading.
         # This drastically reduces memory usage and CPU time for large images
         # (e.g. JPEG).
@@ -425,6 +482,8 @@ def generate_thumbnail(path, size, fd=None):
 
         if img.isNull():
             return None
+        if orientation is not None:
+            img = _apply_exif_orientation(img, orientation)
         # Always scale to the target size. Qt.KeepAspectRatio will handle
         # both upscaling and downscaling correctly. SmoothTransformation gives
         # better quality for upscaling.
@@ -451,6 +510,7 @@ class CacheWriter(QThread):
         # Use deque for flexible buffer management and deduplication
         self._queue = collections.deque()
         self._mutex = QMutex()
+        self._batch_mutex = QMutex()
         self._condition_new_data = QWaitCondition()
         self._condition_space_available = QWaitCondition()
         # Soft limit for blocking producers (background threads)
@@ -508,6 +568,23 @@ class CacheWriter(QThread):
         self._condition_space_available.wakeAll()
         self._mutex.unlock()
 
+    def invalidate_thumbnail(self, path, device_id, inode_key):
+        """Discard pending writes and delete the persisted thumbnail tiers."""
+        self._mutex.lock()
+        try:
+            self._batch_mutex.lock()
+            self._queue = collections.deque(
+                item for item in self._queue
+                if not (len(item) >= 5 and item[0] == device_id and
+                        item[1] == inode_key and item[4] in THUMBNAIL_SIZES))
+            self._condition_space_available.wakeAll()
+        finally:
+            self._mutex.unlock()
+        try:
+            self.cache._delete_from_lmdb(path, device_id, inode_key)
+        finally:
+            self._batch_mutex.unlock()
+
     def run(self):
         self.setPriority(QThread.IdlePriority)
         while self._running or self._queue:
@@ -544,13 +621,16 @@ class CacheWriter(QThread):
 
             # Notify producers that space might be available
             self._condition_space_available.wakeAll()
+            self._batch_mutex.lock()
             self._mutex.unlock()
 
-            if batch:
-                try:
+            try:
+                if batch:
                     self.cache._batch_write_to_lmdb(batch)
-                except Exception as e:
-                    logger.error(f"CacheWriter batch write error: {e}")
+            except Exception as e:
+                logger.error(f"CacheWriter batch write error: {e}")
+            finally:
+                self._batch_mutex.unlock()
         logger.debug(f"{self.objectName()} run method exiting.")
 
 
@@ -691,6 +771,7 @@ class ThumbnailCache(QObject):
         self._futures = {}  # Map (dev, inode, size) -> GenerationFuture
         self._futures_lock = QMutex()
         self._cache_lock = QReadWriteLock()
+        self._disk_cache_lock = QMutex()
         self._db_lock = QMutex()  # Lock specifically for _db_handles access
         self._db_handles = {}  # Cache for LMDB database handles (dbi)
         self._cancel_loading = False
@@ -809,7 +890,9 @@ class ThumbnailCache(QObject):
 
             # Not in cache, try to open/create
             db = env.open_db(db_name, create=write, integerkey=False, txn=txn)
-            self._db_handles[db_name] = db
+            # A handle opened in a read transaction becomes invalid when it ends.
+            if write or txn is None:
+                self._db_handles[db_name] = db
             return db
 
         except lmdb.NotFoundError:
@@ -1120,6 +1203,14 @@ class ThumbnailCache(QObject):
 
     def _check_disk_cache(self, path, search_order, mtime, dev_id, inode_key):
         """Helper to check LMDB synchronously."""
+        self._disk_cache_lock.lock()
+        try:
+            return self._check_disk_cache_locked(
+                path, search_order, mtime, dev_id, inode_key)
+        finally:
+            self._disk_cache_lock.unlock()
+
+    def _check_disk_cache_locked(self, path, search_order, mtime, dev_id, inode_key):
         if not self._lmdb_env or not inode_key or dev_id == 0:
             return EMPTY_THUMBNAIL
 
@@ -1138,7 +1229,13 @@ class ThumbnailCache(QObject):
                         continue
 
                     payload = value_bytes[8:]
-                    if len(payload) > 4 and payload.startswith(b'PTH\0'):
+                    # Old thumbnails for these formats may lack EXIF orientation.
+                    if not payload.startswith(THUMBNAIL_CACHE_HEADER) and \
+                            os.path.splitext(path)[1].lower() in \
+                            ORIENTATION_SENSITIVE_EXTENSIONS:
+                        continue
+                    if len(payload) >= 8 and payload[:4] in (
+                            THUMBNAIL_CACHE_HEADER, LEGACY_THUMBNAIL_CACHE_HEADER):
                         path_len = struct.unpack('I', payload[4:8])[0]
                         img_data = payload[8 + path_len:]
                     else:
@@ -1202,14 +1299,7 @@ class ThumbnailCache(QObject):
         # and force regeneration.
         if force_refresh:
             logger.debug(f"Forcing refresh for {path}: invalidating cache entries.")
-            with self._write_lock():
-                if path in self._thumbnail_cache:
-                    cached_sizes = self._thumbnail_cache.pop(path)
-                    for img, _ in cached_sizes.values():
-                        if img:
-                            self._cache_bytes_size -= img.sizeInBytes()
-                self._path_to_inode.pop(path, None)  # Also remove from inode map
-            self._delete_from_lmdb(path, device_id=dev_id, inode_key=inode_key)
+            self.invalidate_path(path)
             return EMPTY_THUMBNAIL  # Signal that it's not in cache, forcing generation
 
         # Check if known to be broken
@@ -1298,17 +1388,27 @@ class ThumbnailCache(QObject):
 
     def invalidate_path(self, path):
         """Removes all cached data for a specific path from memory and disk."""
-        inode_info = None
-        with self._write_lock():
-            if path in self._thumbnail_cache:
-                cached_sizes = self._thumbnail_cache.pop(path)
+        self._disk_cache_lock.lock()
+        try:
+            device_id = self._get_device_id(path)
+            inode_key = self._get_inode_key(path)
+            with self._write_lock():
+                cached_sizes = self._thumbnail_cache.pop(path, {})
                 for img, _ in cached_sizes.values():
                     if img:
                         self._cache_bytes_size -= img.sizeInBytes()
-            inode_info = self._path_to_inode.pop(path, None)
+                inode_info = self._path_to_inode.pop(path, None)
+                if inode_info:
+                    device_id, inode_key = inode_info
+                for size in THUMBNAIL_SIZES:
+                    self._broken_cache.pop((device_id, inode_key, size), None)
 
-        device_id, inode_key = inode_info if inode_info else (None, None)
-        self._delete_from_lmdb(path, device_id=device_id, inode_key=inode_key)
+            if self._cache_writer:
+                self._cache_writer.invalidate_thumbnail(path, device_id, inode_key)
+            else:
+                self._delete_from_lmdb(path, device_id, inode_key)
+        finally:
+            self._disk_cache_lock.unlock()
 
     def remove_if_missing(self, paths_to_check):
         """Remove cache entries for files that no longer exist on disk."""
@@ -1384,8 +1484,11 @@ class ThumbnailCache(QObject):
                         if stop_check and stop_check():
                             return orphans_removed
 
-                        if len(value) > 12 and value[8:12] == b'PTH\0':
+                        if len(value) >= 16 and value[8:12] in (
+                                THUMBNAIL_CACHE_HEADER, LEGACY_THUMBNAIL_CACHE_HEADER):
                             path_len = struct.unpack('I', value[12:16])[0]
+                            if not path_len:
+                                continue
                             path_bytes = value[16:16+path_len]
                             path = path_bytes.decode('utf-8', errors='ignore')
 
@@ -1472,14 +1575,10 @@ class ThumbnailCache(QObject):
                 # Pack mtime as a double (8 bytes) and prepend to image data
                 mtime_bytes = struct.pack('d', mtime)
 
-                # New format: mtime(8) + 'PTH\0'(4) + len(4) + path + img
-                if path:
-                    path_encoded = path.encode('utf-8')
-                    header = mtime_bytes + b'PTH\0' + \
-                        struct.pack('I', len(path_encoded)) + path_encoded
-                    value_bytes = header + img_data
-                else:
-                    value_bytes = mtime_bytes + img_data
+                path_encoded = path.encode('utf-8') if path else b''
+                header = mtime_bytes + THUMBNAIL_CACHE_HEADER + \
+                    struct.pack('I', len(path_encoded)) + path_encoded
+                value_bytes = header + img_data
 
                 data_to_write.append((device_id, size, inode_key, value_bytes))
             except Exception as e:
@@ -1777,6 +1876,7 @@ class ThumbnailGenerator(QThread):
         self._queue_mutex = QMutex()
         self._accepting = True
         self._total = len(self._pending)
+        self.generated_count = 0
 
     def add_paths(self, paths):
         """Queue new or changed files while the generator is running."""
@@ -1885,6 +1985,8 @@ class ThumbnailGenerator(QThread):
             if started_in_batch > 0:
                 # Wait for the current batch to finish before queuing more
                 sem.acquire(started_in_batch)
+                self.generated_count += sum(
+                    worker.thumbnail_generated for worker in self._workers)
                 self._workers_mutex.lock()
                 self._workers.clear()
                 self._workers_mutex.unlock()

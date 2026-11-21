@@ -3,6 +3,7 @@ import os
 import struct
 import threading
 import time
+from collections import deque
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -13,7 +14,9 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from bagheeraview.core import app, filesystemwatcher, imagescanner, metadatamanager
-from bagheeraview.core.constants import APP_CONFIG, ITEM_TYPE_ROLE
+from bagheeraview.core.constants import (
+    APP_CONFIG, IMAGE_DATA_ROLE, ITEM_TYPE_ROLE, UITexts,
+)
 
 
 @pytest.fixture
@@ -63,6 +66,38 @@ def test_changed_image_is_queued_without_discarding_background_work():
     window.generate_missing_thumbnails.assert_not_called()
 
 
+def test_regeneration_restarts_active_background_work_after_invalidation(qapp):
+    events = []
+    generator = Mock(force_thumbnail_refresh=False)
+    generator.isRunning.return_value = True
+    generator.stop.side_effect = lambda: events.append("stop")
+    cache = Mock()
+    cache.invalidate_path.side_effect = lambda path: events.append(("invalidate", path))
+    restarted = Mock()
+    window = SimpleNamespace(
+        thumbnail_generator=generator, _thumbnail_generation=0, cache=cache,
+        found_items_data=[("changed", None), ("other", None)],
+        _model_update_queue=deque(), _path_to_model_index={},
+        thumbnail_view=Mock(), current_thumb_size=128,
+        _get_tier_for_size=lambda size: size,
+        get_all_image_paths=lambda: ["changed", "other"],
+        _priority_thumbnail_paths=lambda: ["other"])
+
+    def start(paths, size, force_thumbnail_refresh=False):
+        events.append(("start", paths, size, force_thumbnail_refresh))
+        window.thumbnail_generator = restarted
+
+    window._start_thumbnail_generator = start
+    app.MainWindow.regenerate_thumbnail(window, "changed")
+
+    assert events == [
+        "stop", ("invalidate", "changed"),
+        ("start", ["changed", "other"], 128, False),
+    ]
+    restarted.prioritize.assert_called_once_with(["changed", "other"])
+    assert isinstance(window._model_update_queue, deque)
+
+
 def test_metadata_only_batches_are_cached(qapp, tmp_path, monkeypatch):
     monkeypatch.setattr(imagescanner, "APP_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(imagescanner, "CACHE_PATH", str(tmp_path / "cache"))
@@ -81,7 +116,103 @@ def test_metadata_only_batches_are_cached(qapp, tmp_path, monkeypatch):
         cache.lmdb_close()
 
 
-def test_force_refresh_regenerates_cached_thumbnail(qapp, tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    ("extension", "legacy_usable"),
+    [(".jpg", True), (".png", False), (".webp", False), (".nrw", False)])
+def test_legacy_orientation_sensitive_thumbnails_are_regenerated(
+        qapp, tmp_path, monkeypatch, extension, legacy_usable):
+    monkeypatch.setattr(imagescanner, "APP_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(imagescanner, "CACHE_PATH", str(tmp_path / "cache"))
+    path = tmp_path / f"image{extension}"
+    path.touch()
+    stat = path.stat()
+    inode = struct.pack("Q", stat.st_ino)
+    image = QImage(16, 16, QImage.Format_RGB32)
+    image.fill(Qt.red)
+    cache = imagescanner.ThumbnailCache()
+    try:
+        path_bytes = str(path).encode()
+        payload = (struct.pack("d", stat.st_mtime) + b"PTH\0" +
+                   struct.pack("I", len(path_bytes)) + path_bytes +
+                   cache._image_to_bytes(image))
+        with cache._lmdb_env.begin(write=True) as txn:
+            db = cache._get_device_db(stat.st_dev, 128, write=True, txn=txn)
+            txn.put(inode, payload, db=db)
+        assert bool(cache.get_thumbnail(str(path), 128).image) == legacy_usable
+
+        if not legacy_usable:
+            cache._batch_write_to_lmdb([
+                (stat.st_dev, inode, image, stat.st_mtime, 128, str(path))])
+            assert cache.get_thumbnail(str(path), 128).image
+    finally:
+        cache.lmdb_close()
+
+
+def test_invalidation_waits_for_inflight_disk_write(qapp, tmp_path, monkeypatch):
+    monkeypatch.setattr(imagescanner, "APP_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(imagescanner, "CACHE_PATH", str(tmp_path / "cache"))
+    path = tmp_path / "image.png"
+    image = QImage(16, 16, QImage.Format_RGB32)
+    image.fill(Qt.red)
+    assert image.save(str(path))
+    stat = path.stat()
+    other_path = tmp_path / "other.png"
+    assert image.save(str(other_path))
+    other_stat = other_path.stat()
+    cache = imagescanner.ThumbnailCache()
+    writing = threading.Event()
+    release = threading.Event()
+    invalidated = threading.Event()
+    original_write = cache._batch_write_to_lmdb
+
+    def delayed_write(batch):
+        writing.set()
+        if not release.wait(10):
+            raise TimeoutError("thumbnail write was not released")
+        original_write(batch)
+
+    monkeypatch.setattr(cache, "_batch_write_to_lmdb", delayed_write)
+    thread = None
+    try:
+        cache.set_thumbnail(str(path), image, stat.st_mtime, 128,
+                            inode=stat.st_ino, device_id=stat.st_dev)
+        assert writing.wait(5)
+        cache.set_thumbnail(str(path), image, stat.st_mtime, 256,
+                            inode=stat.st_ino, device_id=stat.st_dev)
+        cache.set_thumbnail(str(other_path), image, other_stat.st_mtime, 128,
+                            inode=other_stat.st_ino, device_id=other_stat.st_dev)
+
+        def invalidate():
+            cache.invalidate_path(str(path))
+            invalidated.set()
+
+        thread = threading.Thread(target=invalidate)
+        thread.start()
+        assert not invalidated.wait(0.1)
+        release.set()
+        thread.join(5)
+        assert invalidated.is_set()
+        assert not cache.get_thumbnail(str(path), 128).image
+        assert not cache._check_disk_cache(
+            str(path), [128, 256], stat.st_mtime, stat.st_dev,
+            struct.pack("Q", stat.st_ino)).image
+        cache.lmdb_close()
+        cache.lmdb_open()
+        assert not cache.get_thumbnail(str(path), 256).image
+        assert cache._check_disk_cache(
+            str(other_path), [128], other_stat.st_mtime,
+            other_stat.st_dev, struct.pack("Q", other_stat.st_ino)).image
+    finally:
+        release.set()
+        if thread:
+            thread.join(10)
+        cache.lmdb_close()
+
+
+@pytest.mark.parametrize(
+    ("force_refresh", "expected_generations"), [(False, 0), (True, 1)])
+def test_thumbnail_generator_tracks_cache_hits_and_regeneration(
+        qapp, tmp_path, monkeypatch, force_refresh, expected_generations):
     monkeypatch.setattr(imagescanner, "APP_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(imagescanner, "CACHE_PATH", str(tmp_path / "cache"))
     path = tmp_path / "image.png"
@@ -98,18 +229,109 @@ def test_force_refresh_regenerates_cached_thumbnail(qapp, tmp_path, monkeypatch)
         cache.set_thumbnail(str(path), image, stat.st_mtime, 128,
                             inode=stat.st_ino, device_id=stat.st_dev)
         generator = imagescanner.ThumbnailGenerator(
-            cache, [str(path)], 128, pool, force_thumbnail_refresh=True)
+            cache, [str(path)], 128, pool,
+            force_thumbnail_refresh=force_refresh)
         generator.start()
         deadline = time.monotonic() + 10
         while generator.isRunning() and time.monotonic() < deadline:
             qapp.processEvents()
             time.sleep(0.005)
         assert not generator.isRunning()
-        generated.assert_called_once()
+        assert generated.call_count == expected_generations
+        assert generator.generated_count == expected_generations
     finally:
         if generator and generator.isRunning():
             generator.stop()
         cache.lmdb_close()
+
+
+def test_context_regeneration_replaces_cached_tiers_and_updates_view(
+        qapp, tmp_path, monkeypatch):
+    images = tmp_path / "images"
+    images.mkdir()
+    path = str(images / "image.png")
+    image = QImage(16, 16, QImage.Format_RGB32)
+    image.fill(Qt.green)
+    assert image.save(path)
+    old_image = QImage(16, 16, QImage.Format_RGB32)
+    old_image.fill(Qt.red)
+
+    monkeypatch.setattr(app, "CONFIG_PATH", str(tmp_path / "config"))
+    monkeypatch.setattr(app, "HISTORY_PATH", str(tmp_path / "history"))
+    monkeypatch.setattr(app, "BOOKMARKS_PATH", str(tmp_path / "bookmarks"))
+    monkeypatch.setattr(imagescanner, "APP_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(imagescanner, "CACHE_PATH", str(tmp_path / "cache"))
+    monkeypatch.setattr(filesystemwatcher, "HAVE_WATCHDOG", False)
+    monkeypatch.setattr(metadatamanager, "set_app_modified_callback", lambda _: None)
+    monkeypatch.setattr(app.MainWindow, "save_config", lambda self: None)
+    cache = imagescanner.ThumbnailCache()
+    pool = imagescanner.ThreadPoolManager()
+    window = None
+    try:
+        window = app.MainWindow(cache, [str(images)], pool, None)
+        deadline = time.monotonic() + 10
+        while (window._is_loading or window.thumbnail_generator is None or
+               window.thumbnail_generator.isRunning()) and time.monotonic() < deadline:
+            qapp.processEvents()
+            time.sleep(0.005)
+        qapp.processEvents()
+        assert not window._is_loading
+        assert not window.thumbnail_generator.isRunning()
+
+        stat = os.stat(path)
+        for size in (128, 256, 512):
+            assert cache.set_thumbnail(path, old_image, stat.st_mtime, size,
+                                       inode=stat.st_ino, device_id=stat.st_dev)
+        cache.mark_broken(path, window._current_thumb_tier, stat.st_mtime,
+                          stat.st_ino, stat.st_dev, "old error")
+        window.found_items_data[0] = (path, old_image, *window.found_items_data[0][2:])
+        item = window.thumbnail_model.itemFromIndex(
+            app.QModelIndex(window._path_to_model_index[path]))
+        item.setData(old_image, IMAGE_DATA_ROLE)
+        window.regenerate_thumbnail(path)
+        deadline = time.monotonic() + 10
+        while window.thumbnail_generator.isRunning() and time.monotonic() < deadline:
+            qapp.processEvents()
+            time.sleep(0.005)
+        qapp.processEvents()
+        assert not window.thumbnail_generator.isRunning()
+        assert window.thumbnail_generator.generated_count == 1
+        assert window.status_lbl.text() == UITexts.HIGH_RES_GENERATED
+        assert item.data(IMAGE_DATA_ROLE) is None
+        assert window.found_items_data[0][1] is None
+        result = cache.get_thumbnail(path, window._current_thumb_tier)
+        assert result.image.pixelColor(0, 0) == image.pixelColor(0, 0)
+        assert cache.get_broken_info(path, window._current_thumb_tier,
+                                     stat.st_mtime, stat.st_ino, stat.st_dev) is None
+
+        window.status_lbl.setText("unchanged")
+        window._start_thumbnail_generator([path], window._current_thumb_tier)
+        deadline = time.monotonic() + 10
+        while window.thumbnail_generator.isRunning() and time.monotonic() < deadline:
+            qapp.processEvents()
+            time.sleep(0.005)
+        qapp.processEvents()
+        assert not window.thumbnail_generator.isRunning()
+        assert window.status_lbl.text() == "unchanged"
+
+        cache.lmdb_close()
+        cache.lmdb_open()
+        result = cache._check_disk_cache(
+            path, [window._current_thumb_tier], stat.st_mtime, stat.st_dev,
+            struct.pack("Q", stat.st_ino))
+        assert result.image.pixelColor(0, 0) == image.pixelColor(0, 0)
+        for size in (128, 256, 512):
+            if size != window._current_thumb_tier:
+                assert not cache._check_disk_cache(
+                    path, [size], stat.st_mtime, stat.st_dev,
+                    struct.pack("Q", stat.st_ino)).image
+    finally:
+        if window is not None:
+            window.perform_shutdown()
+            window.deleteLater()
+        else:
+            cache.lmdb_close()
+        qapp.processEvents()
 
 
 def test_stale_scanner_results_do_not_start_old_generation(qapp, tmp_path, monkeypatch):
