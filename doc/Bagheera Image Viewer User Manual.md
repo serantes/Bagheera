@@ -105,10 +105,6 @@ activity:
 
 Next to the status bar, you'll find controls for managing the thumbnail view:
 
-* **Load More Images Button**: (Hidden by default, appears when more images are
-  available) Loads the next batch of images from the current scan.
-* **Load All Images Button**: (Hidden by default, appears when more images are
-  available) Continuously loads all remaining images from the current scan.
 * **Cancel Duplicates Button**: (Only visible during duplicate detection) Stops
   the ongoing duplicate detection process.
 * **View Mode Dropdown**: Changes how images are grouped in the grid:
@@ -543,7 +539,9 @@ various aspects of Bagheera's behavior.
 
 * **Scan Max Level**: Maximum directory depth to scan recursively.
 * **Scan Batch Size**: Number of images to load in each batch during scanning.
-* **Scan Full On Start**: Automatically scan all images in the folder on startup.
+* The scan adds placeholders for all discovered images before generating their
+  thumbnails. Visible thumbnails take priority, and generation continues in
+  the background when they are ready.
 * **Generation Threads**: Maximum number of simultaneous threads to generate
   thumbnails.
 * **Scan hidden directories / files**: Include directories or files whose names

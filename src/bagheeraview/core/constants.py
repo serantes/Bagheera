@@ -176,7 +176,6 @@ TAGS_MENU_MAX_ITEMS_DEFAULT = 25
 SCANNER_SETTINGS_DEFAULTS = {
     "scan_max_level": 0,
     "scan_batch_size": 64,
-    "scan_full_on_start": True,
     "person_tags": "",
     "generation_threads": 4,
     "search_engine": "",
@@ -1081,15 +1080,12 @@ _UI_TEXTS = {
         "generate thumbnails.",
         "SETTINGS_SCAN_MAX_LEVEL_LABEL": "Scan Max Level:",
         "SETTINGS_SCAN_BATCH_SIZE_LABEL": "Scan Batch Size:",
-        "SETTINGS_SCAN_FULL_ON_START_LABEL": "Scan Full On Start:",
         "SETTINGS_SCANNER_SEARCH_ENGINE_LABEL": "File search engine:",
         "SETTINGS_SCANNER_SEARCH_ENGINE_TOOLTIP": "Engine to use for finding files. "
         "'Bagheera' uses BagheeraSearch library. 'Baloo' uses 'baloosearch' command.",
         "SETTINGS_SCAN_MAX_LEVEL_TOOLTIP": "Maximum directory depth to scan "
         "recursively.",
         "SETTINGS_SCAN_BATCH_SIZE_TOOLTIP": "Number of images to load in each batch.",
-        "SETTINGS_SCAN_FULL_ON_START_TOOLTIP": "Automatically scan all images in the "
-        "folder on startup.",
         "SETTINGS_SCAN_HIDDEN_DIRS_LABEL": "Scan hidden directories",
         "SETTINGS_SCAN_HIDDEN_DIRS_TOOLTIP": "If enabled, directories whose name starts "
         "with '.' will be entered and shown during scanning.",
@@ -1941,12 +1937,9 @@ _UI_TEXTS = {
         "SETTINGS_SCANNER_SEARCH_ENGINE_TOOLTIP": "Motor a usar para buscar archivos. "
         "'Bagheera' usa la librería de BagheeraSearch. 'Baloo' usa el commando "
         "'baloosearch'",
-        "SETTINGS_SCAN_FULL_ON_START_LABEL": "Escanear Todo al Inicio:",
         "SETTINGS_SCAN_MAX_LEVEL_TOOLTIP": "Profundidad máxima de directorio para "
         "escanear recursivamente.",
         "SETTINGS_SCAN_BATCH_SIZE_TOOLTIP": "Número de imágenes a cargar en cada lote.",
-        "SETTINGS_SCAN_FULL_ON_START_TOOLTIP": "Escanear automáticamente todas las "
-        "imágenes de la carpeta al inicio.",
         "SETTINGS_SCAN_HIDDEN_DIRS_LABEL": "Escanear directorios ocultos",
         "SETTINGS_SCAN_HIDDEN_DIRS_TOOLTIP": "Si está activado, los directorios cuyo "
         "nombre comienza con '.' serán explorados y mostrados durante el escaneo.",
@@ -2796,12 +2789,9 @@ _UI_TEXTS = {
         "SETTINGS_SCANNER_SEARCH_ENGINE_TOOLTIP": "Motor a usar para buscar ficheiros. "
         "'Bagheera' usa a libraría de BagheeraSearch. 'Baloo' usa o comando de "
         "'baloosearch'.",
-        "SETTINGS_SCAN_FULL_ON_START_LABEL": "Escanear Todo ao Inicio:",
         "SETTINGS_SCAN_MAX_LEVEL_TOOLTIP": "Profundidade máxima de directorio para "
         "escanear recursivamente.",
         "SETTINGS_SCAN_BATCH_SIZE_TOOLTIP": "Número de imaxes a cargar en cada lote.",
-        "SETTINGS_SCAN_FULL_ON_START_TOOLTIP": "Escanear automaticamente todas as "
-        "imaxes do cartafol ao inicio.",
         "SETTINGS_SCAN_HIDDEN_DIRS_LABEL": "Escanear directorios ocultos",
         "SETTINGS_SCAN_HIDDEN_DIRS_TOOLTIP": "Se está activado, os directorios cuxo "
         "nome comeza con '.' serán explorados e mostrados durante o escaneo.",

@@ -409,19 +409,6 @@ class SettingsDialog(QDialog):
         self.scan_batch_size_spin.setToolTip(UITexts.SETTINGS_SCAN_BATCH_SIZE_TOOLTIP)
         scanner_layout.addLayout(scan_batch_size_layout)
 
-        scan_full_on_start_layout = QHBoxLayout()
-        scan_full_on_start_label = QLabel(UITexts.SETTINGS_SCAN_FULL_ON_START_LABEL)
-        self.scan_full_on_start_checkbox = QCheckBox()
-        self.scan_full_on_start_checkbox.setText("")
-
-        scan_full_on_start_layout.addWidget(scan_full_on_start_label)
-        scan_full_on_start_layout.addStretch()
-        scan_full_on_start_layout.addWidget(self.scan_full_on_start_checkbox)
-        scan_full_on_start_label.setToolTip(
-            UITexts.SETTINGS_SCAN_FULL_ON_START_TOOLTIP)
-        self.scan_full_on_start_checkbox.setToolTip(
-            UITexts.SETTINGS_SCAN_FULL_ON_START_TOOLTIP)
-
         # Threads
         threads_layout = QHBoxLayout()
         threads_label = QLabel(UITexts.SETTINGS_SCAN_THREADS_LABEL)
@@ -432,8 +419,6 @@ class SettingsDialog(QDialog):
         threads_label.setToolTip(UITexts.SETTINGS_SCAN_THREADS_TOOLTIP)
         self.threads_spin.setToolTip(UITexts.SETTINGS_SCAN_THREADS_TOOLTIP)
         scanner_layout.addLayout(threads_layout)
-
-        scanner_layout.addLayout(scan_full_on_start_layout)
 
         # --- Show Hidden Directories ---
         scan_hidden_dirs_layout = QHBoxLayout()
@@ -1131,8 +1116,6 @@ class SettingsDialog(QDialog):
             "scan_max_level", SCANNER_SETTINGS_DEFAULTS["scan_max_level"])
         scan_batch_size = APP_CONFIG.get(
             "scan_batch_size", SCANNER_SETTINGS_DEFAULTS["scan_batch_size"])
-        scan_full_on_start = APP_CONFIG.get(
-            "scan_full_on_start", SCANNER_SETTINGS_DEFAULTS["scan_full_on_start"])
         scan_threads = APP_CONFIG.get(
             "generation_threads",
             SCANNER_SETTINGS_DEFAULTS.get("generation_threads", 4))
@@ -1293,8 +1276,6 @@ class SettingsDialog(QDialog):
                     self.search_engine_combo.setCurrentIndex(index)
             else:
                 self.search_engine_combo.setCurrentIndex(-1)
-
-        self.scan_full_on_start_checkbox.setChecked(scan_full_on_start)
 
         scan_hidden_dirs = APP_CONFIG.get(
             "scan_hidden_dirs", SCANNER_SETTINGS_DEFAULTS.get("scan_hidden_dirs", False))
@@ -1621,7 +1602,6 @@ class SettingsDialog(QDialog):
         APP_CONFIG["scan_batch_size"] = self.scan_batch_size_spin.value()
         if HAVE_BAGHEERASEARCH_LIB:
             APP_CONFIG["search_engine"] = self.search_engine_combo.currentData()
-        APP_CONFIG["scan_full_on_start"] = self.scan_full_on_start_checkbox.isChecked()
         APP_CONFIG["person_tags"] = self.person_tags_edit.text()
         APP_CONFIG["pet_tags"] = self.pet_tags_edit.text()
         APP_CONFIG["body_tags"] = self.body_tags_edit.text()

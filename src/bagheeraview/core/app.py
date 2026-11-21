@@ -845,6 +845,8 @@ class ThumbnailDelegate(QStyledItemDelegate):
         self.main_win = parent
         self.gps_icon = QIcon.fromTheme(
             "mark-location", QIcon.fromTheme("map-marker"))
+        self.placeholder_icon = QIcon.fromTheme(
+            "image-x-generic", self.main_win.style().standardIcon(QStyle.SP_FileIcon))
 
     def paint(self, painter, option, index):
         painter.save()
@@ -1050,8 +1052,8 @@ class ThumbnailDelegate(QStyledItemDelegate):
                             # Icons are usually internally cached by Qt, minimal
                             # overhead
                         else:
-                            # Empty fallback if nothing exists
-                            source_pixmap = QPixmap()
+                            source_pixmap = self.placeholder_icon.pixmap(
+                                thumb_size, thumb_size)
 
         filename = index.data(Qt.DisplayRole)
         tags = index.data(TAGS_ROLE) or []
@@ -1566,10 +1568,12 @@ class MainWindow(QMainWindow):
         self.mru_tags = deque(maxlen=APP_CONFIG.get(
             "tags_menu_max_items", TAGS_MENU_MAX_ITEMS_DEFAULT))
         self.scanner = None
+        self._scan_generation = 0
         self._directory_navigation_root = None
         self._directory_navigation_paths = []
         self._directory_navigation_source_root = None
         self.thumbnail_generator = None
+        self._thumbnail_generation = 0
         self.show_viewer_status_bar = True
         self.show_filmstrip = False
         self.filmstrip_position = 'bottom'  # bottom, left, top, right
@@ -1881,6 +1885,11 @@ class MainWindow(QMainWindow):
         self.resume_scan_timer.setSingleShot(True)
         self.resume_scan_timer.setInterval(400)
         self.resume_scan_timer.timeout.connect(self._resume_scanning)
+        self._thumbnail_priority_timer = QTimer(self)
+        self._thumbnail_priority_timer.setSingleShot(True)
+        self._thumbnail_priority_timer.setInterval(30)
+        self._thumbnail_priority_timer.timeout.connect(
+            self._prioritize_visible_thumbnails)
 
         # # Timer for debouncing tag list updates in the filter tab for performance
         # self.filter_refresh_timer = QTimer(self)
@@ -2127,6 +2136,7 @@ class MainWindow(QMainWindow):
                 self.proxy_model.layoutChanged):
             signal.connect(
                 lambda *_args: self._invalidate_group_header_rows())
+            signal.connect(self._schedule_thumbnail_priority)
 
         self.thumbnail_view.setModel(self.proxy_model)
         self.thumbnail_view.selectionModel().selectionChanged.connect(
@@ -2192,6 +2202,7 @@ class MainWindow(QMainWindow):
 
     def _on_scroll_interaction(self, value):
         """Pauses scanning during scroll to keep UI fluid."""
+        self._schedule_thumbnail_priority()
         if self.scanner and self.scanner.isRunning():
             self.thread_pool_manager.set_user_active(True)
             self.scanner.set_paused(True)
@@ -2201,10 +2212,35 @@ class MainWindow(QMainWindow):
         """Resumes scanning after interaction pause."""
         if self.scanner:
             self.thread_pool_manager.set_user_active(False)
-            # Prioritize currently visible images
-            visible_paths = self.get_visible_image_paths()
-            self.scanner.prioritize(visible_paths)
             self.scanner.set_paused(False)
+
+    def _viewport_thumbnail_paths(self):
+        """Return thumbnail paths intersecting the actual viewport."""
+        viewport = self.thumbnail_view.viewport()
+        width, height = viewport.width(), viewport.height()
+        if not viewport.isVisible() or width <= 0 or height <= 0:
+            return []
+        xs = list(range(0, width, 32)) + [width - 1]
+        ys = list(range(0, height, 32)) + [height - 1]
+        visible = {}
+        for y in ys:
+            for x in xs:
+                index = self.thumbnail_view.indexAt(QPoint(x, y))
+                if index.isValid() and index.data(ITEM_TYPE_ROLE) == "thumbnail":
+                    path = index.data(PATH_ROLE)
+                    if path:
+                        visible[index.row()] = path
+        return [visible[row] for row in sorted(visible)]
+
+    def _prioritize_visible_thumbnails(self):
+        generator = self.thumbnail_generator
+        if generator and generator.isRunning():
+            generator.prioritize(self._viewport_thumbnail_paths())
+
+    def _schedule_thumbnail_priority(self, *_args):
+        timer = getattr(self, "_thumbnail_priority_timer", None)
+        if timer is not None:
+            timer.start()
 
     # --- Layout Management ---
     def save_layout(self, target_path=None):
@@ -3080,6 +3116,8 @@ class MainWindow(QMainWindow):
             return
         self._is_shutting_down = True
         self.is_cleaning = True
+        self._scan_generation += 1
+        self._thumbnail_generation += 1
 
         # Save configuration early if visible, as per user request.
         # This ensures persistence even if subsequent cleanup hangs.
@@ -3094,6 +3132,7 @@ class MainWindow(QMainWindow):
         self.rebuild_timer.stop()
         self._model_update_timer.stop()
         self.resume_scan_timer.stop()
+        self._thumbnail_priority_timer.stop()
         if hasattr(self, "_section_scrubber_timer"):
             self._section_scrubber_timer.stop()
 
@@ -4211,10 +4250,15 @@ class MainWindow(QMainWindow):
         self._suppress_updates = True
         if self.scanner:
             self.scanner.stop()
+        if self.thumbnail_generator and self.thumbnail_generator.isRunning():
+            self.thumbnail_generator.stop()
+        self._scan_generation += 1
+        scan_generation = self._scan_generation
+        self._thumbnail_generation += 1
 
         # Reset state for the new scan
-        self._is_loading_all = APP_CONFIG.get(
-            "scan_full_on_start", SCANNER_SETTINGS_DEFAULTS["scan_full_on_start"])
+        self._is_loading_all = True
+        self._scan_force_thumbnail_refresh = self._force_thumbnail_refresh
         self.update_load_all_button_state()
 
         # Clear the model if not syncing with an existing viewer
@@ -4270,16 +4314,19 @@ class MainWindow(QMainWindow):
                                     thread_pool_manager=self.thread_pool_manager,
                                     viewers=self.viewers,  # Line 1071
                                     force_thumbnail_refresh=self._force_thumbnail_refresh,
-                                    target_sizes=[self._current_thumb_tier],
+                                    target_sizes=[],
                                     scan_max_level=scan_max_level,
                                     directory_navigation=(
                                         navigation_root is not None))
         if self._is_loading_all:
             self.scanner.set_auto_load(True)
         self._is_loading = True
-        self.scanner.images_found.connect(self.collect_found_images)
+        self.scanner.images_found.connect(
+            lambda batch: self.collect_found_images(batch)
+            if self._scan_generation == scan_generation else None)
         self.scanner.directories_found.connect(
-            self._on_directories_found)
+            lambda root, dirs: self._on_directories_found(root, dirs)
+            if self._scan_generation == scan_generation else None)
 
         # Add directories to file system watcher
         watch_recursively = configured_scan_max_level != 0
@@ -4289,11 +4336,18 @@ class MainWindow(QMainWindow):
                     os.path.abspath(os.path.expanduser(p)),
                     recursive=watch_recursively)
 
-        self.scanner.progress_percent.connect(self.update_progress_bar)
-        self.scanner.progress_msg.connect(self.status_lbl.setText)
-        self.scanner.more_files_available.connect(self.more_files_available)
+        self.scanner.progress_percent.connect(
+            lambda value: self.update_progress_bar(value)
+            if self._scan_generation == scan_generation else None)
+        self.scanner.progress_msg.connect(
+            lambda message: self.status_lbl.setText(message)
+            if self._scan_generation == scan_generation else None)
+        self.scanner.more_files_available.connect(
+            lambda index, total: self.more_files_available(index, total)
+            if self._scan_generation == scan_generation else None)
         self.scanner.finished_scan.connect(
-            lambda n: self._on_scan_finished(n, select_paths))
+            lambda n: self._on_scan_finished(n, select_paths)
+            if self._scan_generation == scan_generation else None)
         self.scanner.start()
         self._scan_all = False
         self._force_thumbnail_refresh = False  # Reset the flag after starting scan
@@ -4350,7 +4404,8 @@ class MainWindow(QMainWindow):
         """Slot for when the image scanner has finished."""
         self._suppress_updates = False
         self._is_loading = False
-        self._scanner_last_index = self._scanner_total_files
+        self._scanner_last_index = n
+        self._scanner_total_files = n
 
         self.btn_load_more.hide()
         self.btn_load_all.hide()
@@ -4382,6 +4437,10 @@ class MainWindow(QMainWindow):
         if self.rebuild_timer.isActive():
             self.rebuild_timer.stop()
         self.rebuild_view()
+
+        self.generate_missing_thumbnails(
+            self._current_thumb_tier,
+            force_thumbnail_refresh=self._scan_force_thumbnail_refresh)
 
         # Retry locating a path requested by the location dialogs.
         self._maybe_locate_pending_path()
@@ -5111,10 +5170,20 @@ class MainWindow(QMainWindow):
         if _path in self._path_to_model_index:
             p_idx = self._path_to_model_index[_path]
             if p_idx.isValid():
-                item = self.thumbnail_model.itemFromIndex(QModelIndex(p_idx))
+                source_index = QModelIndex(p_idx)
+                item = self.thumbnail_model.itemFromIndex(source_index)
+                mtime = item.data(MTIME_ROLE) if item else None
+                mtime_key = int(mtime * 1000) if mtime else 0
+                for tier in THUMBNAIL_SIZES:
+                    QPixmapCache.remove(
+                        f"thumb_{_path}_{mtime_key}_{self.current_thumb_size}_{tier}")
+                QPixmapCache.remove(f"fb_{_path}_{mtime}")
                 if item and item.data(IMAGE_DATA_ROLE):
                     item.setData(None, IMAGE_DATA_ROLE)
-        self.thumbnail_view.viewport().update()  # Force repaint
+                proxy_index = self.proxy_model.mapFromSource(source_index)
+                rect = self.thumbnail_view.visualRect(proxy_index)
+                if rect.intersects(self.thumbnail_view.viewport().rect()):
+                    self.thumbnail_view.viewport().update(rect)
 
     def on_metadata_tab_changed(self, index):
         """Refresh the active Metadata tab."""
@@ -6081,13 +6150,15 @@ class MainWindow(QMainWindow):
         if new_tier != self._current_thumb_tier:
             self._current_thumb_tier = new_tier
 
-            # Update scanner if running to use the new tier for upcoming batches
-            if self.scanner and self.scanner.isRunning():
-                self.scanner.target_sizes = [new_tier]
-
             # 2. For all images ALREADY loaded, start a background job to
             #    generate the newly required thumbnail size. This is interruptible.
-            self.generate_missing_thumbnails(new_tier)
+            if not self._is_loading:
+                force_refresh = bool(
+                    self.thumbnail_generator and
+                    self.thumbnail_generator.isRunning() and
+                    self.thumbnail_generator.force_thumbnail_refresh)
+                self.generate_missing_thumbnails(
+                    new_tier, force_thumbnail_refresh=force_refresh)
 
         # Update the delegate's size hint and the view's grid size
         new_hint = self.delegate.sizeHint(None, None)
@@ -6107,32 +6178,57 @@ class MainWindow(QMainWindow):
         self.thumbnail_view.update()
         self.setFocus()
 
-    def generate_missing_thumbnails(self, size):
+    def generate_missing_thumbnails(self, size, force_thumbnail_refresh=False):
         """
         Starts a background thread to generate thumbnails of a specific size for all
         currently loaded images.
         """
+        self._thumbnail_generation += 1
         if self.thumbnail_generator and self.thumbnail_generator.isRunning():
             self.thumbnail_generator.stop()
+        if force_thumbnail_refresh:
+            QPixmapCache.clear()
 
         paths = self.get_all_image_paths()
         if not paths:
             return
 
-        # Prioritize visible paths
-        visible = self.get_visible_image_paths()
-        visible_set = set(visible)
-        ordered_paths = visible + [p for p in paths if p not in visible_set]
+        self._start_thumbnail_generator(paths, size, force_thumbnail_refresh)
 
+    def _start_thumbnail_generator(self, paths, size, force_thumbnail_refresh=False):
+        self._thumbnail_generation += 1
+        generation = self._thumbnail_generation
         self.thumbnail_generator = ThumbnailGenerator(
-            self.cache, ordered_paths, size, self.thread_pool_manager)
+            self.cache, paths, size, self.thread_pool_manager,
+            force_thumbnail_refresh=force_thumbnail_refresh)
+        self.thumbnail_generator.prioritize(self._viewport_thumbnail_paths())
         self.thumbnail_generator.generation_complete.connect(
-            self.on_high_res_generation_finished)
+            lambda: self.on_high_res_generation_finished()
+            if self._thumbnail_generation == generation else None)
         self.thumbnail_generator.progress.connect(
             lambda p, t: self.status_lbl.setText(
                 f"Generating {size}px thumbnails: {p}/{t}")
+            if self._thumbnail_generation == generation else None
         )
         self.thumbnail_generator.start()
+        self._thumbnail_priority_timer.start()
+
+    def _queue_thumbnail_refresh(self, path):
+        if self._is_loading:
+            return
+        size = self._get_tier_for_size(self.current_thumb_size)
+        generator = self.thumbnail_generator
+        if generator and generator.isRunning():
+            if generator.size == size and generator.add_paths([path]):
+                generator.prioritize([path] + self._viewport_thumbnail_paths())
+                return
+            self.generate_missing_thumbnails(size)
+        else:
+            self._start_thumbnail_generator([path], size)
+
+        if self.thumbnail_generator and self.thumbnail_generator.isRunning():
+            self.thumbnail_generator.prioritize(
+                [path] + self._viewport_thumbnail_paths())
 
     def on_high_res_generation_finished(self):
         """Slot called when the background thumbnail generation is complete."""
@@ -6600,8 +6696,11 @@ class MainWindow(QMainWindow):
                     self.on_view_double_clicked(current_index)
                 event.accept()
                 return True
-        if source is self._thumbnail_viewport and event.type() == QEvent.Resize:
-            self.thumbnails_refresh_timer.start()
+        if source is self._thumbnail_viewport:
+            if event.type() == QEvent.Resize:
+                self.thumbnails_refresh_timer.start()
+            if event.type() in (QEvent.Resize, QEvent.Show):
+                self._thumbnail_priority_timer.start()
         return super().eventFilter(source, event)
 
     def _invalidate_group_header_rows(self):
@@ -7082,21 +7181,10 @@ class MainWindow(QMainWindow):
         if not path:
             return
 
-        # Create a ThumbnailGenerator to regenerate the thumbnail
-        size = self._get_tier_for_size(self.current_thumb_size)
-        self.thumbnail_generator = ThumbnailGenerator(
-            self.cache, [path], size, self.thread_pool_manager)
-        self.thumbnail_generator.generation_complete.connect(
-            self.on_high_res_generation_finished)
-        self.thumbnail_generator.progress.connect(
-            lambda p, t: self.status_lbl.setText(
-                UITexts.THUMBNAILS_REGENERATE_PROGRESS.format(p, t))
-        )
-        self.thumbnail_generator.start()
-
-        # Invalidate the cache so the new thumbnail is loaded
+        QPixmapCache.clear()
         self.cache.invalidate_path(path)
         self.rebuild_view()
+        self._queue_thumbnail_refresh(path)
 
     def get_app_info(self, desktop_file_id):
         """Gets the readable name and icon of an application from its .desktop file."""
@@ -7343,7 +7431,8 @@ class MainWindow(QMainWindow):
         self.rebuild_view()
 
         # Start background generation for the new items
-        self.generate_missing_thumbnails(self._current_thumb_tier)
+        if not self._is_loading:
+            self.generate_missing_thumbnails(self._current_thumb_tier)
 
         if len(valid_new_items) == 1:
             msg = f"New file detected: {os.path.basename(valid_new_items[0])}"
@@ -7425,6 +7514,7 @@ class MainWindow(QMainWindow):
             new_mtime = new_stat.st_mtime
 
             # Invalidate the cache to force thumbnail regeneration
+            QPixmapCache.clear()
             self.cache.invalidate_path(path)
 
             # Re-read metadata from disk
@@ -7437,14 +7527,6 @@ class MainWindow(QMainWindow):
 
             # Update proxy filter cache
             self.proxy_model.add_to_cache(path, res.tags)
-
-            # Create a ThumbnailGenerator to regenerate the thumbnail in the background
-            size = self._get_tier_for_size(self.current_thumb_size)
-            self.thumbnail_generator = ThumbnailGenerator(
-                self.cache, [path], size, self.thread_pool_manager)
-            self.thumbnail_generator.generation_complete.connect(
-                self.thumbnail_view.viewport().update)
-            self.thumbnail_generator.start()
 
             # Update the standard item in the model directly
             if path in self._path_to_model_index:
@@ -7485,6 +7567,8 @@ class MainWindow(QMainWindow):
             else:
                 # Flat view: invalidate proxy model to update sorting and filtering on the item
                 self.proxy_model.invalidate()
+
+            self._queue_thumbnail_refresh(path)
 
             # Update sidebar/status panel if this file is selected
             selected_paths = self.get_selected_paths()

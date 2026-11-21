@@ -25,6 +25,7 @@ class DummyMainWindow(MainWindow):
         self.viewers = []
         self.update_tag_edit_widget = MagicMock()
         self.update_info_widget = MagicMock()
+        self._queue_thumbnail_refresh = MagicMock()
 
         # Necessary attributes for ThumbnailGenerator logic
         self.current_thumb_size = 128
@@ -69,19 +70,10 @@ def test_on_fs_file_modified(tmp_path):
     mock_meta.tags = ["tag1", "tag2"]
     mock_meta.rating = 5
 
-    with patch("bagheeraview.core.app.load_common_metadata", return_value=mock_meta), \
-         patch("bagheeraview.core.app.ThumbnailGenerator") as mock_gen_class:
-
-        mock_gen_instance = MagicMock()
-        mock_gen_class.return_value = mock_gen_instance
-
+    with patch("bagheeraview.core.app.load_common_metadata", return_value=mock_meta):
         win.on_fs_file_modified(path_str)
 
-        # Verify ThumbnailGenerator was created and started
-        mock_gen_class.assert_called_once_with(
-            win.cache, [path_str], win._get_tier_for_size(win.current_thumb_size), win.thread_pool_manager
-        )
-        mock_gen_instance.start.assert_called_once()
+        win._queue_thumbnail_refresh.assert_called_once_with(path_str)
 
     # 1. Verify cache was invalidated
     win.cache.invalidate_path.assert_called_once_with(path_str)

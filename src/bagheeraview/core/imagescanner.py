@@ -1438,7 +1438,7 @@ class ThumbnailCache(QObject):
         for item in batch:
             if len(item) >= 7 and item[4] == -1:  # Metadata Marker
                 dev_id, inode_key, _, mtime, _, _, (tags, rating, path) = item
-                lmdb_key = f"{dev_id}-{inode_key}".encode('utf-8')
+                lmdb_key = f"{dev_id}-{inode_key.hex()}".encode('utf-8')
                 tags_str = "\0".join(tags)
                 path_bytes = path.encode('utf-8')
                 val = struct.pack('d', mtime) + bytes([int(rating)]) + \
@@ -1485,7 +1485,7 @@ class ThumbnailCache(QObject):
             except Exception as e:
                 logger.error(f"Error converting image for LMDB: {e}")
 
-        if not data_to_write:
+        if not data_to_write and not meta_to_write and not dirs_to_write:
             return
 
         # 2. Commit to DB in one transaction
@@ -1760,19 +1760,70 @@ class ThumbnailGenerator(QThread):
         def emit_progress(self):
             self.progress_tick.emit()
 
-    def __init__(self, cache, paths, size, thread_pool_manager):
+    def __init__(self, cache, paths, size, thread_pool_manager,
+                 force_thumbnail_refresh=False):
         super().__init__()
         self.cache = cache
         self.paths = paths
         self.size = size
+        self.force_thumbnail_refresh = force_thumbnail_refresh
         self._abort = False
         self.thread_pool_manager = thread_pool_manager
         self._workers = []
         self._workers_mutex = QMutex()
+        self._pending = set(paths)
+        self._queue = collections.deque(paths)
+        self._priority_queue = collections.deque()
+        self._queue_mutex = QMutex()
+        self._accepting = True
+        self._total = len(self._pending)
+
+    def add_paths(self, paths):
+        """Queue new or changed files while the generator is running."""
+        self._queue_mutex.lock()
+        try:
+            if not self._accepting:
+                return False
+            for path in paths:
+                if path not in self._pending:
+                    self._pending.add(path)
+                    self._queue.append(path)
+                    self._total += 1
+            return True
+        finally:
+            self._queue_mutex.unlock()
+
+    def prioritize(self, paths):
+        """Replace queued priorities with the currently visible paths."""
+        self._queue_mutex.lock()
+        try:
+            self._priority_queue = collections.deque(
+                dict.fromkeys(path for path in paths if path in self._pending))
+        finally:
+            self._queue_mutex.unlock()
+
+    def _take_batch(self, size):
+        self._queue_mutex.lock()
+        try:
+            paths = []
+            for queue in (self._priority_queue, self._queue):
+                while queue and len(paths) < size:
+                    path = queue.popleft()
+                    if path in self._pending:
+                        self._pending.remove(path)
+                        paths.append(path)
+            if not paths:
+                self._accepting = False
+            return paths
+        finally:
+            self._queue_mutex.unlock()
 
     def stop(self):
         """Stops the worker thread gracefully."""
         self._abort = True
+        self._queue_mutex.lock()
+        self._accepting = False
+        self._queue_mutex.unlock()
         self._workers_mutex.lock()
         for worker in self._workers:
             worker.shutdown()
@@ -1787,12 +1838,12 @@ class ThumbnailGenerator(QThread):
 
         emitter = self.SignalEmitter()
         processed_count = 0
-        total = len(self.paths)
         sem = QSemaphore(0)
 
         def on_tick():
             nonlocal processed_count
             processed_count += 1
+            total = self._total
             if processed_count % 5 == 0 or processed_count == total:
                 # Signal remains int, format in receiver
                 self.progress.emit(processed_count, total)
@@ -1806,13 +1857,13 @@ class ThumbnailGenerator(QThread):
         # Process in batches to avoid saturating the global thread pool queue.
         # This allows the application to respond to stop() signals almost
         # immediately.
-        batch_size = max(4, pool.maxThreadCount() * 2)
-
-        for i in range(0, len(self.paths), batch_size):
+        while True:
             if self._abort:
                 break
 
-            batch_slice = self.paths[i: i + batch_size]
+            batch_slice = self._take_batch(max(1, pool.maxThreadCount()))
+            if not batch_slice:
+                break
             started_in_batch = 0
 
             for path in batch_slice:
@@ -1820,7 +1871,8 @@ class ThumbnailGenerator(QThread):
                     break
                 runnable = ScannerWorker(self.cache, path, target_sizes=[self.size],
                                          load_metadata=False, signal_emitter=emitter,
-                                         semaphore=sem)
+                                         semaphore=sem,
+                                         force_thumbnail_refresh=self.force_thumbnail_refresh)
                 runnable.setAutoDelete(False)
 
                 self._workers_mutex.lock()
@@ -1909,8 +1961,7 @@ class ImageScanner(QThread):
             "scan_hidden_files", SCANNER_SETTINGS_DEFAULTS.get("scan_hidden_files", False))
 
         # Initial load
-        self.pending_tasks.append((0, APP_CONFIG.get(
-            "scan_batch_size", SCANNER_SETTINGS_DEFAULTS["scan_batch_size"])))
+        self.pending_tasks.append((0, 0))
         self._last_update_time = 0
 
         if self.thread_pool_manager:
@@ -2209,6 +2260,7 @@ class ImageScanner(QThread):
 
         images_loaded = 0
         batch = []
+        last_percent = -1
         while i < len(self.all_files):
 
             if not self._is_running:
@@ -2281,10 +2333,11 @@ class ImageScanner(QThread):
                     batch.append(r.result)
                     self.count += 1
                     images_loaded += 1
-                    # Emit progress every time an image is loaded
                     if len(self.all_files) > 0:
                         percent = int((self.count / len(self.all_files)) * 100)
-                        self.progress_percent.emit(percent)
+                        if percent != last_percent:
+                            self.progress_percent.emit(percent)
+                            last_percent = percent
 
             # Clean up runnables
             runnables.clear()
@@ -2293,10 +2346,9 @@ class ImageScanner(QThread):
             i = temp_i
 
             # Emit batch if size is enough (responsiveness optimization)
-            if self.count <= 100:
-                target_batch_size = 20
-            else:
-                target_batch_size = 200
+            batch_size = APP_CONFIG.get(
+                "scan_batch_size", SCANNER_SETTINGS_DEFAULTS["scan_batch_size"])
+            target_batch_size = min(20, batch_size) if self.count <= 100 else batch_size
 
             if len(batch) >= target_batch_size:
                 self.images_found.emit(batch)
@@ -2304,7 +2356,7 @@ class ImageScanner(QThread):
                 self.msleep(10)  # Yield to UI
 
             # Check if loading limit reached
-            if images_loaded >= to_load and to_load > 0:
+            if images_loaded >= to_load and to_load > 0 and i < len(self.all_files):
                 if batch:  # Emit remaining items
                     self.images_found.emit(batch)
 
