@@ -50,7 +50,7 @@ from PySide6.QtGui import (
 from PySide6.QtCore import (
     Qt, QPoint, QUrl, QObject, QEvent, QTimer, QByteArray, QRunnable, Signal,
     QItemSelection, QSortFilterProxyModel, QItemSelectionModel, QRect, QSize,
-    QThread, QPersistentModelIndex, QModelIndex
+    QThread, QPersistentModelIndex, QModelIndex, QSignalBlocker
 )
 from PySide6.QtDBus import QDBusConnection, QDBusMessage, QDBus
 
@@ -6146,7 +6146,7 @@ class MainWindow(QMainWindow):
         # Re-apply filters in case the tag change affects visibility
         self.apply_filters()
 
-    def on_view_mode_changed(self, index):
+    def on_view_mode_changed(self, index, rescan=True):
         """Callback for when the view mode (Flat/Folder) changes."""
         self._suppress_updates = True
         self.proxy_model.group_by_folder = (index == 1)
@@ -6174,7 +6174,7 @@ class MainWindow(QMainWindow):
             directory_root and
             ((index == 0 and not self._directory_navigation_root) or
              (index > 0 and self._directory_navigation_root)))
-        if needs_directory_rescan:
+        if rescan and needs_directory_rescan:
             self.start_scan([directory_root])
         else:
             self.rebuild_view(full_reset=True)
@@ -6182,6 +6182,13 @@ class MainWindow(QMainWindow):
 
         self.save_config()
         self.setFocus()
+
+    def _set_flat_for_new_path(self):
+        index = self.view_mode_combo.findData("flat")
+        if self.view_mode_combo.currentIndex() != index:
+            with QSignalBlocker(self.view_mode_combo):
+                self.view_mode_combo.setCurrentIndex(index)
+            self.on_view_mode_changed(index, rescan=False)
 
     def on_sort_changed(self):
         """Callback for when the sort order dropdown changes."""
@@ -6456,6 +6463,8 @@ class MainWindow(QMainWindow):
         if t:
             # Detect if the term is an existing path or a search query
             is_file = os.path.exists(os.path.expanduser(t))
+            if is_file:
+                self._set_flat_for_new_path()
             self.process_term(f"file:/{t}" if is_file else f"search:/{t}")
 
     def select_directory(self):
@@ -6479,6 +6488,7 @@ class MainWindow(QMainWindow):
             selected = dialog.selectedFiles()
             if selected:
                 # Process the first selected file
+                self._set_flat_for_new_path()
                 self.process_term(f"file:/{selected[0]}")
 
     def _restore_sidebar_tabs(self, config):
@@ -6843,6 +6853,9 @@ class MainWindow(QMainWindow):
             self._initial_image = None
             term = path if path.startswith(("search:/", "file:/", "layout:/")) \
                 else f"file:/{path}"
+            if term.startswith("file:/") and os.path.exists(
+                    os.path.expanduser(term[6:])):
+                self._set_flat_for_new_path()
             self.process_term(term)
 
     def set_app_icon(self):

@@ -255,3 +255,136 @@ def test_hard_refresh_uses_navigated_directory(navigation, tmp_path):
     assert invalidated == [str(first)]
     assert window.scans[-1][0] == [str(first)]
     assert window.history == [f"file:/{second}", f"file:/{first}"]
+
+
+@pytest.fixture
+def direct_path_window(navigation):
+    window = navigation
+    window.view_mode_combo = QComboBox()
+    window.view_mode_combo.addItem("Flat", "flat")
+    window.view_mode_combo.addItem("Folder", "folder")
+    window.view_mode_combo.setCurrentIndex(1)
+    window.mode_changes = []
+    window.on_view_mode_changed = lambda index, rescan=True: \
+        window.mode_changes.append((index, rescan))
+    window.view_mode_combo.currentIndexChanged.connect(
+        lambda index: window.on_view_mode_changed(index))
+    window._set_flat_for_new_path = MethodType(
+        app_module.MainWindow._set_flat_for_new_path, window)
+    return window
+
+
+@pytest.mark.parametrize("kind", ["directory", "image"])
+def test_search_bar_direct_path_starts_flat(direct_path_window, tmp_path, monkeypatch, kind):
+    window = direct_path_window
+    path = tmp_path
+    if kind == "image":
+        path = tmp_path / "image.jpg"
+        path.touch()
+        class Viewer:
+            def __init__(self, *_args, **_kwargs):
+                self.destroyed = SimpleNamespace(connect=lambda _slot: None)
+
+            def show(self):
+                pass
+
+        monkeypatch.setattr(app_module, "ImageViewer", Viewer)
+        window.cache = object()
+        window.viewers = []
+        window._set_thumbnail_model = lambda: None
+        window._setup_viewer_sync = lambda _viewer: None
+    window.search_input.setEditText(str(path))
+
+    app_module.MainWindow.on_search_triggered(window)
+
+    assert window.view_mode_combo.currentData() == "flat"
+    assert window.mode_changes == [(0, False)]
+    assert len(window.scans) == 1
+    assert window.scans[0][0] == [str(tmp_path)]
+
+
+def test_search_bar_query_keeps_grouping(direct_path_window):
+    window = direct_path_window
+    window.search_input.setEditText("tags=landscape")
+    app_module.MainWindow.on_search_triggered(window)
+    assert window.view_mode_combo.currentData() == "folder"
+    assert window.mode_changes == []
+
+
+def test_new_path_updates_view_without_rescanning_previous_directory(
+        direct_path_window):
+    window = direct_path_window
+    window.view_mode_combo.currentIndexChanged.disconnect()
+    window.on_view_mode_changed = MethodType(
+        app_module.MainWindow.on_view_mode_changed, window)
+    window.view_mode_combo.currentIndexChanged.connect(
+        lambda index: window.on_view_mode_changed(index))
+    window.proxy_model = SimpleNamespace(collapsed_groups=set())
+    window._group_info_cache = {}
+    window.thumbnail_view = SimpleNamespace(
+        setUniformItemSizes=lambda _value: None, setGridSize=lambda _size: None)
+    window.delegate = SimpleNamespace(sizeHint=lambda *_args: None)
+    window._directory_navigation_source_root = "/previous"
+    window._directory_navigation_root = None
+    window.rebuild_view = lambda **_kwargs: None
+    window._update_section_scrubber_visibility = lambda: None
+    window.setFocus = lambda: None
+
+    window._set_flat_for_new_path()
+
+    assert not window.proxy_model.group_by_folder
+    assert not window.proxy_model.group_by_day
+    assert window.scans == []
+
+
+def test_select_image_starts_flat(direct_path_window, tmp_path, monkeypatch):
+    window = direct_path_window
+    selected = str(tmp_path / "image.jpg")
+    terms = []
+
+    class Dialog:
+        def __init__(self, _parent):
+            pass
+
+        def setWindowTitle(self, _title):
+            pass
+
+        def setDirectory(self, _directory):
+            pass
+
+        def setFileMode(self, _mode):
+            pass
+
+        def setNameFilters(self, _filters):
+            pass
+
+        def exec(self):
+            return True
+
+        def selectedFiles(self):
+            return [selected]
+
+    monkeypatch.setattr(app_module, "QFileDialog", Dialog)
+    Dialog.ExistingFile = 0
+    window.scanner = None
+    window.process_term = terms.append
+    app_module.MainWindow.select_directory(window)
+    assert window.view_mode_combo.currentData() == "flat"
+    assert window.mode_changes == [(0, False)]
+    assert terms == [f"file:/{selected}"]
+
+
+@pytest.mark.parametrize("kind", ["directory", "search", "layout"])
+def test_initial_argument_grouping(direct_path_window, tmp_path, kind):
+    window = direct_path_window
+    terms = []
+    window.process_term = terms.append
+    path = {"directory": str(tmp_path), "search": "search:/cats",
+            "layout": "layout:/example"}[kind]
+
+    app_module.MainWindow.handle_initial_args(window, [path])
+
+    assert window.view_mode_combo.currentData() == (
+        "flat" if kind == "directory" else "folder")
+    assert window.mode_changes == ([(0, False)] if kind == "directory" else [])
+    assert terms == [f"file:/{path}" if kind == "directory" else path]

@@ -29,6 +29,10 @@ Ubicada en la parte superior, te permite:
 * **Navegar por rutas**: Escribe directamente la ruta de una carpeta para escanearla o de un archivo para abrirlo en el visor.
 * **Botón Explorar**: Abre el selector de archivos del sistema para elegir una imagen o directorio.
 
+Al introducir una ruta o imagen en la barra, seleccionarla con el botón
+Explorar o pasarla como parámetro, la agrupación inicial es **Plana**. Después
+puedes elegir otra agrupación. Las búsquedas y los layouts no cambian por ello.
+
 Con el motor de búsqueda Bagheera se pueden utilizar las cláusulas `HAVING` y
 `SUBQUERY`, y los operadores `AND`, `AND NOT`, `OR`, `OR NOT` y `OR EXCLUSIVE`
 entre subconsultas. Por ejemplo:

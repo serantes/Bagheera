@@ -52,6 +52,11 @@ Located at the top of the window, the search bar allows you to:
   does not reorder the search bar history.
 * **Refresh**: Run the current search or scan again without changing history.
 
+Entering an image or directory path in the search bar, selecting one with
+Browse, or passing one as a command-line argument initially selects **Flat**
+grouping. You can change the grouping afterwards. Searches and layouts are not
+affected by this default.
+
 With the Bagheera search engine, queries support `HAVING` and `SUBQUERY`
 clauses, including `AND`, `AND NOT`, `OR`, `OR NOT` and `OR EXCLUSIVE`
 between subqueries. For example:
