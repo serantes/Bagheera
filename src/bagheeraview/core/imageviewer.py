@@ -17,7 +17,7 @@ import uuid
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QScrollArea, QLabel, QHBoxLayout, QListWidget,
     QListWidgetItem, QAbstractItemView, QMenu, QInputDialog, QDialog, QDialogButtonBox,
-    QGridLayout, QApplication, QMessageBox, QLineEdit, QFileDialog
+    QGridLayout, QApplication, QMessageBox, QLineEdit, QFileDialog, QStyle
 )
 from PySide6.QtGui import (
     QPixmap, QIcon, QTransform, QDrag, QPainter, QPen, QColor, QAction, QCursor,
@@ -194,7 +194,7 @@ class FaceNameDialog(QDialog):
 
 class FilmstripLoader(QThread):
     """Thread to load filmstrip thumbnails asynchronously."""
-    thumbnail_loaded = Signal(int, QImage)
+    thumbnail_loaded = Signal(int, str, QImage)
 
     def __init__(self, cache, items_to_load, icon_size):
         super().__init__()
@@ -231,9 +231,9 @@ class FilmstripLoader(QThread):
             try:
                 res = self.cache.get_thumbnail(path, self.icon_size)
                 if res.image and not res.image.isNull():
-                    self.thumbnail_loaded.emit(index, res.image)
+                    self.thumbnail_loaded.emit(index, path, res.image)
             except Exception:
-                pass
+                logger.exception("Could not load filmstrip thumbnail for %s", path)
 
     def stop(self):
         self._abort = True
@@ -390,6 +390,8 @@ class FilmStripWidget(QListWidget):
     allowing the user to quickly jump to an image by clicking its thumbnail.
     It also supports dragging files out of the application.
     """
+    viewport_changed = Signal()
+
     def __init__(self, viewer, parent=None):
         """
         Initializes the FilmStripWidget.
@@ -401,6 +403,18 @@ class FilmStripWidget(QListWidget):
         super().__init__(parent)
         self.viewer = viewer
         self.setDragEnabled(True)
+        self.horizontalScrollBar().valueChanged.connect(
+            lambda _value: self.viewport_changed.emit())
+        self.verticalScrollBar().valueChanged.connect(
+            lambda _value: self.viewport_changed.emit())
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.viewport_changed.emit()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.viewport_changed.emit()
 
     @property
     def controller(self):
@@ -1680,6 +1694,9 @@ class ImageViewer(QWidget):
         self.crop_mode = False
         self._wheel_scroll_accumulator = 0
         self.filmstrip_loader = None
+        self._filmstrip_items = {}
+        if self.cache:
+            self.cache.thumbnail_loaded.connect(self._on_filmstrip_cache_loaded)
 
         # Pane management
         self.panes = []
@@ -2134,7 +2151,8 @@ class ImageViewer(QWidget):
             self.filmstrip_loader.stop()
 
         current_count = self.filmstrip.count()
-        fallback_icon = QIcon.fromTheme("image-x-generic")
+        fallback_icon = QIcon.fromTheme(
+            "image-x-generic", self.style().standardIcon(QStyle.SP_FileIcon))
 
         # Check if we can perform an incremental update (append)
         can_append = True
@@ -2153,6 +2171,7 @@ class ImageViewer(QWidget):
                 path = new_list[i]
                 item = QListWidgetItem(fallback_icon, "")
                 item.setData(Qt.UserRole, path)
+                item.setSizeHint(self.filmstrip.iconSize())
                 self.filmstrip.addItem(item)
         else:
             # Smart rebuild: reuse items to preserve icons/loaded state
@@ -2168,7 +2187,13 @@ class ImageViewer(QWidget):
                 else:
                     item = QListWidgetItem(fallback_icon, "")
                     item.setData(Qt.UserRole, path)
+                    item.setSizeHint(self.filmstrip.iconSize())
                 self.filmstrip.addItem(item)
+
+        self._filmstrip_items = {}
+        for i in range(self.filmstrip.count()):
+            item = self.filmstrip.item(i)
+            self._filmstrip_items.setdefault(item.data(Qt.UserRole), []).append(item)
 
         # Determine which items need thumbnail loading
         items_to_load = []
@@ -2188,19 +2213,50 @@ class ImageViewer(QWidget):
                 self._on_filmstrip_thumb_loaded)
             self.filmstrip_loader.start()
 
+        self.filmstrip.viewport_changed.emit()
         # Defer selection sync to ensure the list widget has updated its layout
         # and bounds, fixing issues where the wrong item seems selected or scrolled to.
         QTimer.singleShot(
             0, lambda: self.sync_filmstrip_selection(self.controller.index))
 
-    @Slot(int, QImage)
-    def _on_filmstrip_thumb_loaded(self, index, image):
+    @Slot(int, str, QImage)
+    def _on_filmstrip_thumb_loaded(self, index, path, image):
         """Updates the filmstrip item icon once the thumbnail is loaded."""
         if 0 <= index < self.filmstrip.count():
             item = self.filmstrip.item(index)
-            item.setIcon(QIcon(QPixmap.fromImage(image)))
-            # Mark as loaded to prevent reloading on subsequent updates
-            item.setData(Qt.UserRole + 1, True)
+            if item.data(Qt.UserRole) == path and not item.data(Qt.UserRole + 1):
+                self._set_filmstrip_thumbnail(item, image)
+
+    @Slot(str, int)
+    def _on_filmstrip_cache_loaded(self, path, _size):
+        items = self._filmstrip_items.get(path)
+        if not items:
+            return
+        result = self.cache.get_thumbnail(
+            path, self.filmstrip.iconSize().width(), async_load=True)
+        if result.image and not result.image.isNull():
+            for item in items:
+                self._set_filmstrip_thumbnail(item, result.image)
+
+    def _set_filmstrip_thumbnail(self, item, image):
+        item.setIcon(QIcon(QPixmap.fromImage(image)))
+        item.setData(Qt.UserRole + 1, True)
+
+    def visible_filmstrip_paths(self):
+        """Return the filmstrip items intersecting its viewport."""
+        viewport = self.filmstrip.viewport()
+        if not viewport.isVisible():
+            return []
+        width, height = viewport.width(), viewport.height()
+        if width <= 0 or height <= 0:
+            return []
+        paths = {}
+        for y in list(range(0, height, 32)) + [height - 1]:
+            for x in list(range(0, width, 32)) + [width - 1]:
+                index = self.filmstrip.indexAt(QPoint(x, y))
+                if index.isValid():
+                    paths[index.row()] = index.data(Qt.UserRole)
+        return [paths[row] for row in sorted(paths) if paths[row]]
 
     def sync_filmstrip_selection(self, index):
         """
@@ -3763,12 +3819,7 @@ class ImageViewer(QWidget):
             self.close()
             return
 
-        if 0 <= deleted_idx < self.filmstrip.count():
-            # takeItem() returns the removed QListWidgetItem; dropping the
-            # returned reference ensures the Python wrapper is released.
-            self.filmstrip.takeItem(deleted_idx)
-        else:
-            self.populate_filmstrip()  # Fallback to full rebuild
+        self.populate_filmstrip()
 
         # Reload image in case the current one was deleted or index changed
         self.load_and_fit_image()

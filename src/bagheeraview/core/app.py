@@ -2235,7 +2235,15 @@ class MainWindow(QMainWindow):
     def _prioritize_visible_thumbnails(self):
         generator = self.thumbnail_generator
         if generator and generator.isRunning():
-            generator.prioritize(self._viewport_thumbnail_paths())
+            generator.prioritize(self._priority_thumbnail_paths())
+
+    def _priority_thumbnail_paths(self):
+        paths = []
+        for viewer in self.viewers:
+            if viewer.isVisible():
+                paths.extend(viewer.visible_filmstrip_paths())
+        paths.extend(self._viewport_thumbnail_paths())
+        return list(dict.fromkeys(paths))
 
     def _schedule_thumbnail_priority(self, *_args):
         timer = getattr(self, "_thumbnail_priority_timer", None)
@@ -5899,6 +5907,7 @@ class MainWindow(QMainWindow):
         # This signal is emitted when viewer.controller.index changes
         viewer.index_changed.connect(sync_selection_from_viewer)
         viewer.activated.connect(sync_selection_from_viewer)
+        viewer.filmstrip.viewport_changed.connect(self._schedule_thumbnail_priority)
 
     def open_viewer(self, proxy_index, persistent=False):
         """
@@ -6201,7 +6210,7 @@ class MainWindow(QMainWindow):
         self.thumbnail_generator = ThumbnailGenerator(
             self.cache, paths, size, self.thread_pool_manager,
             force_thumbnail_refresh=force_thumbnail_refresh)
-        self.thumbnail_generator.prioritize(self._viewport_thumbnail_paths())
+        self.thumbnail_generator.prioritize(self._priority_thumbnail_paths())
         self.thumbnail_generator.generation_complete.connect(
             lambda: self.on_high_res_generation_finished()
             if self._thumbnail_generation == generation else None)
@@ -6220,7 +6229,7 @@ class MainWindow(QMainWindow):
         generator = self.thumbnail_generator
         if generator and generator.isRunning():
             if generator.size == size and generator.add_paths([path]):
-                generator.prioritize([path] + self._viewport_thumbnail_paths())
+                generator.prioritize([path] + self._priority_thumbnail_paths())
                 return
             self.generate_missing_thumbnails(size)
         else:
@@ -6228,7 +6237,7 @@ class MainWindow(QMainWindow):
 
         if self.thumbnail_generator and self.thumbnail_generator.isRunning():
             self.thumbnail_generator.prioritize(
-                [path] + self._viewport_thumbnail_paths())
+                [path] + self._priority_thumbnail_paths())
 
     def on_high_res_generation_finished(self):
         """Slot called when the background thumbnail generation is complete."""

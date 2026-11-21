@@ -2051,6 +2051,7 @@ class ImageScanner(QThread):
                 logger.warning("Could not list subdirectories of %s: %s",
                                directory, exc)
             self.directories_found.emit(str(directory), directories)
+            self._update_viewers(force=True)
             return
 
     def _update_viewers(self, force=False):

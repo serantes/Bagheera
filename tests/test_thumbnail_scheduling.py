@@ -1,3 +1,4 @@
+import json
 import os
 import struct
 import threading
@@ -52,7 +53,7 @@ def test_changed_image_is_queued_without_discarding_background_work():
         _is_loading=False, current_thumb_size=128,
         _get_tier_for_size=lambda size: size,
         thumbnail_generator=generator,
-        _viewport_thumbnail_paths=lambda: ["visible"],
+        _priority_thumbnail_paths=lambda: ["visible"],
         generate_missing_thumbnails=Mock())
 
     app.MainWindow._queue_thumbnail_refresh(window, "changed")
@@ -299,6 +300,139 @@ def test_scan_populates_all_placeholders_before_prioritized_generation(
             f"{pool.get_pool().activeThreadCount()}")
         assert calls[1] in visible
         assert len(calls) == len(set(calls)) == 40
+    finally:
+        release_first.set()
+        if window is not None:
+            window.perform_shutdown()
+            window.deleteLater()
+        else:
+            cache.lmdb_close()
+        qapp.processEvents()
+
+
+@pytest.mark.parametrize("scan_max_level", [0, 2])
+@pytest.mark.parametrize("filmstrip_state", ["visible", "during_generation", "after_generation"])
+@pytest.mark.parametrize("filmstrip_position", ["bottom", "left"])
+def test_direct_viewer_filmstrip_loads_and_prioritizes_visible_thumbnails(
+        qapp, tmp_path, monkeypatch, scan_max_level, filmstrip_state,
+        filmstrip_position):
+    images = tmp_path / "images"
+    images.mkdir()
+    image = QImage(16, 16, QImage.Format_RGB32)
+    image.fill(Qt.red)
+    paths = [str(images / f"{index:03}.png") for index in range(40)]
+    for path in paths:
+        assert image.save(path)
+
+    monkeypatch.setattr(app, "CONFIG_PATH", str(tmp_path / "config"))
+    monkeypatch.setattr(app, "HISTORY_PATH", str(tmp_path / "history"))
+    monkeypatch.setattr(app, "BOOKMARKS_PATH", str(tmp_path / "bookmarks"))
+    monkeypatch.setattr(imagescanner, "APP_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(imagescanner, "CACHE_PATH", str(tmp_path / "cache"))
+    monkeypatch.setattr(filesystemwatcher, "HAVE_WATCHDOG", False)
+    monkeypatch.setattr(metadatamanager, "set_app_modified_callback", lambda _: None)
+    monkeypatch.setattr(app.MainWindow, "save_config", lambda self: None)
+    monkeypatch.setattr(app.ImageViewer, "inhibit_screensaver", lambda self: None)
+    monkeypatch.setattr(app.ImageViewer, "uninhibit_screensaver", lambda self: None)
+    monkeypatch.setitem(APP_CONFIG, "scan_max_level", scan_max_level)
+    monkeypatch.setitem(APP_CONFIG, "generation_threads", 1)
+    (tmp_path / "config").write_text(
+        json.dumps({"show_filmstrip": filmstrip_state == "visible",
+                    "filmstrip_position": filmstrip_position}))
+
+    first_started = threading.Event()
+    release_first = threading.Event()
+    calls = []
+    generate_thumbnail = imagescanner.generate_thumbnail
+
+    def generate(path, size, fd=None):
+        calls.append(path)
+        if len(calls) == 1:
+            first_started.set()
+            if not release_first.wait(10):
+                raise TimeoutError("filmstrip test did not release first worker")
+        return generate_thumbnail(path, size, fd=fd)
+
+    monkeypatch.setattr(imagescanner, "generate_thumbnail", generate)
+    cache = imagescanner.ThumbnailCache()
+    pool = imagescanner.ThreadPoolManager()
+    window = None
+    try:
+        cached_path = paths[10]
+        stat = os.stat(cached_path)
+        cache._batch_write_to_lmdb([
+            (stat.st_dev, struct.pack("Q", stat.st_ino), image,
+             stat.st_mtime, 128, cached_path)])
+        window = app.MainWindow(cache, [paths[0]], pool, None)
+        deadline = time.monotonic() + 10
+        while not first_started.is_set() and time.monotonic() < deadline:
+            qapp.processEvents()
+            time.sleep(0.005)
+        assert first_started.is_set()
+        viewer = window.active_viewer
+        assert not window.isVisible()
+        if filmstrip_state != "visible":
+            assert viewer.filmstrip.count() == 0
+            if filmstrip_state == "after_generation":
+                release_first.set()
+                deadline = time.monotonic() + 10
+                while window.thumbnail_generator.isRunning() and time.monotonic() < deadline:
+                    qapp.processEvents()
+                    time.sleep(0.005)
+                assert not window.thumbnail_generator.isRunning()
+            viewer.toggle_filmstrip()
+        assert viewer.filmstrip.count() == len(paths)
+        assert [viewer.filmstrip.item(i).data(Qt.UserRole)
+                for i in range(len(paths))] == paths
+
+        deadline = time.monotonic() + 0.3
+        while time.monotonic() < deadline:
+            qapp.processEvents()
+            time.sleep(0.005)
+        assert viewer.filmstrip.item(10).data(Qt.UserRole + 1)
+        viewer.filmstrip.scrollToItem(viewer.filmstrip.item(len(paths) - 1))
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            qapp.processEvents()
+            time.sleep(0.005)
+            if viewer.filmstrip.visualItemRect(viewer.filmstrip.item(39)).intersects(
+                    viewer.filmstrip.viewport().rect()):
+                break
+        visible = [
+            paths[i] for i in range(len(paths))
+            if viewer.filmstrip.visualItemRect(viewer.filmstrip.item(i)).intersects(
+                viewer.filmstrip.viewport().rect())]
+        assert paths[-1] in visible
+        deadline = time.monotonic() + 0.1
+        while time.monotonic() < deadline:
+            qapp.processEvents()
+            time.sleep(0.005)
+        release_first.set()
+
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            qapp.processEvents()
+            if (not window.thumbnail_generator.isRunning()
+                    and all(viewer.filmstrip.item(i).data(Qt.UserRole + 1)
+                            for i in range(len(paths)))):
+                break
+            time.sleep(0.005)
+        if filmstrip_state != "after_generation":
+            assert calls[1] in visible
+        assert set(calls) == set(paths) - {cached_path}
+        assert all(viewer.filmstrip.item(i).data(Qt.UserRole + 1)
+                   for i in range(len(paths)))
+        assert all(
+            viewer.filmstrip.item(i).icon().pixmap(16, 16).toImage()
+            .pixelColor(8, 8) == Qt.red for i in range(len(paths)))
+
+        first_item = viewer.filmstrip.item(0)
+        first_item.setData(Qt.UserRole + 1, False)
+        viewer._on_filmstrip_thumb_loaded(0, paths[1], image)
+        assert not first_item.data(Qt.UserRole + 1)
+        viewer.refresh_after_delete(paths[1:], 0)
+        assert [viewer.filmstrip.item(i).data(Qt.UserRole)
+                for i in range(len(paths) - 1)] == paths[1:]
     finally:
         release_first.set()
         if window is not None:

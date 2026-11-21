@@ -352,7 +352,9 @@ Toggle fullscreen mode to view images without distractions.
 ### 4.5. Filmstrip
 
 A small strip of thumbnails at the bottom, left, top, or right of the viewer,
-showing nearby images in the list.
+showing nearby images in the list. When an image is opened directly, the strip
+fills with the other images in its directory. Cached thumbnails are loaded and
+missing ones are generated in the background, prioritizing those currently visible.
 
 * **Toggle Filmstrip**: Show or hide the filmstrip.
 * **Filmstrip Position**: Configure its position in the Settings.
