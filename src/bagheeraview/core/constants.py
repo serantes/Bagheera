@@ -1440,6 +1440,10 @@ _UI_TEXTS = {
         "FS_WATCHER_TOOLTIP": "File System Watcher (monitoring active directories)",
         "COPIED_TO": "Copied to {}",
         "ERROR_ROTATE_IMAGE": "Could not rotate image: {}",
+        "UNSAFE_IMAGE_MODIFICATION": "This image cannot be safely rotated or flipped. "
+        "The file has not been modified:\n{}",
+        "ERROR_MODIFY_IMAGE": "Could not safely modify the image. "
+        "The original file has not been modified:\n{}",
         "PREPARING_QUERY": "Preparing query...",
     },
     "es": {
@@ -2293,6 +2297,10 @@ _UI_TEXTS = {
         "directorios activos)",
         "COPIED_TO": "Copiado a {}",
         "ERROR_ROTATE_IMAGE": "No se pudo girar la imagen: {}",
+        "UNSAFE_IMAGE_MODIFICATION": "No se puede girar o voltear esta imagen "
+        "de forma segura. El archivo no se ha modificado:\n{}",
+        "ERROR_MODIFY_IMAGE": "No se pudo modificar la imagen de forma segura. "
+        "El archivo original no se ha modificado:\n{}",
         "PREPARING_QUERY": "Preparando consulta...",
     },
     "gl": {
@@ -3144,6 +3152,10 @@ _UI_TEXTS = {
         "directorios activos)",
         "COPIED_TO": "Copiado a {}",
         "ERROR_ROTATE_IMAGE": "Non se puido xirar a imaxe: {}",
+        "UNSAFE_IMAGE_MODIFICATION": "Non se pode xirar ou virar esta imaxe "
+        "de forma segura. O ficheiro non se modificou:\n{}",
+        "ERROR_MODIFY_IMAGE": "Non se puido modificar a imaxe de forma segura. "
+        "O ficheiro orixinal non se modificou:\n{}",
         "PREPARING_QUERY": "Preparando consulta...",
     }
 }

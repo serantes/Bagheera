@@ -316,6 +316,10 @@ abandoning classic folder-based navigation.
 - **Versatile Thumbnail Grid:** A fluid and responsive browser for large
   collections, offering **Flat View**, multiple **Date View** modes, **Rating View**
   , and **Folder View** modes.
+  File rotation and flipping are limited to verified single-frame JPEG and
+  PNG, BMP and TIFF images of up to 8 bits per channel; RAW and other uncertain
+  formats are left untouched. Files with multiple hard links are also protected.
+  JPEG edits require ExifTool, and other supported formats require Exiv2.
 - **Region Management:** Integrated computer vision to detect *faces* and *pets*
   within your photos and assign tag names. *Body*, *object*, and *landmark*
   regions are supported as well, but without automated computer vision

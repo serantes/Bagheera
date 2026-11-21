@@ -22,6 +22,7 @@ import subprocess
 import json
 import glob
 import shutil
+import tempfile
 import time
 import shiboken6
 import uuid
@@ -30,6 +31,7 @@ from collections import deque, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from itertools import groupby
 
+from PIL import Image
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
     QLineEdit, QTextEdit, QPushButton, QFileDialog, QComboBox, QSlider,
@@ -41,9 +43,9 @@ from PySide6.QtWidgets import (
     QStyleOptionButton, QToolTip
 )
 from PySide6.QtGui import (
-    QDesktopServices, QFont, QFontMetrics, QIcon, QTransform, QImageReader,
+    QDesktopServices, QFont, QFontMetrics, QIcon, QTransform, QImageReader, QImageIOHandler,
     QPalette, QStandardItemModel, QStandardItem, QColor, QPixmap, QPixmapCache,
-    QPainter, QKeySequence, QShortcut, QAction, QActionGroup, QImage
+    QPainter, QKeySequence, QShortcut, QAction, QActionGroup, QImage, QImageWriter
 )
 from PySide6.QtCore import (
     Qt, QPoint, QUrl, QObject, QEvent, QTimer, QByteArray, QRunnable, Signal,
@@ -59,7 +61,7 @@ from .constants import (
     DEFAULT_GLOBAL_SHORTCUTS, DEFAULT_LANGUAGE, DEFAULT_VIEWER_SHORTCUTS,
     DIALOG_ACTIONS, GLOBAL_ACTIONS,
     HISTORY_PATH, ICON_THEME, ICON_THEME_FALLBACK, SCANNER_GENERATE_SIZES,
-    IMAGE_MIME_TYPES, IMAGE_EXTENSIONS, LAYOUTS_DIR, BOOKMARKS_PATH,
+    IMAGE_MIME_TYPES, IMAGE_EXTENSIONS, RAW_IMAGE_EXTENSIONS, LAYOUTS_DIR, BOOKMARKS_PATH,
     PROG_AUTHOR, PROG_ID, PROG_NAME, PROG_VERSION, PROG_ORGANIZATION_NAME,
     PROG_ORGANIZATION_DOMAIN, RATING_XATTR_NAME,
     SCANNER_SETTINGS_DEFAULTS, SUPPORTED_LANGUAGES, VIEWER_ACTIONS,
@@ -84,7 +86,8 @@ else:
     DuplicateCache = None
     DuplicateDetector = None
 from .imagescanner import (CacheCleaner, ImageScanner, ThumbnailCache,
-                           ThumbnailGenerator, ThreadPoolManager)
+                           ThumbnailGenerator, ThreadPoolManager,
+                           _apply_exif_orientation)
 from .imageviewer import ImageViewer
 from .imagecontroller import read_image
 from .batchregions import BatchRegionsDialog
@@ -3911,24 +3914,201 @@ class MainWindow(QMainWindow):
         if copied_count > 0:
             self.status_lbl.setText(UITexts.COPIED_TO.format(target_dir))
 
+    def _can_modify_image(self, path):
+        """Only modify known, single-frame formats with a matching Qt writer."""
+        formats = {
+            ".jpg": ("JPEG", b"jpeg"), ".jpeg": ("JPEG", b"jpeg"),
+            ".png": ("PNG", b"png"), ".bmp": ("BMP", b"bmp"),
+            ".tif": ("TIFF", b"tiff"), ".tiff": ("TIFF", b"tiff"),
+        }
+        extension = os.path.splitext(path)[1].lower()
+        if extension in RAW_IMAGE_EXTENSIONS or extension not in formats:
+            return False
+        expected_format, writer_format = formats[extension]
+        if writer_format not in {bytes(fmt).lower()
+                                 for fmt in QImageWriter.supportedImageFormats()}:
+            return False
+        if expected_format == "JPEG":
+            if not shutil.which("exiftool"):
+                return False
+        else:
+            try:
+                import exiv2  # noqa: F401
+            except ImportError:
+                return False
+        try:
+            if os.stat(path).st_nlink != 1:
+                return False
+            with Image.open(path) as image:
+                if image.format != expected_format or getattr(image, "n_frames", 1) != 1:
+                    return False
+                if expected_format != "JPEG" and image.mode not in (
+                        "1", "L", "LA", "P", "RGB", "RGBA"):
+                    return False
+                if expected_format == "PNG":
+                    with open(path, "rb") as file:
+                        header = file.read(25)
+                        if len(header) < 25 or header[24] > 8:
+                            return False
+                if expected_format == "TIFF":
+                    bits = image.tag_v2.get(258, (1,))
+                    bits = (bits,) if isinstance(bits, int) else bits
+                    sample_format = image.tag_v2.get(339, (1,))
+                    sample_format = ((sample_format,) if isinstance(sample_format, int)
+                                     else sample_format)
+                    if any(bit > 8 for bit in bits) or \
+                            any(value != 1 for value in sample_format):
+                        return False
+                orientation = image.getexif().get(274)
+                if orientation is not None and (
+                        not isinstance(orientation, int) or orientation not in range(1, 9)):
+                    return False
+            with Image.open(path) as image:
+                image.verify()
+            reader = QImageReader(path)
+            return reader.canRead()
+        except (OSError, ValueError, TypeError, SyntaxError, RuntimeError,
+                OverflowError, Image.DecompressionBombError):
+            return False
+
+    def _modify_image_safely(self, path, transform, orientation_map):
+        """Prepare and validate the edit on a temporary copy before replacement."""
+        source = os.path.realpath(path)
+        original_stat = os.stat(source)
+        if original_stat.st_nlink != 1 or not self._can_modify_image(path):
+            raise OSError("The original file is not safe to modify")
+        extension = os.path.splitext(path)[1].lower()
+        fd, temporary = tempfile.mkstemp(
+            prefix=".bagheera-edit-", suffix=extension, dir=os.path.dirname(source))
+        os.close(fd)
+        try:
+            shutil.copy2(source, temporary)
+            reader = QImageReader(temporary)
+            reader.setAutoTransform(True)
+            apply_orientation = None
+            if extension == ".png" and \
+                    reader.transformation() == QImageIOHandler.TransformationNone:
+                with Image.open(temporary) as image:
+                    apply_orientation = image.getexif().get(274)
+            original = reader.read()
+            if original.isNull():
+                raise OSError(reader.errorString())
+            with Image.open(temporary) as image:
+                icc_profile = image.info.get("icc_profile")
+            if apply_orientation is not None:
+                original = _apply_exif_orientation(original, apply_orientation)
+            components = (transform.m11(), transform.m12(),
+                          transform.m21(), transform.m22())
+            mode = (Qt.FastTransformation
+                    if all(abs(value - round(value)) < 1e-10 for value in components)
+                    else Qt.SmoothTransformation)
+            transformed = original.transformed(transform, mode)
+            if transformed.isNull():
+                raise OSError("Image transformation failed")
+
+            soft_edit = False
+            if extension in (".jpg", ".jpeg"):
+                if not orientation_map:
+                    raise ValueError("JPEG rotation requires a multiple of 90 degrees")
+                result = subprocess.run(
+                    ["exiftool", "-Orientation", "-n", "-s3", temporary],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                    check=True)
+                value = result.stdout.strip()
+                orientation = int(value) if value else 1
+                if orientation not in orientation_map:
+                    raise ValueError(f"Invalid EXIF orientation: {value}")
+                subprocess.run(
+                    ["exiftool", "-P",
+                     f"-Orientation={orientation_map[orientation]}", "-n",
+                     "-overwrite_original_in_place", temporary],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    text=True, check=True)
+                soft_edit = True
+
+            if not soft_edit:
+                try:
+                    import exiv2
+                except ImportError as exc:
+                    raise OSError("exiv2 is required to preserve image metadata") from exc
+
+                metadata = exiv2.ImageFactory.open(temporary)
+                metadata.readMetadata()
+                exif = metadata.exifData()
+                iptc = metadata.iptcData()
+                xmp = metadata.xmpData()
+                if not transformed.save(temporary):
+                    raise OSError("Image encoder could not save the modified image")
+
+                if len(exif) or len(iptc) or len(xmp):
+                    output = exiv2.ImageFactory.open(temporary)
+                    output.readMetadata()
+                    if len(exif):
+                        output.setExifData(exif)
+                        output_exif = output.exifData()
+                        if "Exif.Image.Orientation" in output_exif:
+                            output_exif["Exif.Image.Orientation"] = 1
+                    if len(iptc):
+                        output.setIptcData(iptc)
+                    if len(xmp):
+                        output.setXmpData(xmp)
+                    output.writeMetadata()
+
+            with Image.open(temporary) as image:
+                if getattr(image, "n_frames", 1) != 1:
+                    raise OSError("Modified image has multiple frames")
+                if image.info.get("icc_profile") != icc_profile:
+                    raise OSError("Image color profile could not be preserved")
+            with Image.open(temporary) as image:
+                image.verify()
+            check = QImageReader(temporary)
+            check.setAutoTransform(True)
+            result = check.read()
+            if result.isNull() or result.size() != transformed.size():
+                raise OSError("Modified image could not be verified")
+            if result != transformed:
+                raise OSError("Modified image pixels could not be verified")
+            if os.stat(temporary).st_uid != original_stat.st_uid or \
+                    os.stat(temporary).st_gid != original_stat.st_gid:
+                os.chown(temporary, original_stat.st_uid, original_stat.st_gid)
+            shutil.copystat(source, temporary)
+            for name in os.listxattr(source):
+                if os.getxattr(source, name) != os.getxattr(temporary, name):
+                    raise OSError(f"File attribute could not be preserved: {name}")
+            current_stat = os.stat(source)
+            if os.path.realpath(path) != source or current_stat.st_nlink != 1 or \
+                    (current_stat.st_dev, current_stat.st_ino, current_stat.st_size,
+                    current_stat.st_mtime_ns, current_stat.st_ctime_ns) != (
+                    original_stat.st_dev, original_stat.st_ino, original_stat.st_size,
+                    original_stat.st_mtime_ns, original_stat.st_ctime_ns):
+                raise OSError("The original file changed during modification")
+            self._mark_path_as_app_modified(path)
+            os.replace(temporary, source)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+
     def rotate_current_image(self, degrees):
         """Rotates the selected image, attempting soft rotation via exiftool first."""
         path = self.get_current_selected_path()
         if not path:
             return
 
-        self._mark_path_as_app_modified(path)
-
         norm_degrees = degrees % 360
         if norm_degrees == 0:
+            return
+
+        if not self._can_modify_image(path):
+            QMessageBox.warning(
+                self, UITexts.WARNING, UITexts.UNSAFE_IMAGE_MODIFICATION.format(path))
             return
 
         # Capture original file timestamps (atime and mtime)
         orig_atime, orig_mtime = None, None
         try:
             st = os.stat(path)
-            orig_atime = st.st_atime
-            orig_mtime = st.st_mtime
+            orig_atime = st.st_atime_ns
+            orig_mtime = st.st_mtime_ns
         except Exception:
             pass
 
@@ -3943,86 +4123,18 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-        success = False
-
-        _, ext = os.path.splitext(path)
-        ext = ext.lower()
-        # Try soft rotation via exiftool
-        if ext in ['.jpg', '.jpeg']:
-            try:
-                cmd_get = ["exiftool", "-Orientation", "-n", "-s3", path]
-                res = subprocess.run(cmd_get, stdout=subprocess.PIPE,
-                                     stderr=subprocess.PIPE, text=True)
-                val = res.stdout.strip()
-                curr_orient = int(val) if (res.returncode == 0 and val.isdigit() and 1 <= int(val) <= 8) else 1
-
-                if norm_degrees == 90:
-                    trans = {1: 6, 2: 7, 3: 8, 4: 5, 5: 2, 6: 3, 7: 4, 8: 1}
-                elif norm_degrees == 180:
-                    trans = {1: 3, 2: 4, 3: 1, 4: 2, 5: 7, 6: 8, 7: 5, 8: 6}
-                elif norm_degrees == 270:
-                    trans = {1: 8, 2: 5, 3: 6, 4: 7, 5: 4, 6: 1, 7: 2, 8: 3}
-                else:
-                    trans = None
-
-                if trans:
-                    new_orient = trans[curr_orient]
-                    cmd_set = ["exiftool", "-P", f"-Orientation={new_orient}", "-n",
-                               "-overwrite_original_in_place", path]
-                    subprocess.check_call(cmd_set, stdout=subprocess.DEVNULL,
-                                          stderr=subprocess.DEVNULL)
-                    success = True
-            except Exception:
-                pass  # Fallback to lossy rotation
-
-        # Fallback to lossy rotation using QImage
-        if not success:
-            try:
-                exif_orig, iptc_orig, xmp_orig = None, None, None
-                try:
-                    import exiv2
-                    exiv_in = exiv2.ImageFactory.open(path)
-                    exiv_in.readMetadata()
-                    exif_orig = exiv_in.exifData()
-                    iptc_orig = exiv_in.iptcData()
-                    xmp_orig = exiv_in.xmpData()
-                except Exception:
-                    pass
-
-                reader = QImageReader(path)
-                reader.setAutoTransform(True)
-                img = reader.read()
-                if img.isNull():
-                    return
-
-                transform = QTransform().rotate(degrees)
-                new_img = img.transformed(transform, Qt.SmoothTransformation)
-                new_img.save(path)
-
-                if exif_orig is not None:
-                    try:
-                        import exiv2
-                        exiv_out = exiv2.ImageFactory.open(path)
-                        exiv_out.readMetadata()
-                        exiv_out.setExifData(exif_orig)
-                        if iptc_orig is not None:
-                            exiv_out.setIptcData(iptc_orig)
-                        if xmp_orig is not None:
-                            exiv_out.setXmpData(xmp_orig)
-
-                        exif_data = exiv_out.exifData()
-                        if 'Exif.Image.Orientation' in exif_data:
-                            exif_data['Exif.Image.Orientation'] = 1
-
-                        exiv_out.writeMetadata()
-                    except Exception:
-                        pass
-
-                success = True
-            except Exception as e:
-                QMessageBox.critical(self, UITexts.ERROR,
-                                     UITexts.ERROR_ROTATE_IMAGE.format(e))
-                return
+        orientations = {
+            90: {1: 6, 2: 7, 3: 8, 4: 5, 5: 2, 6: 3, 7: 4, 8: 1},
+            180: {1: 3, 2: 4, 3: 1, 4: 2, 5: 7, 6: 8, 7: 5, 8: 6},
+            270: {1: 8, 2: 5, 3: 6, 4: 7, 5: 4, 6: 1, 7: 2, 8: 3},
+        }
+        try:
+            self._modify_image_safely(
+                path, QTransform().rotate(degrees), orientations.get(norm_degrees))
+        except Exception as e:
+            QMessageBox.warning(self, UITexts.WARNING,
+                                UITexts.ERROR_MODIFY_IMAGE.format(e))
+            return
 
         # Restore extended attributes if any were present
         if xattrs_orig:
@@ -4036,7 +4148,7 @@ class MainWindow(QMainWindow):
         if orig_mtime is not None:
             try:
                 atime = orig_atime if orig_atime is not None else orig_mtime
-                os.utime(path, (atime, orig_mtime))
+                os.utime(path, ns=(atime, orig_mtime))
             except Exception:
                 pass
 
@@ -4087,14 +4199,17 @@ class MainWindow(QMainWindow):
         if not path:
             return
 
-        self._mark_path_as_app_modified(path)
+        if not self._can_modify_image(path):
+            QMessageBox.warning(
+                self, UITexts.WARNING, UITexts.UNSAFE_IMAGE_MODIFICATION.format(path))
+            return
 
         # Capture original file timestamps (atime and mtime)
         orig_atime, orig_mtime = None, None
         try:
             st = os.stat(path)
-            orig_atime = st.st_atime
-            orig_mtime = st.st_mtime
+            orig_atime = st.st_atime_ns
+            orig_mtime = st.st_mtime_ns
         except Exception:
             pass
 
@@ -4109,80 +4224,18 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-        success = False
-
-        _, ext = os.path.splitext(path)
-        ext = ext.lower()
-        # Try soft flip via exiftool
-        if ext in ['.jpg', '.jpeg']:
-            try:
-                cmd_get = ["exiftool", "-Orientation", "-n", "-s3", path]
-                res = subprocess.run(cmd_get, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                val = res.stdout.strip()
-                curr_orient = int(val) if (res.returncode == 0 and val.isdigit() and 1 <= int(val) <= 8) else 1
-
-                if horizontal:
-                    trans = {1: 2, 2: 1, 3: 4, 4: 3, 5: 6, 6: 5, 7: 8, 8: 7}
-                else:
-                    trans = {1: 4, 2: 3, 3: 2, 4: 1, 5: 8, 6: 7, 7: 6, 8: 5}
-
-                new_orient = trans[curr_orient]
-                cmd_set = ["exiftool", "-P", f"-Orientation={new_orient}", "-n",
-                           "-overwrite_original_in_place", path]
-                subprocess.check_call(cmd_set, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                success = True
-            except Exception:
-                pass  # Fallback to lossy flip
-
-        # Fallback to lossy flip using QImage
-        if not success:
-            try:
-                exif_orig, iptc_orig, xmp_orig = None, None, None
-                try:
-                    import exiv2
-                    exiv_in = exiv2.ImageFactory.open(path)
-                    exiv_in.readMetadata()
-                    exif_orig = exiv_in.exifData()
-                    iptc_orig = exiv_in.iptcData()
-                    xmp_orig = exiv_in.xmpData()
-                except Exception:
-                    pass
-
-                reader = QImageReader(path)
-                reader.setAutoTransform(True)
-                img = reader.read()
-                if img.isNull():
-                    return
-
-                transform = QTransform().scale(-1 if horizontal else 1,
-                                               1 if horizontal else -1)
-                new_img = img.transformed(transform, Qt.SmoothTransformation)
-                new_img.save(path)
-
-                if exif_orig is not None:
-                    try:
-                        import exiv2
-                        exiv_out = exiv2.ImageFactory.open(path)
-                        exiv_out.readMetadata()
-                        exiv_out.setExifData(exif_orig)
-                        if iptc_orig is not None:
-                            exiv_out.setIptcData(iptc_orig)
-                        if xmp_orig is not None:
-                            exiv_out.setXmpData(xmp_orig)
-
-                        exif_data = exiv_out.exifData()
-                        if 'Exif.Image.Orientation' in exif_data:
-                            exif_data['Exif.Image.Orientation'] = 1
-
-                        exiv_out.writeMetadata()
-                    except Exception:
-                        pass
-
-                success = True
-            except Exception as e:
-                QMessageBox.critical(self, UITexts.ERROR,
-                                     UITexts.ERROR_ROTATE_IMAGE.format(e))
-                return
+        orientations = (
+            {1: 2, 2: 1, 3: 4, 4: 3, 5: 6, 6: 5, 7: 8, 8: 7}
+            if horizontal else
+            {1: 4, 2: 3, 3: 2, 4: 1, 5: 8, 6: 7, 7: 6, 8: 5})
+        try:
+            transform = QTransform().scale(-1 if horizontal else 1,
+                                           1 if horizontal else -1)
+            self._modify_image_safely(path, transform, orientations)
+        except Exception as e:
+            QMessageBox.warning(self, UITexts.WARNING,
+                                UITexts.ERROR_MODIFY_IMAGE.format(e))
+            return
 
         # Restore extended attributes if any were present
         if xattrs_orig:
@@ -4196,7 +4249,7 @@ class MainWindow(QMainWindow):
         if orig_mtime is not None:
             try:
                 atime = orig_atime if orig_atime is not None else orig_mtime
-                os.utime(path, (atime, orig_mtime))
+                os.utime(path, ns=(atime, orig_mtime))
             except Exception:
                 pass
 
