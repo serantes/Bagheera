@@ -13,9 +13,11 @@ It is organized into several sections:
 """
 import importlib.util
 import json
+import logging
 import os
 import shutil
 import sys
+import threading
 import types
 import warnings
 import contextlib
@@ -245,15 +247,12 @@ FACES_MENU_MAX_ITEMS = APP_CONFIG.get("faces_menu_max_items",
                                       FACES_MENU_MAX_ITEMS_DEFAULT)
 
 # --- FACE DETECTION ---
-HAVE_MEDIAPIPE = False
-if importlib.util.find_spec("mediapipe") is not None:
-    try:
-        import mediapipe
-        # Verify that the tasks module (new API) is available
-        if hasattr(mediapipe, "tasks"):
-            HAVE_MEDIAPIPE = True
-    except Exception:
-        pass
+HAVE_MEDIAPIPE = importlib.util.find_spec("mediapipe") is not None
+HAVE_FACE_RECOGNITION = all(
+    importlib.util.find_spec(name) is not None
+    for name in ("face_recognition", "face_recognition_models")
+)
+_face_recognition_import_lock = threading.Lock()
 
 
 def _resource_filename(package, resource):
@@ -297,24 +296,26 @@ def _load_face_recognition():
     for name in ("face_recognition", "face_recognition_models"):
         if importlib.util.find_spec(name) is None:
             return None
-    try:
-        # face_recognition_models (third-party) still imports pkg_resources,
-        # which setuptools flags as deprecated. Not fixable from our sources.
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore",
-                message="pkg_resources is deprecated as an API",
-                category=Warning,
-            )
-            with _pkg_resources_shim():
-                import face_recognition as fr
-    except (Exception, SystemExit):
-        return None
-    return fr if hasattr(fr, "face_locations") else None
-
-
-face_recognition = _load_face_recognition()
-HAVE_FACE_RECOGNITION = face_recognition is not None
+    with _face_recognition_import_lock:
+        try:
+            # face_recognition_models (third-party) still imports pkg_resources.
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message="pkg_resources is deprecated as an API",
+                    category=Warning,
+                )
+                with _pkg_resources_shim():
+                    import face_recognition as fr
+        except (Exception, SystemExit) as error:
+            logging.getLogger(__name__).warning(
+                "Could not load face_recognition: %s", error)
+            return None
+        if not hasattr(fr, "face_locations"):
+            logging.getLogger(__name__).warning(
+                "face_recognition does not provide face_locations")
+            return None
+        return fr
 
 MEDIAPIPE_FACE_MODEL_PATH = os.path.join(
     APP_DATA_DIR, "blaze_face_short_range.tflite")

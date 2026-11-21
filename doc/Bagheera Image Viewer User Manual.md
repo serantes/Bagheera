@@ -33,6 +33,10 @@ detection, and a feature-rich image viewer.
 
 The main window of Bagheera Image Viewer consists of several key areas:
 
+When the application starts directly with an image, it selects the Information
+tab and flat view, and sorts images by name in ascending order, regardless of
+the saved selection, grouping and sort order.
+
 ### 2.1. Search Bar
 
 Located at the top of the window, the search bar allows you to:

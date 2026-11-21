@@ -1,3 +1,7 @@
+import os
+from pathlib import Path
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -16,6 +20,28 @@ from bagheeraview.core import geolocation, geomapwidget, widgets
 @pytest.fixture
 def app():
     return QApplication.instance() or QApplication([])
+
+
+def test_geolocation_dependencies_are_loaded_only_when_searching():
+    source_dir = str(Path(__file__).resolve().parents[1] / "src")
+    env = dict(os.environ, PYTHONPATH=source_dir, QT_QPA_PLATFORM="offscreen")
+    result = subprocess.run(
+        [sys.executable, "-c", """
+import sys
+from PySide6.QtWidgets import QApplication
+from bagheeraview.core.app import GeoMapWidget
+assert 'bagheeraview.core.geolocation' not in sys.modules
+assert 'geopy' not in sys.modules
+app = QApplication([])
+widget = GeoMapWidget()
+assert 'bagheeraview.core.geolocation' not in sys.modules
+widget.coordinate_input.setText('38.2, 128.4')
+widget._go_to_coordinates()
+assert 'bagheeraview.core.geolocation' in sys.modules
+assert 'geopy' in sys.modules
+"""],
+        env=env, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
 
 
 def test_map_webengine_is_initialized_only_when_tab_is_activated(monkeypatch):

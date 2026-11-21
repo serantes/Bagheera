@@ -27,6 +27,7 @@ import shiboken6
 import uuid
 from datetime import datetime
 from collections import deque, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from itertools import groupby
 
 from PySide6.QtWidgets import (
@@ -79,20 +80,21 @@ from .settings import SettingsDialog
 if HAVE_IMAGEHASH:
     from .duplicatecache import DuplicateCache, DuplicateDetector
     from .duplicatedialog import DuplicateManagerDialog
-    from .similardialog import SimilarImagesDialog
 else:
     DuplicateCache = None
     DuplicateDetector = None
 from .imagescanner import (CacheCleaner, ImageScanner, ThumbnailCache,
                            ThumbnailGenerator, ThreadPoolManager)
 from .imageviewer import ImageViewer
+from .imagecontroller import read_image
 from .batchregions import BatchRegionsDialog
 from .propertiesdialog import PropertiesDialog
 from .geomapwidget import GeoMapWidget
 from .widgets import (
     CircularProgressBar, MiddleElidedLabel,
     TagEditWidget, LayoutsWidget, LayoutSelectionDialog, HistoryWidget,
-    RatingWidget, CommentWidget, BookmarksWidget, TagSelectorDialog
+    RatingWidget, CommentWidget, BookmarksWidget, TagSelectorDialog,
+    read_available_baloo_tags, run_bookmark
 )
 from .metadatamanager import (
     MetadataManager, XattrManager, load_common_metadata
@@ -145,6 +147,21 @@ def _extract_resolution(args):
             remaining.append(args[i])
             i += 1
     return remaining, resolution
+
+
+def _initial_file_path(args):
+    """Resolve a direct file argument, including local file-manager URLs."""
+    path = " ".join(args).strip()
+    if path.startswith(("file:///", "file://localhost/")):
+        path = QUrl(path).toLocalFile()
+    elif path.startswith("file://"):
+        path = path[6:]
+    elif path.startswith("file:/"):
+        path = QUrl(path).toLocalFile()
+    if not path:
+        return None
+    full_path = os.path.abspath(os.path.expanduser(path))
+    return full_path if os.path.isfile(full_path) else None
 
 
 def _layout_path_from_term(term):
@@ -639,8 +656,7 @@ class AppShortcutController(QObject):
             return
 
         if (key, mods) in self._bookmark_shortcuts:
-            self.main_win.bookmarks_tab.run_bookmark(
-                self._bookmark_shortcuts[(key, mods)])
+            run_bookmark(self.main_win, self._bookmark_shortcuts[(key, mods)])
             return
 
         shortcut = self._shortcuts.get((key, mods))
@@ -1516,7 +1532,8 @@ class MainWindow(QMainWindow):
     scanners and individual image viewer windows.
     """
 
-    def __init__(self, cache, args, thread_pool_manager, duplicate_cache, resolution=None):
+    def __init__(self, cache, args, thread_pool_manager, duplicate_cache, resolution=None,
+                 initial_image=None):
         """Initializes the MainWindow.
 
         Args:
@@ -1524,10 +1541,12 @@ class MainWindow(QMainWindow):
             args (list): Command-line arguments passed to the application.
             thread_pool_manager (ThreadPoolManager): The shared thread pool manager.
             duplicate_cache (DuplicateCache): The shared duplicate cache instance.
+            initial_image: Optional (path, future) for the first decoded image.
         """
         super().__init__()
         self.cache = cache
         self.duplicate_cache = duplicate_cache
+        self._initial_image = initial_image
         self.setWindowTitle(f"{PROG_NAME} v{PROG_VERSION}")
         self.set_app_icon()
 
@@ -1763,23 +1782,15 @@ class MainWindow(QMainWindow):
         self.sidebar_tabs = QTabWidget()
         self.metadata_tabs = QTabWidget()
         self.browse_tabs = QTabWidget()
+        self._sidebar_content = {}
+        self._sidebar_ready = False
         self.browse_tabs.currentChanged.connect(self.on_browse_tab_changed)
 
-        # Tab 1: Tags (Edit)
-        self.tag_edit_widget = TagEditWidget(self)
-        self.tag_edit_widget.tags_updated.connect(self.on_tags_edited)
-
+        self.tag_edit_widget = QWidget()
         self.metadata_tabs.addTab(self.tag_edit_widget, UITexts.TAGS_TAB)
         self.metadata_tabs.currentChanged.connect(self.on_metadata_tab_changed)
 
-        # Tab 2: Information (Rating, Comment)
         self.info_widget = QWidget()
-        info_layout = QVBoxLayout(self.info_widget)
-        self.rating_widget = RatingWidget()
-        self.rating_widget.rating_updated.connect(self.on_rating_edited)
-        info_layout.addWidget(self.rating_widget)
-        self.comment_widget = CommentWidget()
-        info_layout.addWidget(self.comment_widget)
         self.metadata_tabs.addTab(self.info_widget, UITexts.INFO_TAB)
 
         # Timer for debouncing filter text input to prevent UI freezing
@@ -1796,84 +1807,11 @@ class MainWindow(QMainWindow):
 
         # Tab 3: Filter by Tags and Name
         self.filter_widget = QWidget()
-        filter_layout = QVBoxLayout(self.filter_widget)
-
-        self.filter_name_input = QLineEdit()
-        self.filter_name_input.setPlaceholderText(UITexts.FILTER_NAME_PLACEHOLDER)
-        # Use debounce timer instead of direct connection
-        self.filter_name_input.textChanged.connect(self.filter_input_timer.start)
-        self.filter_name_input.setClearButtonEnabled(True)
-        filter_layout.addWidget(self.filter_name_input)
-
-        self.extension_filter_group = QGroupBox(
-            UITexts.FILTER_EXTENSIONS_TITLE)
-        self.extension_filter_group.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        self.extension_filter_group.hide()
-        extension_group_layout = QVBoxLayout(self.extension_filter_group)
-        self.extension_filter_scroll = QScrollArea()
-        self.extension_filter_scroll.setWidgetResizable(True)
-        self.extension_filter_scroll.setFrameShape(QScrollArea.NoFrame)
-        self.extension_filter_widget = QWidget()
-        self.extension_filter_layout = QGridLayout(
-            self.extension_filter_widget)
-        self.extension_filter_layout.setContentsMargins(0, 0, 0, 0)
-        self.extension_filter_layout.setSpacing(0)
-        self.extension_filter_scroll.setWidget(self.extension_filter_widget)
-        extension_group_layout.addWidget(self.extension_filter_scroll)
-        filter_layout.addWidget(self.extension_filter_group)
         self._extension_checkboxes = {}
-
-        self.tag_search_input = QLineEdit()
-        self.tag_search_input.setPlaceholderText(UITexts.TAG_SEARCH_PLACEHOLDER)
-        self.tag_search_input.textChanged.connect(self.filter_tags_list)
-        self.tag_search_input.setClearButtonEnabled(True)
-        filter_layout.addWidget(self.tag_search_input)
-
-        mode_layout = QHBoxLayout()
-        self.filter_mode_group = QButtonGroup(self)
-        rb_and = QRadioButton(UITexts.FILTER_AND)
-        rb_or = QRadioButton(UITexts.FILTER_OR)
-        rb_and.setChecked(True)
-        self.filter_mode_group.addButton(rb_and)
-        self.filter_mode_group.addButton(rb_or)
-        mode_layout.addWidget(rb_and)
-        mode_layout.addWidget(rb_or)
-
-        btn_invert = QPushButton(UITexts.FILTER_INVERT)
-        btn_invert.setFixedWidth(60)
-        btn_invert.clicked.connect(self.invert_tag_selection)
-        mode_layout.addWidget(btn_invert)
-        filter_layout.addLayout(mode_layout)
-        self.filter_mode_group.buttonClicked.connect(self.apply_filters)
-
-        btn_clear = QPushButton(UITexts.FILTER_CLEAR)
-        btn_clear.setFixedWidth(60)
-        btn_clear.clicked.connect(self.clear_filters)
-        mode_layout.addWidget(btn_clear)
-
-        self.tags_list = QTableWidget()
-        self.tags_list.setColumnCount(2)
-        self.tags_list.setHorizontalHeaderLabels(
-            [UITexts.FILTER_TAG_COLUMN, UITexts.FILTER_NOT_COLUMN])
-        self.tags_list.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.tags_list.horizontalHeader().setSectionResizeMode(1, QHeaderView.Fixed)
-        self.tags_list.setColumnWidth(1, 40)
-        self.tags_list.verticalHeader().setVisible(False)
-        self.tags_list.setSelectionMode(QAbstractItemView.NoSelection)
-        self.tags_list.itemChanged.connect(self.on_tag_changed)
-        filter_layout.addWidget(self.tags_list)
-
-        self.filter_stats_lbl = QLabel()
-        self.filter_stats_lbl.setAlignment(Qt.AlignCenter)
-        self.filter_stats_lbl.setStyleSheet("color: gray; font-style: italic;")
-        # self.filter_stats_lbl.hide()
-        filter_layout.addWidget(self.filter_stats_lbl)
-
         self.browse_tabs.addTab(self.filter_widget, UITexts.TAG_FILTER_TAB)
 
         # Tab 2: Bookmarks
-        self.bookmarks_tab = BookmarksWidget(self)
+        self.bookmarks_tab = QWidget()
         self.browse_tabs.addTab(self.bookmarks_tab, UITexts.BOOKMARKS_TAB)
 
         # Tab 3: Layouts
@@ -1886,10 +1824,10 @@ class MainWindow(QMainWindow):
         self.kwin_layout_backend = (
             KWinLayoutBackend() if self.is_wayland else None)
         if self.is_xcb or self.is_wayland:
-            self.layouts_tab = LayoutsWidget(self)
+            self.layouts_tab = QWidget()
 
         # Tab 3 of Browse
-        self.history_tab = HistoryWidget(self)
+        self.history_tab = QWidget()
         self.browse_tabs.addTab(self.history_tab, UITexts.HISTORY_TAB)
 
         # Tabs are grouped into Metadata and Browse, followed by Layouts and Maps.
@@ -1899,12 +1837,9 @@ class MainWindow(QMainWindow):
             self.sidebar_tabs.addTab(self.layouts_tab, UITexts.LAYOUTS_TAB)
 
         # Tab 4: Map / Geolocation
-        self.maps_tab = GeoMapWidget(self)
+        self.maps_tab = QWidget()
         self.sidebar_tabs.addTab(self.maps_tab, UITexts.MAPS_TAB)
         self.sidebar_tabs.currentChanged.connect(self.on_sidebar_tab_changed)
-        self.maps_tab.selection_requested.connect(self.select_by_paths)
-        self.maps_tab.geolocation_changed.connect(
-            self.invalidate_geolocation_status)
 
         self.main_dock.setWidget(self.sidebar_tabs)
         self.main_dock.visibilityChanged.connect(
@@ -1998,16 +1933,13 @@ class MainWindow(QMainWindow):
         # Initialize the shortcut controller (after config is loaded)
         self.shortcut_controller = AppShortcutController(self)
         self._setup_thumbnail_rating_shortcuts()
-        self.bookmarks_tab.bookmarks_changed.connect(
-            self.shortcut_controller.refresh_bookmark_shortcuts)
 
         self._apply_global_stylesheet()
         # Set the initial thumbnail generation tier based on the loaded config size
         self._current_thumb_tier = self._get_tier_for_size(self.current_thumb_size)
         # SCANNER_GENERATE_SIZES = [self._current_thumb_tier]
 
-        if hasattr(self, 'history_tab'):
-            self.history_tab.refresh_list()
+        self._sidebar_ready = True
 
         # Handle initial arguments passed from the command line
         should_hide = False
@@ -2029,11 +1961,13 @@ class MainWindow(QMainWindow):
             path = " ".join(args).strip()
             if path.startswith("file:/"):
                 path = path[6:]
-            full_path = os.path.abspath(os.path.expanduser(path))
-            if os.path.isfile(full_path) or path.startswith("layout:/"):
+            initial_file = _initial_file_path(args)
+            if initial_file or path.startswith("layout:/"):
                 # If a single file or a layout is passed, hide the main window
                 should_hide = True
 
+            if initial_file:
+                self._set_direct_viewer_defaults()
             self.handle_initial_args(args)
         elif self.history:
             # If no args, load the last used path or search from history
@@ -2044,6 +1978,7 @@ class MainWindow(QMainWindow):
                 if os.path.isfile(os.path.abspath(os.path.expanduser(p))):
                     should_hide = True
                     self._scan_all = False
+                    self._set_direct_viewer_defaults()
 
             self.process_term(last_term)
 
@@ -2053,6 +1988,124 @@ class MainWindow(QMainWindow):
             self.show()
             self.setFocus()
         self._map_startup_ready = True
+
+    def _set_direct_viewer_defaults(self):
+        """Select information, flat view and ascending names for a direct launch."""
+        self.metadata_tabs.setCurrentWidget(self.info_widget)
+        self.sidebar_tabs.setCurrentWidget(self.metadata_tabs)
+        self.view_mode_combo.setCurrentIndex(self.view_mode_combo.findData("flat"))
+        self.sort_combo.setCurrentIndex(self.sort_combo.findData("name_asc"))
+
+    def _ensure_sidebar_tab(self, tab):
+        """Create a sidebar tab's controls when they are first needed."""
+        if tab in self._sidebar_content:
+            return self._sidebar_content[tab]
+
+        if tab is self.tag_edit_widget:
+            content = TagEditWidget(self)
+            content.tags_updated.connect(self.on_tags_edited)
+        elif tab is self.info_widget:
+            content = QWidget()
+            layout = QVBoxLayout(content)
+            self.rating_widget = RatingWidget()
+            self.rating_widget.rating_updated.connect(self.on_rating_edited)
+            layout.addWidget(self.rating_widget)
+            self.comment_widget = CommentWidget()
+            layout.addWidget(self.comment_widget)
+        elif tab is self.filter_widget:
+            content = self._create_filter_tab()
+        elif tab is self.bookmarks_tab:
+            content = BookmarksWidget(self)
+            content.bookmarks_changed.connect(
+                self.shortcut_controller.refresh_bookmark_shortcuts)
+        elif tab is self.history_tab:
+            content = HistoryWidget(self)
+        elif tab is getattr(self, "layouts_tab", None):
+            content = LayoutsWidget(self)
+        elif tab is self.maps_tab:
+            content = GeoMapWidget(self)
+            content.selection_requested.connect(self.select_by_paths)
+            content.geolocation_changed.connect(self.invalidate_geolocation_status)
+        else:
+            raise ValueError("Unknown sidebar tab")
+
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(content)
+        self._sidebar_content[tab] = content
+        return content
+
+    def _create_filter_tab(self):
+        content = QWidget()
+        filter_layout = QVBoxLayout(content)
+
+        self.filter_name_input = QLineEdit()
+        self.filter_name_input.setPlaceholderText(UITexts.FILTER_NAME_PLACEHOLDER)
+        self.filter_name_input.textChanged.connect(self.filter_input_timer.start)
+        self.filter_name_input.setClearButtonEnabled(True)
+        filter_layout.addWidget(self.filter_name_input)
+
+        self.extension_filter_group = QGroupBox(UITexts.FILTER_EXTENSIONS_TITLE)
+        self.extension_filter_group.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        self.extension_filter_group.hide()
+        extension_group_layout = QVBoxLayout(self.extension_filter_group)
+        self.extension_filter_scroll = QScrollArea()
+        self.extension_filter_scroll.setWidgetResizable(True)
+        self.extension_filter_scroll.setFrameShape(QScrollArea.NoFrame)
+        self.extension_filter_widget = QWidget()
+        self.extension_filter_layout = QGridLayout(self.extension_filter_widget)
+        self.extension_filter_layout.setContentsMargins(0, 0, 0, 0)
+        self.extension_filter_layout.setSpacing(0)
+        self.extension_filter_scroll.setWidget(self.extension_filter_widget)
+        extension_group_layout.addWidget(self.extension_filter_scroll)
+        filter_layout.addWidget(self.extension_filter_group)
+
+        self.tag_search_input = QLineEdit()
+        self.tag_search_input.setPlaceholderText(UITexts.TAG_SEARCH_PLACEHOLDER)
+        self.tag_search_input.textChanged.connect(self.filter_tags_list)
+        self.tag_search_input.setClearButtonEnabled(True)
+        filter_layout.addWidget(self.tag_search_input)
+
+        mode_layout = QHBoxLayout()
+        self.filter_mode_group = QButtonGroup(self)
+        rb_and = QRadioButton(UITexts.FILTER_AND)
+        rb_or = QRadioButton(UITexts.FILTER_OR)
+        rb_and.setChecked(True)
+        self.filter_mode_group.addButton(rb_and)
+        self.filter_mode_group.addButton(rb_or)
+        mode_layout.addWidget(rb_and)
+        mode_layout.addWidget(rb_or)
+
+        btn_invert = QPushButton(UITexts.FILTER_INVERT)
+        btn_invert.setFixedWidth(60)
+        btn_invert.clicked.connect(self.invert_tag_selection)
+        mode_layout.addWidget(btn_invert)
+        filter_layout.addLayout(mode_layout)
+        self.filter_mode_group.buttonClicked.connect(self.apply_filters)
+
+        btn_clear = QPushButton(UITexts.FILTER_CLEAR)
+        btn_clear.setFixedWidth(60)
+        btn_clear.clicked.connect(self.clear_filters)
+        mode_layout.addWidget(btn_clear)
+
+        self.tags_list = QTableWidget()
+        self.tags_list.setColumnCount(2)
+        self.tags_list.setHorizontalHeaderLabels(
+            [UITexts.FILTER_TAG_COLUMN, UITexts.FILTER_NOT_COLUMN])
+        self.tags_list.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.tags_list.horizontalHeader().setSectionResizeMode(1, QHeaderView.Fixed)
+        self.tags_list.setColumnWidth(1, 40)
+        self.tags_list.verticalHeader().setVisible(False)
+        self.tags_list.setSelectionMode(QAbstractItemView.NoSelection)
+        self.tags_list.itemChanged.connect(self.on_tag_changed)
+        filter_layout.addWidget(self.tags_list)
+
+        self.filter_stats_lbl = QLabel()
+        self.filter_stats_lbl.setAlignment(Qt.AlignCenter)
+        self.filter_stats_lbl.setStyleSheet("color: gray; font-style: italic;")
+        filter_layout.addWidget(self.filter_stats_lbl)
+        return content
 
     def _set_thumbnail_model(self, from_init: bool = False):
         self.thumbnail_view.setModel(None)
@@ -2309,8 +2362,9 @@ class MainWindow(QMainWindow):
             with open(filename, 'w') as f:
                 json.dump(layout_data, f, indent=4)
             self.status_lbl.setText(UITexts.LAYOUT_SAVED.format(name))
-            if hasattr(self, 'layouts_tab'):
-                self.layouts_tab.refresh_list()
+            layouts = self._sidebar_content.get(getattr(self, "layouts_tab", None))
+            if layouts is not None:
+                layouts.refresh_list()
         except Exception as e:
             QMessageBox.critical(
                 self, UITexts.ERROR, UITexts.ERROR_SAVING_LAYOUT.format(e))
@@ -2848,7 +2902,9 @@ class MainWindow(QMainWindow):
             # Recreate deque with updated content and configured max size
             self.mru_tags = deque(APP_CONFIG.get("mru_tags", []),
                                   maxlen=new_max_tags)
-            self.tag_edit_widget.refresh_visible_tag_filters()
+            tag_editor = self._sidebar_content.get(self.tag_edit_widget)
+            if tag_editor is not None:
+                tag_editor.refresh_visible_tag_filters()
 
             new_max_faces = APP_CONFIG.get("faces_menu_max_items",
                                            FACES_MENU_MAX_ITEMS_DEFAULT)
@@ -2879,7 +2935,6 @@ class MainWindow(QMainWindow):
         if widget is None:
             return
 
-        self.main_dock.show()
         if self.metadata_tabs.indexOf(widget) >= 0:
             self.metadata_tabs.setCurrentWidget(widget)
             self.sidebar_tabs.setCurrentWidget(self.metadata_tabs)
@@ -2888,6 +2943,7 @@ class MainWindow(QMainWindow):
             self.sidebar_tabs.setCurrentWidget(self.browse_tabs)
         elif self.sidebar_tabs.indexOf(widget) >= 0:
             self.sidebar_tabs.setCurrentWidget(widget)
+        self.main_dock.show()
         self.main_dock.raise_()
 
     def refresh_shortcuts(self):
@@ -4329,7 +4385,9 @@ class MainWindow(QMainWindow):
 
         # Retry locating a path requested by the location dialogs.
         self._maybe_locate_pending_path()
-        self.maps_tab.initialize_if_ready()
+        map_widget = self._sidebar_content.get(self.maps_tab)
+        if map_widget is not None:
+            map_widget.initialize_if_ready()
 
     def more_files_available(self, i, count):
         """Slot for when a batch of images has been loaded, with more available."""
@@ -4339,7 +4397,9 @@ class MainWindow(QMainWindow):
         has_more = i < count
         self.btn_load_all.setVisible(has_more)
         if not self._is_loading_all:
-            self.maps_tab.initialize_if_ready()
+            map_widget = self._sidebar_content.get(self.maps_tab)
+            if map_widget is not None:
+                map_widget.initialize_if_ready()
 
     def request_more_images(self, amount):
         """Requests the scanner to load a specific number of additional images."""
@@ -5058,26 +5118,36 @@ class MainWindow(QMainWindow):
 
     def on_metadata_tab_changed(self, index):
         """Refresh the active Metadata tab."""
+        if (not self._sidebar_ready or not self.main_dock.isVisible()
+                or self.sidebar_tabs.currentWidget() != self.metadata_tabs):
+            return
         widget = self.metadata_tabs.widget(index)
+        content = self._ensure_sidebar_tab(widget)
         if widget == self.tag_edit_widget:
-            self.tag_edit_widget.load_available_tags()
+            content.load_available_tags()
             self.update_tag_edit_widget()
         elif widget == self.info_widget:
             self.update_info_widget()
 
     def on_browse_tab_changed(self, index):
         """Refresh the active Browse tab."""
+        if (not self._sidebar_ready or not self.main_dock.isVisible()
+                or self.sidebar_tabs.currentWidget() != self.browse_tabs):
+            return
         widget = self.browse_tabs.widget(index)
+        content = self._ensure_sidebar_tab(widget)
         if widget == self.filter_widget:
             self.update_tag_list()
             self._update_extension_filter_list()
         elif widget == self.bookmarks_tab:
-            self.bookmarks_tab.refresh_list()
+            content.refresh_list()
         elif widget == self.history_tab:
-            self.history_tab.refresh_list()
+            content.refresh_list()
 
     def on_sidebar_tab_changed(self, _index=None):
         """Refresh active nested tabs and lazily activate Maps."""
+        if not self._sidebar_ready:
+            return
         widget = self.sidebar_tabs.currentWidget()
         if widget == self.metadata_tabs:
             self.on_metadata_tab_changed(self.metadata_tabs.currentIndex())
@@ -5085,11 +5155,18 @@ class MainWindow(QMainWindow):
             self.on_browse_tab_changed(self.browse_tabs.currentIndex())
 
         # Activate / deactivate map tab (lazy refresh on activation)
-        if hasattr(self, 'maps_tab'):
-            is_map = (widget == self.maps_tab and self.main_dock.isVisible())
-            self.maps_tab.set_active(is_map)
+        is_map = (widget == self.maps_tab and self.main_dock.isVisible())
+        if is_map:
+            map_widget = self._ensure_sidebar_tab(self.maps_tab)
+        else:
+            map_widget = self._sidebar_content.get(self.maps_tab)
+        if map_widget is not None:
+            map_widget.set_active(is_map)
             if is_map:
-                self.maps_tab.refresh(self.get_selected_paths())
+                map_widget.refresh(self.get_selected_paths())
+        if (self.main_dock.isVisible()
+                and widget is getattr(self, "layouts_tab", None)):
+            self._ensure_sidebar_tab(widget)
 
     def _update_extension_filter_list(self, paths=None):
         """Add and sort checkboxes for all discovered file extensions."""
@@ -5146,17 +5223,17 @@ class MainWindow(QMainWindow):
         self.extension_filter_group.hide()
 
     def _on_main_dock_visibility_changed(self, visible):
-        if hasattr(self, 'maps_tab'):
-            is_map = visible and self.sidebar_tabs.currentWidget() == self.maps_tab
-            self.maps_tab.set_active(is_map)
+        if self._sidebar_ready:
+            self.on_sidebar_tab_changed()
 
     def update_tag_edit_widget(self):
         """Updates the tag editor widget with data from the currently selected files."""
-        if self._suppress_updates:
+        editor = self._sidebar_content.get(self.tag_edit_widget)
+        if self._suppress_updates or editor is None:
             return
         selected_indexes = self.thumbnail_view.selectedIndexes()
         if not selected_indexes:
-            self.tag_edit_widget.set_files_data({})
+            editor.set_files_data({})
             return
 
         files_data = {}
@@ -5167,12 +5244,24 @@ class MainWindow(QMainWindow):
             tags = proxy_idx.data(TAGS_ROLE)
             if path:
                 files_data[path] = tags
-        self.tag_edit_widget.set_files_data(files_data)
+        editor.set_files_data(files_data)
+
+    def get_available_tags(self):
+        editor = self._sidebar_content.get(self.tag_edit_widget)
+        if editor is not None:
+            return editor.available_tags
+        tags = read_available_baloo_tags()
+        if tags is None:
+            return []
+        available = set(tags)
+        for index in self.thumbnail_view.selectedIndexes():
+            available.update(index.data(TAGS_ROLE) or [])
+        return sorted(available)
 
     def update_info_widget(self):
         """Updates the information widget (rating, comment) with the current file's
         data."""
-        if self._suppress_updates:
+        if self._suppress_updates or self.info_widget not in self._sidebar_content:
             return
         paths = self.get_selected_paths()
         self.rating_widget.set_files(paths)
@@ -5380,8 +5469,9 @@ class MainWindow(QMainWindow):
             self.update_info_widget()
 
         # Refresh the map tab only when it is currently active (lazy refresh).
-        if hasattr(self, 'maps_tab') and self.maps_tab.is_active():
-            self.maps_tab.refresh(self.get_selected_paths())
+        map_widget = self._sidebar_content.get(self.maps_tab)
+        if map_widget is not None and map_widget.is_active():
+            map_widget.refresh(self.get_selected_paths())
 
     def _update_selected_group_names(self):
         """Cache group names containing selected headers or thumbnails."""
@@ -5560,10 +5650,10 @@ class MainWindow(QMainWindow):
 
     def apply_filters(self):
         """Applies all current name and tag filters to the proxy model."""
-        # Ensure UI components are initialized
-        if not hasattr(self, 'tags_list') or \
-           not hasattr(self, 'filter_mode_group') or \
-           not self.filter_mode_group.buttons():
+        has_controls = (hasattr(self, 'tags_list') and
+                        hasattr(self, 'filter_mode_group') and
+                        bool(self.filter_mode_group.buttons()))
+        if not has_controls and not getattr(self, '_sidebar_ready', False):
             return
 
         if self.is_cleaning or self._suppress_updates:
@@ -5575,29 +5665,32 @@ class MainWindow(QMainWindow):
         # Gather filter criteria from the UI
         include_tags = set()
         exclude_tags = set()
-        for i in range(self.tags_list.rowCount()):
-            item_tag = self.tags_list.item(i, 0)
-            item_not = self.tags_list.item(i, 1)
+        if has_controls:
+            for i in range(self.tags_list.rowCount()):
+                item_tag = self.tags_list.item(i, 0)
+                item_not = self.tags_list.item(i, 1)
 
-            tag_name = item_tag.data(Qt.UserRole)
+                tag_name = item_tag.data(Qt.UserRole)
 
-            if item_tag.checkState() == Qt.Checked:
-                include_tags.add(tag_name)
-            if item_not.checkState() == Qt.Checked:
-                exclude_tags.add(tag_name)
+                if item_tag.checkState() == Qt.Checked:
+                    include_tags.add(tag_name)
+                if item_not.checkState() == Qt.Checked:
+                    exclude_tags.add(tag_name)
 
         # Set filter properties on the proxy model
         self.proxy_model.include_tags = include_tags
         self.proxy_model.exclude_tags = exclude_tags
-        name_filter = self.filter_name_input.text().strip().lower()
+        name_filter = self.filter_name_input.text().strip().lower() \
+            if has_controls else ""
         self.proxy_model.name_filter = name_filter
         self.proxy_model.excluded_extensions = {
             extension for extension, checkbox
             in self._extension_checkboxes.items()
             if not checkbox.isChecked()
         }
-        self.proxy_model.match_mode = "AND" \
-            if self.filter_mode_group.buttons()[0].isChecked() else "OR"
+        self.proxy_model.match_mode = (
+            "AND" if not has_controls or self.filter_mode_group.buttons()[0].isChecked()
+            else "OR")
 
         # Optimization: Warm the filter cache before invalidating.
         # This ensures filterAcceptsRow uses O(1) lookups for all items.
@@ -5614,14 +5707,9 @@ class MainWindow(QMainWindow):
         total_count = len(self.get_all_image_paths())
         hidden_count = total_count - visible_count
 
-        if hidden_count > 0:
+        if has_controls:
             self.filter_stats_lbl.setText(
                 UITexts.FILTER_STATS_HIDDEN.format(hidden_count, visible_count))
-            # self.filter_stats_lbl.show()
-        else:
-            self.filter_stats_lbl.setText(
-                UITexts.FILTER_STATS_HIDDEN.format(hidden_count, visible_count))
-            # self.filter_stats_lbl.hide()
 
         is_filter_active = bool(
             include_tags or exclude_tags or name_filter or
@@ -5862,8 +5950,10 @@ class MainWindow(QMainWindow):
         self.full_history.insert(0, entry)
         self.save_full_history()
 
-        if hasattr(self, 'history_tab'):
-            self.history_tab.refresh_list()
+        history = getattr(self, "_sidebar_content", {}).get(
+            getattr(self, "history_tab", None))
+        if history is not None:
+            history.refresh_list()
 
     def add_to_mru_tags(self, tag):
         """Adds a tag to the Most Recently Used list."""
@@ -5966,8 +6056,10 @@ class MainWindow(QMainWindow):
         """Callback for when the sort order dropdown changes."""
         self.rebuild_view(full_reset=True)
         self.save_config()
-        if hasattr(self, 'history_tab'):
-            self.history_tab.refresh_list()
+        history = getattr(self, "_sidebar_content", {}).get(
+            getattr(self, "history_tab", None))
+        if history is not None:
+            history.refresh_list()
         self.setFocus()
 
     def _get_tier_for_size(self, requested_size):
@@ -6552,18 +6644,22 @@ class MainWindow(QMainWindow):
     def handle_initial_args(self, args):
         """Handles command-line arguments passed to the application at startup."""
         path = " ".join(args).strip()
-        full_path = os.path.abspath(os.path.expanduser(path))
+        full_path = _initial_file_path(args)
 
-        if os.path.isfile(full_path):
+        if full_path:
             self.add_to_history(f"file:/{full_path}")
             self._record_search_navigation(f"file:/{full_path}")
             # Refresh combo box with history
             self.update_search_input()  # This is a disk read.
 
             # Open viewer directly
-            self.active_viewer = ImageViewer(self.cache, [full_path], 0,
-                                             initial_tags=None, initial_rating=0,
-                                             parent=self, persistent=True)
+            initial_future = None
+            if self._initial_image and self._initial_image[0] == full_path:
+                initial_future = self._initial_image[1]
+            self._initial_image = None
+            self.active_viewer = ImageViewer(
+                self.cache, [full_path], 0, initial_tags=None, initial_rating=0,
+                parent=self, persistent=True, initial_image_future=initial_future)
             self._setup_viewer_sync(self.active_viewer)
             self.viewers.append(self.active_viewer)
             self.active_viewer.destroyed.connect(
@@ -6580,6 +6676,7 @@ class MainWindow(QMainWindow):
                             scan_max_level=0)
         else:
             # If not a file, process as a generic term (path, search, or layout)
+            self._initial_image = None
             term = path if path.startswith(("search:/", "file:/", "layout:/")) \
                 else f"file:/{path}"
             self.process_term(term)
@@ -7801,6 +7898,12 @@ class MainWindow(QMainWindow):
         """Opens the similar images search dialog for the given path."""
         if not HAVE_IMAGEHASH:
             return
+        try:
+            from .similardialog import SimilarImagesDialog
+        except (ImportError, OSError) as error:
+            QMessageBox.warning(self, UITexts.ERROR,
+                                UITexts.SIMILAR_SEARCH_ERROR.format(error))
+            return
         dialog = SimilarImagesDialog(path, self, query_image=query_image)
         dialog.show()
 
@@ -7823,14 +7926,24 @@ def main():
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
 
-    duplicate_cache = DuplicateCache() if HAVE_IMAGEHASH else None
-    thread_pool_manager = ThreadPoolManager()
-    cache = ThumbnailCache()
     args = [a for a in sys.argv[1:] if a != "--x11"]
     args, resolution = _extract_resolution(args)
-    win = MainWindow(cache, args, thread_pool_manager, duplicate_cache, resolution=resolution)
-    if win.maps_tab.is_active():
-        win.maps_tab.set_active(True)
+    initial_path = _initial_file_path(args)
+    executor = ThreadPoolExecutor(max_workers=1) if initial_path else None
+    try:
+        initial_image = (initial_path, executor.submit(read_image, initial_path)) \
+            if executor else None
+        duplicate_cache = DuplicateCache() if HAVE_IMAGEHASH else None
+        thread_pool_manager = ThreadPoolManager()
+        cache = ThumbnailCache()
+        win = MainWindow(cache, args, thread_pool_manager, duplicate_cache,
+                         resolution=resolution, initial_image=initial_image)
+    finally:
+        if executor:
+            executor.shutdown(wait=True)
+    map_widget = getattr(win, "_sidebar_content", {}).get(win.maps_tab)
+    if map_widget is not None and map_widget.is_active():
+        map_widget.set_active(True)
 
     sys.exit(app.exec())
 

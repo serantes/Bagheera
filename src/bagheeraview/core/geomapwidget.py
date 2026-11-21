@@ -25,7 +25,6 @@ from PySide6.QtCore import (
 )
 
 from .constants import UITexts
-from .geolocation import parse_coordinates, search_nominatim_async
 from .metadatamanager import MetadataManager, HAVE_EXIV2
 
 
@@ -403,6 +402,8 @@ class GeoMapWidget(QWidget):
 
     def _go_to_coordinates(self):
         """Find coordinates directly or resolve a place name with Nominatim."""
+        from .geolocation import parse_coordinates, search_nominatim_async
+
         query = self.coordinate_input.text().strip()
         coordinates = parse_coordinates(query)
         if coordinates is None:

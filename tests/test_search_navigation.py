@@ -1,10 +1,116 @@
 from copy import deepcopy
+from concurrent.futures import Future
+from threading import Event
 from types import MethodType, SimpleNamespace
+import sys
 
 import pytest
 from PySide6.QtWidgets import QApplication, QComboBox, QPushButton
 
 from bagheeraview.core import app as app_module
+
+
+def test_initial_file_path_accepts_file_manager_urls(tmp_path):
+    image = tmp_path / "imagen 日本 #1.jpg"
+    image.touch()
+
+    assert app_module._initial_file_path([str(image)]) == str(image)
+    assert app_module._initial_file_path([image.as_uri()]) == str(image)
+    assert app_module._initial_file_path([f"file:/{image}"]) == str(image)
+    assert app_module._initial_file_path(["search:/example"]) is None
+
+
+def test_direct_viewer_receives_preloaded_image_from_file_url(tmp_path, monkeypatch):
+    image = tmp_path / "imagen 日本 #1.jpg"
+    image.touch()
+    future = Future()
+    calls = {}
+
+    class Viewer:
+        def __init__(self, _cache, paths, index, **kwargs):
+            calls["paths"] = paths
+            calls["index"] = index
+            calls["future"] = kwargs["initial_image_future"]
+            self.destroyed = SimpleNamespace(connect=lambda _slot: None)
+
+        def show(self):
+            calls["shown"] = True
+
+    monkeypatch.setattr(app_module, "ImageViewer", Viewer)
+    window = SimpleNamespace(
+        _initial_image=(str(image), future), cache=object(), viewers=[],
+        add_to_history=lambda _term: None,
+        _record_search_navigation=lambda _term: None,
+        update_search_input=lambda: None,
+        _setup_viewer_sync=lambda _viewer: None,
+        hide=lambda: None,
+        start_scan=lambda paths, **_kwargs: calls.update(scan=paths),
+    )
+    app_module.MainWindow.handle_initial_args(window, [image.as_uri()])
+
+    assert calls["paths"] == [str(image)]
+    assert calls["index"] == 0
+    assert calls["future"] is future
+    assert calls["shown"]
+    assert calls["scan"] == [str(image), str(tmp_path)]
+
+
+def test_startup_begins_decoding_before_main_window(tmp_path, monkeypatch):
+    image = tmp_path / "image.jpg"
+    image.touch()
+    started, release = Event(), Event()
+    decoded = object()
+
+    def read_image(path):
+        assert path == str(image)
+        started.set()
+        if not release.wait(5):
+            raise TimeoutError("main window did not start")
+        return decoded
+
+    class Application:
+        def __init__(self, _args):
+            pass
+
+        def setApplicationName(self, _name):
+            pass
+
+        def setDesktopFileName(self, _name):
+            pass
+
+        def setOrganizationName(self, _name):
+            pass
+
+        def setOrganizationDomain(self, _name):
+            pass
+
+        def setWindowIcon(self, _icon):
+            pass
+
+        def exec(self):
+            return 0
+
+    def main_window(_cache, _args, _pool, _duplicates, **kwargs):
+        try:
+            assert started.wait(5)
+        finally:
+            release.set()
+        path, future = kwargs["initial_image"]
+        assert path == str(image)
+        assert future.result(timeout=5) is decoded
+        return SimpleNamespace(maps_tab=object())
+
+    monkeypatch.setattr(sys, "argv", ["bagheeraview", image.as_uri()])
+    monkeypatch.setattr(app_module, "QApplication", Application)
+    monkeypatch.setattr(app_module, "read_image", read_image)
+    monkeypatch.setattr(app_module, "HAVE_IMAGEHASH", False)
+    monkeypatch.setattr(app_module, "ThreadPoolManager", lambda: object())
+    monkeypatch.setattr(app_module, "ThumbnailCache", lambda: object())
+    monkeypatch.setattr(app_module, "MainWindow", main_window)
+
+    with pytest.raises(SystemExit) as exc:
+        app_module.main()
+    assert exc.value.code == 0
 
 
 @pytest.fixture

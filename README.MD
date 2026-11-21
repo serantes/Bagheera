@@ -336,7 +336,9 @@ abandoning classic folder-based navigation.
   tagging tools and person profile management.
 - **Smart State Persistence:** The application remembers your workflow. Your **
   last used search**, **last used sort order**, and **view settings** are
-  automatically saved and restored upon startup.
+  automatically saved and restored upon startup. When started directly with an
+  image, the Information tab, flat view and ascending name order are selected
+  instead.
 - **Bookmarks:** Frequently used searches can be saved and reused.
 - **Caching:** The thumbnail cache and image hashes are stored in highly
   performant local LMDB databases.

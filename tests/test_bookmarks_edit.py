@@ -195,7 +195,6 @@ def test_load_and_shortcut_apply_bookmark_options(
 
     group.setCurrentIndex(1)
     sort.setCurrentIndex(1)
-    widget.main_win.bookmarks_tab = widget
     controller = SimpleNamespace(
         main_win=widget.main_win, _bookmark_shortcuts={}, _shortcuts={},
         _refresh_native_shortcuts=lambda: None)

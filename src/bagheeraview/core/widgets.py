@@ -57,11 +57,17 @@ from .tag_information_editor import TagInformationEditor
 
 logger = logging.getLogger(__name__)
 
-def _load_available_baloo_tags(widget):
+def read_available_baloo_tags():
     try:
-        tags = list_baloo_tags()
+        return list_baloo_tags()
     except (lmdb.Error, OSError, UnicodeError) as error:
         logger.warning("Failed to load Baloo tags: %s", error)
+        return None
+
+
+def _load_available_baloo_tags(widget):
+    tags = read_available_baloo_tags()
+    if tags is None:
         return
     if set(tags) != set(widget.available_tags):
         widget._load_all = True
@@ -1754,6 +1760,27 @@ class HistoryWidget(QWidget):
                 self.refresh_list()
 
 
+def run_bookmark(main_win, bookmark):
+    def apply_options():
+        for key, combo in (("group", main_win.view_mode_combo),
+                           ("sort", main_win.sort_combo)):
+            value = bookmark.get(key)
+            if value is None or value == "":
+                continue
+            index = combo.findData(value)
+            if index < 0:
+                logger.warning("Unknown bookmark %s: %r", key, value)
+                continue
+            combo.setCurrentIndex(index)
+
+    query = bookmark.get("query", "")
+    if not query.startswith("layout:/"):
+        apply_options()
+    main_win.process_term(query)
+    if query.startswith("layout:/"):
+        apply_options()
+
+
 class BookmarksWidget(QWidget):
     """A widget for managing bookmarked search queries."""
     bookmarks_changed = Signal()
@@ -1915,24 +1942,7 @@ class BookmarksWidget(QWidget):
             logger.exception("Could not save bookmarks to %s", BOOKMARKS_PATH)
 
     def run_bookmark(self, bookmark):
-        query = bookmark.get("query", "")
-        if not query.startswith("layout:/"):
-            self._apply_bookmark_options(bookmark)
-        self.main_win.process_term(query)
-        if query.startswith("layout:/"):
-            self._apply_bookmark_options(bookmark)
-
-    def _apply_bookmark_options(self, bookmark):
-        for key, combo in (("group", self.main_win.view_mode_combo),
-                           ("sort", self.main_win.sort_combo)):
-            value = bookmark.get(key)
-            if value is None or value == "":
-                continue
-            index = combo.findData(value)
-            if index < 0:
-                logger.warning("Unknown bookmark %s: %r", key, value)
-                continue
-            combo.setCurrentIndex(index)
+        run_bookmark(self.main_win, bookmark)
 
     def load_selected(self):
         row = self.table.currentRow()
@@ -2553,7 +2563,9 @@ class FaceNameInputWidget(QWidget):
         """Loads person names from global tags and combines them with MRU history."""
         self.history.clear()
         all_tags = []
-        if self.main_win and hasattr(self.main_win, 'tag_edit_widget'):
+        if self.main_win and hasattr(self.main_win, 'get_available_tags'):
+            all_tags = self.main_win.get_available_tags()
+        elif self.main_win and hasattr(self.main_win, 'tag_edit_widget'):
             all_tags = self.main_win.tag_edit_widget.available_tags
 
         if mru_history:

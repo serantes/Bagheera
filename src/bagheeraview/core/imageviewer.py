@@ -11,6 +11,7 @@ Classes:
 import os
 import subprocess
 import json
+import logging
 import uuid
 
 from PySide6.QtWidgets import (
@@ -31,8 +32,8 @@ from PySide6.QtCore import (
 from .constants import (
     APP_CONFIG, DEFAULT_FACE_BOX_COLOR, DEFAULT_PET_BOX_COLOR, DEFAULT_VIEWER_SHORTCUTS,
     DEFAULT_BODY_BOX_COLOR,
-    DEFAULT_OBJECT_BOX_COLOR, DEFAULT_LANDMARK_BOX_COLOR, FORCE_X11, ICON_THEME_VIEWER,
-    ICON_THEME_VIEWER_FALLBACK, KSCREEN_DOCTOR_MARGIN, KWINOUTPUTCONFIG_PATH,
+    DEFAULT_OBJECT_BOX_COLOR, DEFAULT_LANDMARK_BOX_COLOR, ICON_THEME_VIEWER,
+    ICON_THEME_VIEWER_FALLBACK, KWINOUTPUTCONFIG_PATH,
     VIEWER_AUTO_RESIZE_WINDOW_DEFAULT, VIEWER_FORM_MARGIN, VIEWER_LABEL,
     VIEWER_WHEEL_SPEED_DEFAULT, XATTR_NAME, ZOOM_DESKTOP_RATIO, UITexts,
     AVAILABLE_FACE_ENGINES, AVAILABLE_PET_ENGINES, HAVE_IMAGEHASH
@@ -42,6 +43,64 @@ from .widgets import FaceNameInputWidget, TagSelectorDialog
 from .utils import PowerManager
 from .propertiesdialog import PropertiesDialog
 from .personrecognition import PersonRecognitionDB, extract_face_encoding
+
+
+logger = logging.getLogger(__name__)
+
+
+def _kwin_primary_screen(screens):
+    """Find KDE's primary screen in the saved setup matching Qt's screens."""
+    with open(KWINOUTPUTCONFIG_PATH, encoding="utf-8") as config_file:
+        sections = {section["name"]: section["data"]
+                    for section in json.load(config_file)}
+    outputs = sections["outputs"]
+    screens_by_name = {screen.name(): screen for screen in screens}
+    if len(screens_by_name) != len(screens):
+        raise ValueError("Qt reports duplicate screen names")
+
+    candidates = set()
+    for setup in sections["setups"]:
+        enabled = [output for output in setup["outputs"] if output["enabled"]]
+        named = {}
+        for output in enabled:
+            index = output["outputIndex"]
+            if not isinstance(index, int) or not 0 <= index < len(outputs):
+                raise ValueError("Invalid KWin output index")
+            named[outputs[index]["connectorName"]] = output
+        if len(named) != len(enabled) or set(named) != set(screens_by_name):
+            continue
+        if any(
+                (output["position"]["x"], output["position"]["y"])
+                != (screens_by_name[name].geometry().x(),
+                    screens_by_name[name].geometry().y())
+                for name, output in named.items()):
+            continue
+        primary = [name for name, output in named.items()
+                   if output["priority"] == 1]
+        if len(primary) == 1:
+            candidates.add(primary[0])
+
+    if len(candidates) != 1:
+        raise ValueError("No unambiguous KWin primary screen for the current setup")
+    return screens_by_name[candidates.pop()]
+
+
+def _kscreen_primary_screen(screens):
+    """Query KDE when its saved configuration does not identify the active setup."""
+    result = subprocess.run(
+        ["kscreen-doctor", "-o"], capture_output=True, text=True,
+        check=True, timeout=2)
+    name = None
+    for line in result.stdout.splitlines():
+        if line.startswith("Output:"):
+            fields = line.split()
+            name = fields[2] if len(fields) >= 3 else None
+        elif line.strip() == "priority 1" and name is not None:
+            for screen in screens:
+                if screen.name() == name:
+                    return screen
+            raise ValueError(f"KDE primary screen {name!r} is not reported by Qt")
+    raise ValueError("KDE did not report a primary screen")
 
 
 def rating_menu_label(rating, font=None):
@@ -1419,14 +1478,14 @@ class ImagePane(QWidget):
     scrolled = Signal(float, float)
 
     def __init__(self, parent_viewer, cache, image_list, index, initial_tags=None,
-                 initial_rating=0):
+                 initial_rating=0, initial_image_future=None):
         super().__init__(parent_viewer)
         self.viewer = parent_viewer  # Reference to main ImageViewer
         self.main_win = parent_viewer.main_win
         self.cache = cache
 
         self.controller = ImageController(image_list, index, initial_tags,
-                                          initial_rating)
+                                          initial_rating, initial_image_future)
         if self.main_win:
             self.controller.show_regions = self.main_win.show_faces
 
@@ -1578,7 +1637,8 @@ class ImageViewer(QWidget):
 
     def __init__(self, cache, image_list, current_index, initial_tags=None,
                  initial_rating=0, parent=None,
-                 restore_config=None, persistent=False, first_load=True):
+                 restore_config=None, persistent=False, first_load=True,
+                 initial_image_future=None):
         """
         Initializes the ImageViewer window.
 
@@ -1592,6 +1652,7 @@ class ImageViewer(QWidget):
                                              session. Defaults to None.
             persistent (bool, optional): If True, the viewer is part of a saved layout.
                                          Defaults to False.
+            initial_image_future: Optional future containing the decoded first image.
         """
         super().__init__()
         self.main_win = parent
@@ -1753,7 +1814,8 @@ class ImageViewer(QWidget):
         self.inhibit_screensaver()
 
         # Initialize first pane
-        self.add_pane(image_list, current_index, initial_tags, initial_rating)
+        self.add_pane(image_list, current_index, initial_tags, initial_rating,
+                      initial_image_future)
         self.set_active_pane(self.panes[0])
 
         # Load image
@@ -1783,9 +1845,10 @@ class ImageViewer(QWidget):
     def movie(self):
         return self.active_pane.movie if self.active_pane else None
 
-    def add_pane(self, image_list, index, initial_tags, initial_rating):
+    def add_pane(self, image_list, index, initial_tags, initial_rating,
+                 initial_image_future=None):
         pane = ImagePane(self, self.cache, image_list, index, initial_tags,
-                         initial_rating)
+                         initial_rating, initial_image_future)
         self.panes.append(pane)
         self.update_grid_layout()
         return pane
@@ -2185,81 +2248,28 @@ class ImageViewer(QWidget):
                 self.controller.update_list(image_paths, index)
 
     def get_desktop_resolution(self):
-        """
-        Determines the resolution of the primary desktop.
-        """
+        """Return the primary screen's logical dimensions for an unshown viewer."""
         if self._desktop_width and self._desktop_height:
             return self._desktop_width, self._desktop_height
 
-        try:
-            """
-            kwinoutputconfig.json
-            """
-            # return self.screen().availableGeometry().width(), \
-            #    self.screen().availableGeometry().height()
-            # We run kscreen-doctor and look for the primary monitor line.
-            if FORCE_X11:
-                if os.path.exists(KWINOUTPUTCONFIG_PATH):
-                    scale = 1
-                    primary_monitor = subprocess.check_output("xrandr | grep "
-                                                              "' primary' | cut -d' '"
-                                                              " -f1",
-                                                              shell=True,
-                                                              text=True).strip()
-                    try:
-                        with open(KWINOUTPUTCONFIG_PATH, 'r', encoding='utf-8') as f:
-                            data_json = json.load(f)
-
-                        # Find the section where "name" is "outputs"
-                        outputs_section = next((item for item in data_json if
-                                                item.get("name") == "outputs"), None)
-
-                        if outputs_section:
-                            # Iterate over the "data" elements within that section
-                            for device in outputs_section.get("data", []):
-                                if device.get("connectorName") == primary_monitor:
-                                    scale = float(device.get("scale"))
-                                    mode = device.get("mode", {})
-                                    output = f"{mode.get('width')}x{mode.get('height')}"
-                                    break
-
-                    except json.JSONDecodeError:
-                        scale = 1
-                        output = subprocess.check_output("xrandr | grep ' primary' | "
-                                                         "awk '{print $4}' | cut -d'+' "
-                                                         "-f1", shell=True, text=True)
-                    except Exception:
-                        scale = 1
-                        output = subprocess.check_output("xrandr | grep ' primary' | "
-                                                         "awk '{print $4}' | cut -d'+' "
-                                                         "-f1", shell=True, text=True)
-                else:
-                    scale = 1
-                    output = subprocess.check_output("xrandr | grep ' primary' | "
-                                                     "awk '{print $4}' | cut -d'+' "
-                                                     "-f1", shell=True, text=True)
-
-                width, height = map(int, output.split('x'))
-                self._desktop_width = int(width / scale - KSCREEN_DOCTOR_MARGIN)
-                self._desktop_height = int(height / scale - KSCREEN_DOCTOR_MARGIN)
-                return self._desktop_width, self._desktop_height
-
-            else:
-                # This can hang on X11.
-                output = subprocess.check_output("kscreen-doctor -o | grep -A 10 "
-                                                 "'priority 1' | grep 'Geometry' "
-                                                 "| cut -d' ' -f3", shell=True,
-                                                 text=True)
-                width, height = map(int, output.split('x'))
-                self._desktop_width = int(width-KSCREEN_DOCTOR_MARGIN)
-                self._desktop_height = int(height-KSCREEN_DOCTOR_MARGIN)
-                return self._desktop_width, self._desktop_height
-
-        except Exception:
-            screen_geo = self.screen().availableGeometry()
-            self._desktop_width = screen_geo.width()
-            self._desktop_height = screen_geo.height()
-            return self._desktop_width, self._desktop_height
+        screens = QApplication.screens()
+        screen = QApplication.primaryScreen()
+        if QApplication.platformName().startswith("wayland") and len(screens) > 1:
+            try:
+                screen = _kwin_primary_screen(screens)
+            except (OSError, ValueError, TypeError, KeyError) as error:
+                logger.debug("Cannot identify the KWin screen from its configuration: %s",
+                             error)
+                try:
+                    screen = _kscreen_primary_screen(screens)
+                except (OSError, subprocess.SubprocessError, ValueError) as error:
+                    logger.warning("Cannot identify the KDE primary screen: %s", error)
+        if screen is None:
+            raise RuntimeError("Qt did not report a primary screen")
+        geometry = screen.geometry()
+        self._desktop_width = geometry.width()
+        self._desktop_height = geometry.height()
+        return self._desktop_width, self._desktop_height
 
     def load_and_fit_image_for_pane(self, pane, restore_config=None,
                                     resize_win=False):

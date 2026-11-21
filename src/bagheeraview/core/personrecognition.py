@@ -33,7 +33,8 @@ import numpy as np
 from PIL import Image
 
 from .constants import (
-    PERSON_RECOGNITION_PATH, PERSON_RECOGNITION_DB_NAME, face_recognition, HAVE_FACE_RECOGNITION
+    PERSON_RECOGNITION_PATH, PERSON_RECOGNITION_DB_NAME, HAVE_FACE_RECOGNITION,
+    _load_face_recognition as _import_face_recognition
 )
 
 logger = logging.getLogger(__name__)
@@ -162,12 +163,7 @@ def _load_face_recognition():
     """
     global _face_recognition_module, _face_recognition_checked
     if HAVE_FACE_RECOGNITION and not _face_recognition_checked:
-        try:
-            _face_recognition_module = face_recognition
-        except ImportError:
-            logger.debug(
-                "face_recognition is not installed; using the fallback descriptor")
-            _face_recognition_module = None
+        _face_recognition_module = _import_face_recognition()
         _face_recognition_checked = True
     return _face_recognition_module
 

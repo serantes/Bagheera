@@ -1,7 +1,14 @@
+import os
+from pathlib import Path
+import subprocess
+import sys
+from types import ModuleType
 import numpy as np
+import pytest
 from unittest.mock import MagicMock, patch
 from PIL import Image
 
+from bagheeraview.core import constants, imagecontroller, personrecognition
 from bagheeraview.core.imagecontroller import (
     ImageController,
     _get_mediapipe,
@@ -9,12 +16,147 @@ from bagheeraview.core.imagecontroller import (
 )
 
 
+def test_startup_does_not_import_optional_recognition_or_similarity_libraries():
+    source_dir = str(Path(__file__).resolve().parents[1] / "src")
+    env = dict(os.environ, PYTHONPATH=source_dir, QT_QPA_PLATFORM="offscreen")
+    result = subprocess.run(
+        [sys.executable, "-c", """
+import builtins
+import importlib.machinery
+import importlib.util
+
+original_find_spec = importlib.util.find_spec
+optional = {'mediapipe', 'face_recognition', 'face_recognition_models', 'faiss'}
+def find_spec(name, *args, **kwargs):
+    if name in optional:
+        return importlib.machinery.ModuleSpec(name, None, is_package=True)
+    return original_find_spec(name, *args, **kwargs)
+importlib.util.find_spec = find_spec
+
+original_import = builtins.__import__
+attempts = []
+def checked_import(name, *args, **kwargs):
+    if name.split('.')[0] in optional:
+        attempts.append(name)
+        raise ImportError('optional dependency should be loaded on use')
+    return original_import(name, *args, **kwargs)
+builtins.__import__ = checked_import
+import bagheeraview.core.app
+assert not attempts, attempts
+"""], env=env, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+
+
+def test_face_recognition_is_loaded_on_first_use(monkeypatch, tmp_path):
+    module = MagicMock()
+    module.face_encodings.return_value = [np.array([0.25, 0.5])]
+    loader = MagicMock(return_value=module)
+    monkeypatch.setattr(personrecognition, "HAVE_FACE_RECOGNITION", True)
+    monkeypatch.setattr(personrecognition, "_face_recognition_checked", False)
+    monkeypatch.setattr(personrecognition, "_face_recognition_module", None)
+    monkeypatch.setattr(personrecognition, "_import_face_recognition", loader)
+    path = tmp_path / "face.png"
+    Image.new("RGB", (20, 20)).save(path)
+
+    assert not loader.called
+    for _ in range(2):
+        assert personrecognition.extract_face_encoding(
+            str(path), {"x": 0.5, "y": 0.5, "w": 0.5, "h": 0.5}) == [0.25, 0.5]
+    loader.assert_called_once_with()
+    assert module.face_encodings.call_count == 2
+
+
+def test_unusable_face_recognition_logs_and_uses_fallback(monkeypatch, tmp_path, caplog):
+    import builtins
+
+    original_import = builtins.__import__
+
+    def broken_import(name, *args, **kwargs):
+        if name == "face_recognition":
+            raise ImportError("broken face engine")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(constants.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(builtins, "__import__", broken_import)
+    monkeypatch.setattr(personrecognition, "HAVE_FACE_RECOGNITION", True)
+    monkeypatch.setattr(personrecognition, "_face_recognition_checked", False)
+    monkeypatch.setattr(personrecognition, "_face_recognition_module", None)
+    path = tmp_path / "face.png"
+    Image.new("RGB", (20, 20)).save(path)
+
+    result = personrecognition.extract_face_encoding(
+        str(path), {"x": 0.5, "y": 0.5, "w": 0.5, "h": 0.5})
+
+    assert len(result) == personrecognition.FALLBACK_FEATURE_SIZE ** 2
+    assert "broken face engine" in caplog.text
+
+
+def test_unusable_face_recognition_reports_error_to_detector(monkeypatch):
+    monkeypatch.setattr(imagecontroller, "_face_recognition_module", None)
+    monkeypatch.delitem(sys.modules, "face_recognition", raising=False)
+    monkeypatch.setattr(imagecontroller, "_load_face_recognition", lambda: None)
+
+    with pytest.raises(ImportError, match="unavailable or unusable"):
+        imagecontroller._get_face_recognition()
+
+
+def test_face_detector_uses_loader_even_when_module_is_being_imported(monkeypatch):
+    partial_module = MagicMock()
+    complete_module = MagicMock()
+    loader = MagicMock(return_value=complete_module)
+    monkeypatch.setitem(sys.modules, "face_recognition", partial_module)
+    monkeypatch.setattr(imagecontroller, "_face_recognition_module", None)
+    monkeypatch.setattr(imagecontroller, "_load_face_recognition", loader)
+
+    assert imagecontroller._get_face_recognition() is complete_module
+    loader.assert_called_once_with()
+
+
+def test_mediapipe_failed_import_does_not_leave_partial_cache(monkeypatch):
+    import builtins
+
+    monkeypatch.setattr(imagecontroller, "_mediapipe_module", None)
+    monkeypatch.setattr(imagecontroller, "_mp_python", None)
+    monkeypatch.setattr(imagecontroller, "_mp_vision", None)
+    monkeypatch.setitem(sys.modules, "mediapipe", MagicMock())
+    monkeypatch.delitem(sys.modules, "mediapipe.tasks.python", raising=False)
+    monkeypatch.delitem(sys.modules, "mediapipe.tasks.python.vision", raising=False)
+    original_import = builtins.__import__
+
+    def broken_import(name, *args, **kwargs):
+        if name == "mediapipe.tasks":
+            raise ImportError("broken tasks")
+        return original_import(name, *args, **kwargs)
+
+    with monkeypatch.context() as context:
+        context.setattr(builtins, "__import__", broken_import)
+        with pytest.raises(ImportError, match="broken tasks"):
+            imagecontroller._get_mediapipe()
+    assert imagecontroller._mediapipe_module is None
+
+    tasks = ModuleType("mediapipe.tasks")
+    python = ModuleType("mediapipe.tasks.python")
+    vision = ModuleType("mediapipe.tasks.python.vision")
+    tasks.python = python
+    python.vision = vision
+    monkeypatch.setitem(sys.modules, "mediapipe.tasks", tasks)
+    monkeypatch.setitem(sys.modules, "mediapipe.tasks.python", python)
+    monkeypatch.setitem(sys.modules, "mediapipe.tasks.python.vision", vision)
+    _, loaded_python, loaded_vision = imagecontroller._get_mediapipe()
+    assert loaded_python is python
+    assert loaded_vision is vision
+
+
 def test_get_mediapipe_caching():
     mock_mp = MagicMock()
     mock_python = MagicMock()
     mock_vision = MagicMock()
+    mock_tasks = MagicMock()
+    mock_tasks.python = mock_python
+    mock_python.vision = mock_vision
 
-    with patch.dict("sys.modules", {"mediapipe": mock_mp, "mediapipe.tasks.python": mock_python,
+    with patch.dict("sys.modules", {"mediapipe": mock_mp, "mediapipe.tasks": mock_tasks,
+                                    "mediapipe.tasks.python": mock_python,
                                     "mediapipe.tasks.python.vision": mock_vision}):
         mp1, py1, vis1 = _get_mediapipe()
         mp2, py2, vis2 = _get_mediapipe()

@@ -13,14 +13,14 @@ Classes:
 import os
 import logging
 import math
-import sys
 from PySide6.QtCore import QThread, Signal, QMutex, QWaitCondition, QObject, Qt, QSize
 from PySide6.QtGui import QImage, QImageReader, QPixmap, QTransform
 from .xmpmanager import XmpManager
 from .constants import (
     APP_CONFIG, AVAILABLE_FACE_ENGINES, AVAILABLE_PET_ENGINES, AVAILABLE_BODY_ENGINES,
     MEDIAPIPE_FACE_MODEL_PATH, MEDIAPIPE_FACE_MODEL_URL, MEDIAPIPE_OBJECT_MODEL_PATH,
-    MEDIAPIPE_OBJECT_MODEL_URL, RATING_XATTR_NAME, XATTR_NAME, UITexts
+    MEDIAPIPE_OBJECT_MODEL_URL, RATING_XATTR_NAME, XATTR_NAME, UITexts,
+    _load_face_recognition
 )
 from .metadatamanager import XattrManager, load_common_metadata
 
@@ -34,37 +34,29 @@ _mp_python = None
 _mp_vision = None
 
 
+def read_image(path):
+    """Decode an image with its orientation applied."""
+    reader = QImageReader(path)
+    reader.setAutoTransform(True)
+    return reader.read()
+
+
 def _get_face_recognition():
     global _face_recognition_module
     if _face_recognition_module is None:
-        if "face_recognition" in sys.modules:
-            _face_recognition_module = sys.modules["face_recognition"]
-        else:
-            import face_recognition
-            _face_recognition_module = face_recognition
+        _face_recognition_module = _load_face_recognition()
+        if _face_recognition_module is None:
+            raise ImportError("face_recognition is unavailable or unusable")
     return _face_recognition_module
 
 
 def _get_mediapipe():
     global _mediapipe_module, _mp_python, _mp_vision
     if _mediapipe_module is None:
-        if "mediapipe" in sys.modules:
-            _mediapipe_module = sys.modules["mediapipe"]
-        else:
-            import mediapipe as mp
-            _mediapipe_module = mp
-
-        if "mediapipe.tasks.python" in sys.modules:
-            _mp_python = sys.modules["mediapipe.tasks.python"]
-        else:
-            from mediapipe.tasks import python
-            _mp_python = python
-
-        if "mediapipe.tasks.python.vision" in sys.modules:
-            _mp_vision = sys.modules["mediapipe.tasks.python.vision"]
-        else:
-            from mediapipe.tasks.python import vision
-            _mp_vision = vision
+        import mediapipe as mp
+        from mediapipe.tasks import python
+        from mediapipe.tasks.python import vision
+        _mediapipe_module, _mp_python, _mp_vision = mp, python, vision
 
     return _mediapipe_module, _mp_python, _mp_vision
 
@@ -170,9 +162,7 @@ class ImagePreloader(QThread):
             # Ensure file exists before trying to read
             if path and os.path.exists(path):
                 try:
-                    reader = QImageReader(path)
-                    reader.setAutoTransform(True)
-                    img = reader.read()
+                    img = read_image(path)
                     if not img.isNull():
                         # Load tags and rating here to avoid re-reading in main thread
                         res = load_common_metadata(path)
@@ -193,7 +183,8 @@ class ImageController(QObject):
     metadata_changed = Signal(str, dict)
     list_updated = Signal(int)
 
-    def __init__(self, image_list, current_index, initial_tags=None, initial_rating=0):
+    def __init__(self, image_list, current_index, initial_tags=None, initial_rating=0,
+                 initial_image_future=None):
         """
         Initializes the ImageController.
         """
@@ -211,6 +202,8 @@ class ImageController(QObject):
         self._current_metadata_path = None
         self._loaded_path = None
         self.show_regions = False
+        self._initial_image_future = initial_image_future
+        self._initial_image_path = self.get_current_path()
 
         # Preloading
         self.preloader = ImagePreloader()
@@ -228,6 +221,7 @@ class ImageController(QObject):
         self._current_rating = 0
         self._cached_next_image = None
         self._cached_next_index = -1
+        self._initial_image_future = None
 
     def _trigger_preload(self):
         """Identifies the next image in the list and asks the preloader to load it."""
@@ -312,9 +306,11 @@ class ImageController(QObject):
             self._cached_next_tags = None
             self._cached_next_rating = None
         else:
-            reader = QImageReader(path)  # This is a disk read
-            reader.setAutoTransform(True)
-            image = reader.read()
+            future = self._initial_image_future
+            self._initial_image_future = None
+            image = (future.result() if future is not None
+                     and path == self._initial_image_path
+                     else read_image(path))
             if image.isNull():
                 self._trigger_preload()
                 return False, False

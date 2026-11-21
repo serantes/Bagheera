@@ -1,6 +1,6 @@
 import sqlite3
 import sys
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock
 
 import numpy as np
@@ -9,7 +9,7 @@ from PySide6.QtCore import QPoint, QRect
 from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtWidgets import QApplication
 
-from bagheeraview.core import faiss_worker, imageviewer, similardialog
+from bagheeraview.core import app, faiss_worker, imageviewer, similardialog
 from bagheeraview.core.constants import UITexts
 from bagheeraview.core.imageviewer import FaceCanvas, ImageViewer
 
@@ -17,6 +17,37 @@ from bagheeraview.core.imageviewer import FaceCanvas, ImageViewer
 @pytest.fixture(scope="module")
 def qapp():
     return QApplication.instance() or QApplication([])
+
+
+def test_similar_dialog_is_imported_on_request(monkeypatch):
+    module = ModuleType("bagheeraview.core.similardialog")
+    dialog = Mock()
+    module.SimilarImagesDialog = Mock(return_value=dialog)
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    monkeypatch.setattr(app, "HAVE_IMAGEHASH", True)
+    window = object()
+    query = object()
+
+    app.MainWindow.find_similar_images(window, "/image.png", query_image=query)
+
+    module.SimilarImagesDialog.assert_called_once_with(
+        "/image.png", window, query_image=query)
+    dialog.show.assert_called_once_with()
+
+
+def test_similar_dialog_import_failure_is_reported(monkeypatch):
+    module = ModuleType("bagheeraview.core.similardialog")
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    monkeypatch.setattr(app, "HAVE_IMAGEHASH", True)
+    warning = Mock()
+    monkeypatch.setattr(app.QMessageBox, "warning", warning)
+    window = object()
+
+    app.MainWindow.find_similar_images(window, "/image.png")
+
+    warning.assert_called_once()
+    assert warning.call_args.args[0] is window
+    assert UITexts.SIMILAR_SEARCH_ERROR.split("{}")[0] in warning.call_args.args[2]
 
 
 def test_crop_search_menu_uses_original_selected_pixels(qapp, monkeypatch):
