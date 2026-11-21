@@ -5,6 +5,20 @@ Changelog
 Unreleased
 ==========
 
+Version 1.2.0
+=============
+
+- Added search navigation with history and Baloo tag selection, and made
+  direct paths start in flat grouping.
+- Added batch face and pet detection, recursive region scanning and region
+  data removal; improved duplicate detection with AI vector similarity.
+- Added similar-image search, richer bookmark grouping and sorting, and
+  thumbnail group-selection commands.
+- Improved filmstrip thumbnail prioritization, EXIF orientation handling and
+  cache invalidation; added warnings for unsupported image modifications.
+- Improved image loading and resizing, and reduced startup cost by loading
+  optional person-recognition dependencies lazily.
+
 Version 1.1.0
 =============
 

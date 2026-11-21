@@ -41,7 +41,7 @@ except ImportError:
 # --- CONFIGURATION ---
 PROG_NAME = "Bagheera Search"
 PROG_ID = "bagheeragui"
-PROG_VERSION = "1.1.0"
+PROG_VERSION = "1.2.0"
 PROG_BY = "Ignacio Serantes"
 PROG_DATE = "2026-11-14"
 CONFIG_FILE = f"{PROG_ID}rc"

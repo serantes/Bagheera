@@ -34,7 +34,7 @@ if FORCE_X11:
 # --- CONFIGURATION ---
 PROG_NAME = "Bagheera Image Viewer"
 PROG_ID = "bagheeraview"
-PROG_VERSION = "1.1.0"
+PROG_VERSION = "1.2.0"
 PROG_AUTHOR = "Ignacio Serantes"
 PROG_FILE_NAME = "bagheeraview"  # Executable name for launching new instances
 PROG_ORGANIZATION_NAME = 'serantes'
